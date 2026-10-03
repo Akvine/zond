@@ -7,7 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class ZondApplication {
 
 	public static void main(String[] args) {
-		SpringApplication.run(ZondApplication.class, args);
+		System.exit(SpringApplication.exit(SpringApplication.run(ZondApplication.class, args)));
 	}
 
 }
