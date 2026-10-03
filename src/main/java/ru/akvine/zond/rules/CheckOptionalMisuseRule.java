@@ -1,6 +1,5 @@
 package ru.akvine.zond.rules;
 
-import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -13,7 +12,6 @@ import ru.akvine.zond.models.Violation;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 @Component
@@ -83,20 +81,24 @@ public class CheckOptionalMisuseRule extends AbstractRule {
         return scope.isMethodCallExpr() && OPTIONAL_SOURCES.contains(scope.asMethodCallExpr().getNameAsString());
     }
 
-    // Переменная типа Optional, для которой в методе нигде нет isPresent() / isEmpty(),
+    // Переменная типа Optional, до get() которой выполнение доходит без isPresent() / isEmpty(),
     // в том числе через цепочку: value.filter(...).isPresent()
     private boolean isUncheckedVariable(Expression scope, MethodCallExpr call) {
         if (LocalTypes.typeOf(scope).filter(OPTIONAL::equals).isEmpty()) {
             return false;
         }
-
-        Optional<Node> callable = Nodes.enclosingCallable(call);
         String variable = scope.toString();
-        return callable.isPresent() && callable.get().findAll(MethodCallExpr.class).stream()
-                .filter(check -> PRESENCE_CHECKS.contains(check.getNameAsString()))
-                .noneMatch(check -> check.getScope()
-                        .map(checked -> Nodes.unwrap(checked).toString())
-                        .filter(checked -> checked.equals(variable) || checked.startsWith(variable + "."))
-                        .isPresent());
+        return !Guards.isGuarded(call, check -> isPresenceCheck(check, variable));
+    }
+
+    private boolean isPresenceCheck(Expression expression, String variable) {
+        if (!expression.isMethodCallExpr()
+                || !PRESENCE_CHECKS.contains(expression.asMethodCallExpr().getNameAsString())) {
+            return false;
+        }
+        return expression.asMethodCallExpr().getScope()
+                .map(checked -> Nodes.unwrap(checked).toString())
+                .filter(checked -> checked.equals(variable) || checked.startsWith(variable + "."))
+                .isPresent();
     }
 }

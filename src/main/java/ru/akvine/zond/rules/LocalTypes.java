@@ -39,7 +39,9 @@ class LocalTypes {
      */
     Optional<String> typeOf(Expression expression) {
         Expression value = Nodes.unwrap(expression);
-        return declaredTypeOf(value).or(() -> Types.simpleName(value));
+        return declaredTypeOf(value)
+                .or(() -> Types.simpleName(value))
+                .or(() -> Lombok.typeName(value));
     }
 
     /**
@@ -189,8 +191,8 @@ class LocalTypes {
                     : Optional.of(typeName(parameter.getType()));
         }
         if (declaration instanceof VariableDeclarator variable) {
-            // var x = new Foo() -> Foo
-            if (variable.getType().isVarType()) {
+            // var x = new Foo() -> Foo; так же и val из Lombok
+            if (variable.getType().isVarType() || Lombok.isVal(variable.getType())) {
                 return variable.getInitializer()
                         .filter(initializer -> !initializer.isNameExpr())
                         .flatMap(LocalTypes::typeOf);

@@ -15,7 +15,7 @@ import java.util.Optional;
 import java.util.Set;
 
 @Component
-public class CheckPathTraversalRule extends AbstractRule {
+public class CheckPathTraversalRule extends AbstractTaintRule {
     private static final Set<String> FILE_TYPES =
             Set.of("File", "FileInputStream", "FileOutputStream", "FileReader", "FileWriter", "RandomAccessFile");
     private static final Set<String> PATH_FACTORIES = Set.of("Paths", "Path");
@@ -37,7 +37,7 @@ public class CheckPathTraversalRule extends AbstractRule {
     }
 
     @Override
-    public List<Violation> check(SourceFile sourceFile) {
+    protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
         for (Expression expression : sourceFile.unit().findAll(Expression.class)) {
             List<Expression> arguments = pathArguments(expression);
@@ -45,7 +45,7 @@ public class CheckPathTraversalRule extends AbstractRule {
                 continue;
             }
             arguments.stream()
-                    .map(WebInput::findUserInput)
+                    .map(taint::findSource)
                     .flatMap(Optional::stream)
                     .findFirst()
                     .ifPresent(input -> violations.add(violation(sourceFile, expression,

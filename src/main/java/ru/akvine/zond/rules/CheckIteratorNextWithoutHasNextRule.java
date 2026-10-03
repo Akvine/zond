@@ -1,6 +1,5 @@
 package ru.akvine.zond.rules;
 
-import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
@@ -10,7 +9,6 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 @Component
@@ -65,11 +63,17 @@ public class CheckIteratorNextWithoutHasNextRule extends AbstractRule {
                 && !hasCheck(value.toString(), call, HAS_NEXT_CHECKS);
     }
 
+    // Проверка должна стоять на пути к next(): охватывать его (while, if) либо обрывать выполнение выше
     private boolean hasCheck(String target, MethodCallExpr call, Set<String> checks) {
-        Optional<Node> callable = Nodes.enclosingCallable(call);
-        return callable.isPresent() && callable.get().findAll(MethodCallExpr.class).stream()
-                .filter(check -> checks.contains(check.getNameAsString()))
-                .anyMatch(check -> check.getScope().filter(scope -> scope.toString().equals(target)).isPresent()
-                        || check.getArguments().stream().anyMatch(argument -> argument.toString().equals(target)));
+        return Guards.isGuarded(call, check -> isCheckOf(check, target, checks));
+    }
+
+    private boolean isCheckOf(Expression expression, String target, Set<String> checks) {
+        if (!expression.isMethodCallExpr() || !checks.contains(expression.asMethodCallExpr().getNameAsString())) {
+            return false;
+        }
+        MethodCallExpr check = expression.asMethodCallExpr();
+        return check.getScope().filter(scope -> scope.toString().equals(target)).isPresent()
+                || check.getArguments().stream().anyMatch(argument -> argument.toString().equals(target));
     }
 }

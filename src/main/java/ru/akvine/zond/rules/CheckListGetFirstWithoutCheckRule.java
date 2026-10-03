@@ -1,6 +1,5 @@
 package ru.akvine.zond.rules;
 
-import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
@@ -10,7 +9,6 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 @Component
@@ -68,13 +66,19 @@ public class CheckListGetFirstWithoutCheckRule extends AbstractRule {
         return LocalTypes.typeOf(value).filter(LIST_TYPES::contains).isPresent() && !isSizeChecked(value, call);
     }
 
-    // Где-либо в методе размер списка проверяется - считаем, что доступ защищен
+    // Проверка размера должна стоять на пути к обращению: охватывать его либо обрывать выполнение выше
     private boolean isSizeChecked(Expression list, MethodCallExpr call) {
         String name = list.toString();
-        Optional<Node> callable = Nodes.enclosingCallable(call);
-        return callable.isPresent() && callable.get().findAll(MethodCallExpr.class).stream()
-                .filter(check -> SIZE_CHECKS.contains(check.getNameAsString()))
-                .anyMatch(check -> check.getScope().filter(scope -> scope.toString().equals(name)).isPresent()
-                        || check.getArguments().stream().anyMatch(argument -> argument.toString().equals(name)));
+        return Guards.isGuarded(call, check -> isSizeCheck(check, name));
+    }
+
+    // list.isEmpty(), list.size(), CollectionUtils.isEmpty(list)
+    private boolean isSizeCheck(Expression expression, String list) {
+        if (!expression.isMethodCallExpr() || !SIZE_CHECKS.contains(expression.asMethodCallExpr().getNameAsString())) {
+            return false;
+        }
+        MethodCallExpr check = expression.asMethodCallExpr();
+        return check.getScope().filter(scope -> scope.toString().equals(list)).isPresent()
+                || check.getArguments().stream().anyMatch(argument -> argument.toString().equals(list));
     }
 }

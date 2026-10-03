@@ -15,7 +15,7 @@ import java.util.List;
 import java.util.regex.Pattern;
 
 @Component
-public class CheckSqlConcatenationRule extends AbstractRule {
+public class CheckSqlConcatenationRule extends AbstractTaintRule {
     private static final String PLACEHOLDER = "?";
 
     // Строка должна именно начинаться как запрос, иначе под правило попадут сообщения логов со словами select / from
@@ -37,7 +37,7 @@ public class CheckSqlConcatenationRule extends AbstractRule {
     }
 
     @Override
-    public List<Violation> check(SourceFile sourceFile) {
+    protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
         for (BinaryExpr concatenation : sourceFile.unit().findAll(BinaryExpr.class)) {
             if (concatenation.getOperator() != BinaryExpr.Operator.PLUS || isPartOfConcatenation(concatenation)) {
@@ -57,7 +57,7 @@ public class CheckSqlConcatenationRule extends AbstractRule {
                 } else {
                     text.append(PLACEHOLDER);
                     if (isDynamic(operand)) {
-                        dynamicParts.add(operand.toString());
+                        dynamicParts.add(operand + describeOrigin(operand, taint));
                     }
                 }
             }
@@ -79,6 +79,11 @@ public class CheckSqlConcatenationRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.SECURITY;
+    }
+
+    // Данные клиента в запросе - уже не теоретическая, а прямая уязвимость: говорим об этом в сообщении
+    private String describeOrigin(Expression operand, Taint taint) {
+        return taint.findSource(operand).map(source -> " (данные запроса: " + source + ")").orElse("");
     }
 
     // "a" + b + "c" разбирается как ("a" + b) + "c": проверяем только самое внешнее выражение

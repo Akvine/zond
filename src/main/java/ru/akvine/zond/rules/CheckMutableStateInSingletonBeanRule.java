@@ -78,6 +78,10 @@ public class CheckMutableStateInSingletonBeanRule implements Rule {
 
                 for (VariableDeclarator variable : field.getVariables()) {
                     Set<String> writers = findWriters(type, variable.getNameAsString());
+                    // Сеттера в коде нет, но Lombok его создаст - и поле сможет поменять любой, у кого есть бин
+                    if (Lombok.hasSetter(type, field)) {
+                        writers.add("'" + setterName(variable.getNameAsString()) + "' (сеттер от Lombok)");
+                    }
                     if (writers.isEmpty()) {
                         continue;
                     }
@@ -130,6 +134,11 @@ public class CheckMutableStateInSingletonBeanRule implements Rule {
     /**
      * @return имена методов, в которых полю присваивается значение; конструкторы сюда не попадают
      */
+    // name -> setName
+    private String setterName(String fieldName) {
+        return "set" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+    }
+
     private Set<String> findWriters(ClassOrInterfaceDeclaration type, String fieldName) {
         Set<String> writers = new LinkedHashSet<>();
         for (MethodDeclaration method : type.getMethods()) {

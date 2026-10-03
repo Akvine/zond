@@ -209,4 +209,6 @@ public class RuleCodes {
     public final static String CHECK_ACTUATOR_EXPOSURE_RULE_CODE = "jr:202";
     public final static String CHECK_STACKTRACE_EXPOSURE_RULE_CODE = "jr:203";
     public final static String CHECK_SECRET_IN_CONFIG_RULE_CODE = "jr:204";
+    public final static String CHECK_UNUSED_METHOD_RULE_CODE = "jr:205";
+    public final static String CHECK_UNUSED_CLASS_RULE_CODE = "jr:206";
 }

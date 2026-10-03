@@ -14,9 +14,10 @@ import ru.akvine.zond.models.Violation;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 @Component
-public class CheckCommandInjectionRule extends AbstractRule {
+public class CheckCommandInjectionRule extends AbstractTaintRule {
     private static final String EXEC = "exec";
     private static final String GET_RUNTIME = "getRuntime";
     private static final String PROCESS_BUILDER = "ProcessBuilder";
@@ -34,7 +35,7 @@ public class CheckCommandInjectionRule extends AbstractRule {
     }
 
     @Override
-    public List<Violation> check(SourceFile sourceFile) {
+    protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
 
         // Runtime.getRuntime().exec("ping " + host)
@@ -45,7 +46,7 @@ public class CheckCommandInjectionRule extends AbstractRule {
                             && GET_RUNTIME.equals(scope.asMethodCallExpr().getNameAsString()))
                     .isPresent();
             if (isRuntimeExec && call.getArguments().stream().anyMatch(this::isBuiltFromVariables)) {
-                violations.add(report(sourceFile, call, "Runtime.exec(...)"));
+                violations.add(report(sourceFile, call, "Runtime.exec(...)" + describeOrigin(call.getArguments(), taint)));
             }
         }
 
@@ -53,7 +54,8 @@ public class CheckCommandInjectionRule extends AbstractRule {
         for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
             if (PROCESS_BUILDER.equals(creation.getType().getNameAsString())
                     && creation.getArguments().stream().anyMatch(this::isBuiltFromVariables)) {
-                violations.add(report(sourceFile, creation, "new ProcessBuilder(...)"));
+                violations.add(report(sourceFile, creation,
+                        "new ProcessBuilder(...)" + describeOrigin(creation.getArguments(), taint)));
             }
         }
 
@@ -69,6 +71,16 @@ public class CheckCommandInjectionRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.SECURITY;
+    }
+
+    // Данные клиента в команде - уже не теоретическая, а прямая уязвимость: говорим об этом в сообщении
+    private String describeOrigin(List<Expression> arguments, Taint taint) {
+        return arguments.stream()
+                .map(taint::findSource)
+                .flatMap(Optional::stream)
+                .findFirst()
+                .map(source -> " (данные запроса: " + source + ")")
+                .orElse("");
     }
 
     private Violation report(SourceFile sourceFile, Node node, String source) {

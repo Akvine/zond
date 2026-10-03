@@ -49,7 +49,9 @@ public class FileSystemSourceLoader implements SourceLoader {
             }
         }
 
-        typeSolver.addSources(sources, configuration());
+        // Файлы, которые решатель разбирает сам, тоже должны уметь разрешать свои типы
+        typeSolver.addSources(sources, configuration()
+                .setSymbolResolver(new JavaSymbolSolver(typeSolver.solver())));
         return new LoadResult(sources, failedFiles);
     }
 

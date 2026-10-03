@@ -84,10 +84,11 @@ class Resources {
     }
 
     /**
-     * @return true для обычной локальной переменной: не поле, не ресурс в try (...) и не счетчик цикла
+     * @return true для обычной локальной переменной: не поле, не ресурс в try (...), не счетчик цикла
+     * и не переменная с @Cleanup, которую Lombok закроет сам
      */
     boolean isLocalVariable(VariableDeclarator variable) {
-        return variable.getParentNode()
+        return !Lombok.isCleanedUp(variable) && variable.getParentNode()
                 .filter(parent -> parent instanceof VariableDeclarationExpr)
                 .flatMap(Node::getParentNode)
                 .filter(parent -> parent instanceof ExpressionStmt)

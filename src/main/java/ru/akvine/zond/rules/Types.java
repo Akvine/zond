@@ -2,10 +2,11 @@ package ru.akvine.zond.rules;
 
 import com.github.javaparser.ast.DataKey;
 import com.github.javaparser.ast.Node;
-import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.nodeTypes.NodeWithExtends;
 import com.github.javaparser.ast.nodeTypes.NodeWithImplements;
@@ -37,17 +38,12 @@ import java.util.stream.Stream;
 class Types {
     private static final DataKey<Optional<ResolvedType>> RESOLVED_TYPE = new DataKey<>() {
     };
+    private static final DataKey<Optional<ResolvedType>> RESOLVED_TYPE_NAME = new DataKey<>() {
+    };
 
     private static final String JDK_PACKAGE = "java.";
     private static final String ARRAY_SUFFIX = "[]";
     private static final char PACKAGE_SEPARATOR = '.';
-
-    private static final String GET_PREFIX = "get";
-    private static final String IS_PREFIX = "is";
-
-    // Аннотации Lombok, которые создают геттеры: на классе - для всех полей, @Getter - еще и на отдельном поле
-    private static final String GETTER = "Getter";
-    private static final Set<String> GETTER_ANNOTATIONS = Set.of(GETTER, "Data", "Value");
 
     /**
      * Тип вместе с предками
@@ -97,6 +93,44 @@ class Types {
         }
         type.setData(RESOLVED_TYPE, resolved);
         return resolved;
+    }
+
+    /**
+     * Тип по имени класса, которое стоит в коде как выражение: User в User.builder().
+     * У такого имени нет значения, поэтому обычным путем его тип не узнать.
+     */
+    Optional<ResolvedType> resolveTypeName(NameExpr name) {
+        if (name.containsData(RESOLVED_TYPE_NAME)) {
+            return name.getData(RESOLVED_TYPE_NAME);
+        }
+
+        Optional<ResolvedType> resolved = Optional.empty();
+        if (hasSolver(name)) {
+            // Решателю нужен узел-тип, стоящий в дереве: по его месту определяются импорты и пакет.
+            // Временно подвешиваем такой узел к имени и сразу убираем
+            ClassOrInterfaceType type = new ClassOrInterfaceType(null, name.getNameAsString());
+            type.setParentNode(name);
+            try {
+                resolved = Optional.of(type.resolve());
+            } catch (RuntimeException | StackOverflowError exception) {
+                // Имя не обозначает класс либо класс не найден
+            } finally {
+                type.setParentNode(null);
+            }
+        }
+        name.setData(RESOLVED_TYPE_NAME, resolved);
+        return resolved;
+    }
+
+    /**
+     * @return объявление типа выражения в исходниках проекта; пусто для типов из JDK и библиотек
+     */
+    Optional<TypeDeclaration<?>> projectType(Expression expression) {
+        return resolve(expression).flatMap(Types::projectType);
+    }
+
+    Optional<TypeDeclaration<?>> projectType(ResolvedType type) {
+        return declaration(type).flatMap(Types::sourceOf);
     }
 
     /**
@@ -180,13 +214,37 @@ class Types {
      * По ней вызов сопоставляется с нужной из перегрузок
      */
     Optional<Integer> declarationLine(MethodCallExpr call) {
+        return declaration(call).flatMap(Node::getBegin).map(position -> position.line);
+    }
+
+    /**
+     * @return объявление вызванного метода, если оно найдено в исходниках проекта. Узел может принадлежать
+     * не тому дереву, что проверяют правила: решатель разбирает файлы сам. Сопоставлять нужно по файлу и строке
+     */
+    Optional<MethodDeclaration> declaration(MethodCallExpr call) {
         if (!hasSolver(call)) {
             return Optional.empty();
         }
         try {
-            return call.resolve().toAst().flatMap(Node::getBegin).map(position -> position.line);
+            return call.resolve().toAst()
+                    .filter(node -> node instanceof MethodDeclaration)
+                    .map(node -> (MethodDeclaration) node);
         } catch (RuntimeException | StackOverflowError exception) {
             return Optional.empty();
+        }
+    }
+
+    /**
+     * @return true, если вызов разрешен и ведет в JDK или библиотеку, а не в исходники проекта
+     */
+    boolean isLibraryCall(MethodCallExpr call) {
+        if (!hasSolver(call)) {
+            return false;
+        }
+        try {
+            return call.resolve().toAst().isEmpty();
+        } catch (RuntimeException | StackOverflowError exception) {
+            return false;
         }
     }
 
@@ -207,59 +265,8 @@ class Types {
             }
             return Optional.of(expression.calculateResolvedType());
         } catch (RuntimeException | StackOverflowError exception) {
-            return lombokGetterType(expression);
+            return Lombok.resolve(expression);
         }
-    }
-
-    /**
-     * user.getName() при @Getter / @Data на классе User: метода в исходниках нет, он появится при компиляции.
-     * Тип берется у поля, для которого Lombok создаст этот геттер.
-     */
-    private Optional<ResolvedType> lombokGetterType(Expression expression) {
-        if (!expression.isMethodCallExpr()) {
-            return Optional.empty();
-        }
-        MethodCallExpr call = expression.asMethodCallExpr();
-        if (!call.getArguments().isEmpty() || call.getScope().isEmpty()) {
-            return Optional.empty();
-        }
-
-        Optional<String> fieldName = getterField(call.getNameAsString());
-        Optional<ResolvedReferenceTypeDeclaration> owner = resolve(call.getScope().get()).flatMap(Types::declaration);
-        if (fieldName.isEmpty() || owner.isEmpty() || !hasLombokGetter(owner.get(), fieldName.get())) {
-            return Optional.empty();
-        }
-        try {
-            return Optional.of(owner.get().getField(fieldName.get()).getType());
-        } catch (RuntimeException | StackOverflowError exception) {
-            return Optional.empty();
-        }
-    }
-
-    // getName -> name, isActive -> active
-    private Optional<String> getterField(String method) {
-        String prefix = method.startsWith(GET_PREFIX) ? GET_PREFIX : method.startsWith(IS_PREFIX) ? IS_PREFIX : null;
-        if (prefix == null || method.length() == prefix.length()) {
-            return Optional.empty();
-        }
-        String name = method.substring(prefix.length());
-        return Optional.of(Character.toLowerCase(name.charAt(0)) + name.substring(1));
-    }
-
-    private boolean hasLombokGetter(ResolvedReferenceTypeDeclaration owner, String fieldName) {
-        Optional<TypeDeclaration<?>> source = sourceOf(owner);
-        if (source.isEmpty()) {
-            return false;
-        }
-        Optional<FieldDeclaration> field = source.get().getFields().stream()
-                .filter(candidate -> candidate.getVariables().stream()
-                        .anyMatch(variable -> variable.getNameAsString().equals(fieldName)))
-                .findFirst();
-        if (field.isEmpty() || field.get().isStatic()) {
-            return false;
-        }
-        return annotationNames(source.get()).anyMatch(GETTER_ANNOTATIONS::contains)
-                || annotationNames(field.get()).anyMatch(GETTER::equals);
     }
 
     private Optional<Boolean> matches(ResolvedType type, Predicate<String> typeName) {
