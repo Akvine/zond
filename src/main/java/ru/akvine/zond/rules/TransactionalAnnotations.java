@@ -1,5 +1,8 @@
 package ru.akvine.zond.rules;
 
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
@@ -12,6 +15,7 @@ import java.util.Set;
 @UtilityClass
 class TransactionalAnnotations {
     private final static String TRANSACTIONAL = "Transactional";
+    private final static String READ_ONLY = "readOnly";
 
     // Режимы, при которых метод обязан получить собственное поведение, а не просто присоединиться к транзакции
     private final static Set<String> OWN_BEHAVIOR_PROPAGATIONS =
@@ -29,6 +33,36 @@ class TransactionalAnnotations {
 
     boolean isPresent(NodeWithAnnotations<?> node) {
         return find(node).isPresent();
+    }
+
+    /**
+     * Аннотация на методе полностью заменяет аннотацию на классе; аннотация на классе действует на public-методы.
+     *
+     * @return аннотация, которая определяет транзакцию метода
+     */
+    Optional<AnnotationExpr> findEffective(MethodDeclaration method) {
+        Optional<AnnotationExpr> onMethod = find(method);
+        if (onMethod.isPresent()) {
+            return onMethod;
+        }
+
+        return method.getParentNode()
+                .filter(parent -> parent instanceof TypeDeclaration<?>)
+                .map(parent -> (TypeDeclaration<?>) parent)
+                .filter(type -> method.isPublic() || isInterface(type))
+                .flatMap(TransactionalAnnotations::find);
+    }
+
+    boolean isReadOnly(AnnotationExpr annotation) {
+        return annotation.isNormalAnnotationExpr()
+                && annotation.asNormalAnnotationExpr().getPairs().stream()
+                .anyMatch(pair -> READ_ONLY.equals(pair.getNameAsString())
+                        && pair.getValue().isBooleanLiteralExpr()
+                        && pair.getValue().asBooleanLiteralExpr().getValue());
+    }
+
+    private boolean isInterface(TypeDeclaration<?> type) {
+        return type instanceof ClassOrInterfaceDeclaration declaration && declaration.isInterface();
     }
 
     /**

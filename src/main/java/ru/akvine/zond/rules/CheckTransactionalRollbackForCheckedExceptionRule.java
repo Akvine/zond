@@ -1,9 +1,6 @@
 package ru.akvine.zond.rules;
 
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.body.TypeDeclaration;
-import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import com.github.javaparser.ast.type.ReferenceType;
 import org.springframework.stereotype.Component;
@@ -14,7 +11,6 @@ import ru.akvine.zond.models.Violation;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -74,7 +70,7 @@ public class CheckTransactionalRollbackForCheckedExceptionRule implements Rule {
                 continue;
             }
 
-            findEffectiveAnnotation(method)
+            TransactionalAnnotations.findEffective(method)
                     .filter(annotation -> !TransactionalAnnotations.hasRollbackRule(annotation))
                     .ifPresent(annotation -> violations.add(new Violation(
                             errorLevel(),
@@ -116,23 +112,5 @@ public class CheckTransactionalRollbackForCheckedExceptionRule implements Rule {
     // java.io.IOException -> IOException
     private String simpleName(ReferenceType type) {
         return type.isClassOrInterfaceType() ? type.asClassOrInterfaceType().getNameAsString() : type.asString();
-    }
-
-    // Аннотация на методе полностью заменяет аннотацию на классе; аннотация на классе действует на public-методы
-    private Optional<AnnotationExpr> findEffectiveAnnotation(MethodDeclaration method) {
-        Optional<AnnotationExpr> onMethod = TransactionalAnnotations.find(method);
-        if (onMethod.isPresent()) {
-            return onMethod;
-        }
-
-        return method.getParentNode()
-                .filter(parent -> parent instanceof TypeDeclaration<?>)
-                .map(parent -> (TypeDeclaration<?>) parent)
-                .filter(type -> method.isPublic() || isInterface(type))
-                .flatMap(TransactionalAnnotations::find);
-    }
-
-    private boolean isInterface(TypeDeclaration<?> type) {
-        return type instanceof ClassOrInterfaceDeclaration declaration && declaration.isInterface();
     }
 }
