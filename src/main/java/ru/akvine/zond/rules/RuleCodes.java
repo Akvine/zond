@@ -9,4 +9,5 @@ public class RuleCodes {
     public final static String CHECK_TRANSACTIONAL_SELF_INVOCATION_RULE_CODE = "jr:2";
     public final static String CHECK_TRANSACTIONAL_ROLLBACK_FOR_CHECKED_EXCEPTION_RULE_CODE = "jr:3";
     public final static String CHECK_AUTOWIRED_ON_STATIC_FIELD_RULE_CODE = "jr:4";
+    public final static String CHECK_TRANSACTIONAL_ON_CONTROLLER_RULE_CODE = "jr:5";
 }
