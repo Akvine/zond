@@ -53,4 +53,9 @@ public class RuleCodes {
     public final static String CHECK_WAIT_WITHOUT_TIMEOUT_RULE_CODE = "jr:46";
     public final static String CHECK_IGNORED_SUBMIT_RESULT_RULE_CODE = "jr:47";
     public final static String CHECK_PUT_IF_ABSENT_WITH_LOGIC_RULE_CODE = "jr:48";
+    public final static String CHECK_TO_MAP_WITHOUT_MERGE_RULE_CODE = "jr:49";
+    public final static String CHECK_PARALLEL_STREAM_WITH_IO_RULE_CODE = "jr:50";
+    public final static String CHECK_PEEK_WITH_SIDE_EFFECT_RULE_CODE = "jr:51";
+    public final static String CHECK_COLLECT_UNBOUNDED_STREAM_RULE_CODE = "jr:52";
+    public final static String CHECK_FLAT_MAP_INFINITE_STREAM_RULE_CODE = "jr:53";
 }
