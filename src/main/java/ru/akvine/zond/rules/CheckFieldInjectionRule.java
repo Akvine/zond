@@ -1,0 +1,121 @@
+package ru.akvine.zond.rules;
+
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
+import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
+import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.ErrorLevel;
+import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.models.SourceFile;
+import ru.akvine.zond.models.Violation;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+@Component
+public class CheckFieldInjectionRule implements Rule {
+    private static final Set<String> INJECTION_ANNOTATIONS = Set.of("Autowired", "Inject", "Resource");
+
+    private static final Set<String> TEST_CLASS_ANNOTATIONS = Set.of("ExtendWith", "RunWith");
+    private static final Set<String> TEST_METHOD_ANNOTATIONS = Set.of("Test", "ParameterizedTest", "RepeatedTest");
+    private static final String TEST_SUFFIX = "Test";
+
+    @Override
+    public String name() {
+        return getClass().getSimpleName();
+    }
+
+    @Override
+    public String code() {
+        return RuleCodes.CHECK_FIELD_INJECTION_RULE_CODE;
+    }
+
+    @Override
+    public String description() {
+        return "Сканирует код и ищет внедрение зависимостей через поле вместо конструктора";
+    }
+
+    @Override
+    public boolean enabled() {
+        return true;
+    }
+
+    @Override
+    public List<Violation> check(SourceFile sourceFile) {
+        List<Violation> violations = new ArrayList<>();
+        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+            // Статические не учитываем: в них внедрение не работает в принципе, это ловит отдельное правило
+            if (field.isStatic() || isInsideTestClass(field)) {
+                continue;
+            }
+
+            findInjectionAnnotation(field).ifPresent(annotation -> violations.add(new Violation(
+                    errorLevel(),
+                    errorType(),
+                    code(),
+                    name(),
+                    sourceFile.path(),
+                    field.getBegin().map(position -> position.line).orElse(0),
+                    "Внедрение через поле '" + fieldNames(field) + "' (@" + annotation.getName().getIdentifier()
+                            + "): используйте внедрение через конструктор - зависимость станет явной,"
+                            + " а поле можно будет сделать final")));
+        }
+        return violations;
+    }
+
+    @Override
+    public ErrorLevel errorLevel() {
+        return ErrorLevel.MINOR;
+    }
+
+    @Override
+    public ErrorType errorType() {
+        return ErrorType.CODE_SMELL;
+    }
+
+    // Сравниваем по простому имени, чтобы поймать и короткую, и полную запись аннотации
+    private Optional<AnnotationExpr> findInjectionAnnotation(FieldDeclaration field) {
+        return field.getAnnotations().stream()
+                .filter(annotation -> INJECTION_ANNOTATIONS.contains(annotation.getName().getIdentifier()))
+                .findFirst();
+    }
+
+    // В тестах внедрение через поле - обычная практика: экземпляр создает тестовый фреймворк, а не Spring
+    private boolean isInsideTestClass(FieldDeclaration field) {
+        Node current = field.getParentNode().orElse(null);
+        while (current != null) {
+            if (current instanceof TypeDeclaration<?> type && isTestClass(type)) {
+                return true;
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
+    }
+
+    // @SpringBootTest, @WebMvcTest, @DataJpaTest и т.п., @ExtendWith / @RunWith либо тестовые методы внутри
+    private boolean isTestClass(TypeDeclaration<?> type) {
+        boolean annotatedAsTest = annotationNames(type).stream()
+                .anyMatch(name -> name.endsWith(TEST_SUFFIX) || TEST_CLASS_ANNOTATIONS.contains(name));
+        return annotatedAsTest || type.getMethods().stream()
+                .anyMatch(method -> annotationNames(method).stream().anyMatch(TEST_METHOD_ANNOTATIONS::contains));
+    }
+
+    private Set<String> annotationNames(NodeWithAnnotations<?> node) {
+        return node.getAnnotations().stream()
+                .map(annotation -> annotation.getName().getIdentifier())
+                .collect(Collectors.toSet());
+    }
+
+    // В одном объявлении может быть несколько полей: A a, b;
+    private String fieldNames(FieldDeclaration field) {
+        return field.getVariables().stream()
+                .map(NodeWithSimpleName::getNameAsString)
+                .collect(Collectors.joining(", "));
+    }
+}
