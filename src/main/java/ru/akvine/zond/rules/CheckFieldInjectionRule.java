@@ -1,10 +1,7 @@
 package ru.akvine.zond.rules;
 
-import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.FieldDeclaration;
-import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
-import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -21,10 +18,6 @@ import java.util.stream.Collectors;
 @Component
 public class CheckFieldInjectionRule implements Rule {
     private static final Set<String> INJECTION_ANNOTATIONS = Set.of("Autowired", "Inject", "Resource");
-
-    private static final Set<String> TEST_CLASS_ANNOTATIONS = Set.of("ExtendWith", "RunWith");
-    private static final Set<String> TEST_METHOD_ANNOTATIONS = Set.of("Test", "ParameterizedTest", "RepeatedTest");
-    private static final String TEST_SUFFIX = "Test";
 
     @Override
     public String name() {
@@ -50,8 +43,9 @@ public class CheckFieldInjectionRule implements Rule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
-            // Статические не учитываем: в них внедрение не работает в принципе, это ловит отдельное правило
-            if (field.isStatic() || isInsideTestClass(field)) {
+            // Статические не учитываем: в них внедрение не работает в принципе, это ловит отдельное правило.
+            // В тестах внедрение через поле - обычная практика: экземпляр создает тестовый фреймворк, а не Spring
+            if (field.isStatic() || TestClasses.isInside(field)) {
                 continue;
             }
 
@@ -84,32 +78,6 @@ public class CheckFieldInjectionRule implements Rule {
         return field.getAnnotations().stream()
                 .filter(annotation -> INJECTION_ANNOTATIONS.contains(annotation.getName().getIdentifier()))
                 .findFirst();
-    }
-
-    // В тестах внедрение через поле - обычная практика: экземпляр создает тестовый фреймворк, а не Spring
-    private boolean isInsideTestClass(FieldDeclaration field) {
-        Node current = field.getParentNode().orElse(null);
-        while (current != null) {
-            if (current instanceof TypeDeclaration<?> type && isTestClass(type)) {
-                return true;
-            }
-            current = current.getParentNode().orElse(null);
-        }
-        return false;
-    }
-
-    // @SpringBootTest, @WebMvcTest, @DataJpaTest и т.п., @ExtendWith / @RunWith либо тестовые методы внутри
-    private boolean isTestClass(TypeDeclaration<?> type) {
-        boolean annotatedAsTest = annotationNames(type).stream()
-                .anyMatch(name -> name.endsWith(TEST_SUFFIX) || TEST_CLASS_ANNOTATIONS.contains(name));
-        return annotatedAsTest || type.getMethods().stream()
-                .anyMatch(method -> annotationNames(method).stream().anyMatch(TEST_METHOD_ANNOTATIONS::contains));
-    }
-
-    private Set<String> annotationNames(NodeWithAnnotations<?> node) {
-        return node.getAnnotations().stream()
-                .map(annotation -> annotation.getName().getIdentifier())
-                .collect(Collectors.toSet());
     }
 
     // В одном объявлении может быть несколько полей: A a, b;

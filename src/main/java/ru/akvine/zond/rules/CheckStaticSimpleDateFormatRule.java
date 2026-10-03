@@ -11,10 +11,13 @@ import ru.akvine.zond.models.Violation;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
 @Component
 public class CheckStaticSimpleDateFormatRule implements Rule {
-    private static final String SIMPLE_DATE_FORMAT = "SimpleDateFormat";
+    private static final Set<String> NOT_THREAD_SAFE_TYPES =
+            Set.of("SimpleDateFormat", "Calendar", "GregorianCalendar");
 
     @Override
     public String name() {
@@ -28,7 +31,7 @@ public class CheckStaticSimpleDateFormatRule implements Rule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет SimpleDateFormat в статических полях";
+        return "Сканирует код и ищет SimpleDateFormat и Calendar в статических полях";
     }
 
     @Override
@@ -45,19 +48,17 @@ public class CheckStaticSimpleDateFormatRule implements Rule {
             }
 
             for (VariableDeclarator variable : field.getVariables()) {
-                if (!isSimpleDateFormat(variable)) {
-                    continue;
-                }
-                violations.add(new Violation(
+                findNotThreadSafeType(variable).ifPresent(type -> violations.add(new Violation(
                         errorLevel(),
                         errorType(),
                         code(),
                         name(),
                         sourceFile.path(),
                         variable.getBegin().map(position -> position.line).orElse(0),
-                        "SimpleDateFormat в статическом поле '" + variable.getNameAsString()
+                        type + " в статическом поле '" + variable.getNameAsString()
                                 + "': класс не потокобезопасен, при одновременном использовании даты будут"
-                                + " разбираться и форматироваться неверно; используйте DateTimeFormatter"));
+                                + " разбираться и форматироваться неверно; используйте типы java.time"
+                                + " (DateTimeFormatter, LocalDateTime)")));
             }
         }
         return violations;
@@ -75,15 +76,15 @@ public class CheckStaticSimpleDateFormatRule implements Rule {
 
     // По типу поля либо по инициализатору: static DateFormat FORMAT = new SimpleDateFormat(...).
     // ThreadLocal<SimpleDateFormat> сюда не попадает - это как раз безопасный вариант
-    private boolean isSimpleDateFormat(VariableDeclarator variable) {
-        if (SIMPLE_DATE_FORMAT.equals(simpleName(variable.getType()))) {
-            return true;
+    private Optional<String> findNotThreadSafeType(VariableDeclarator variable) {
+        String declaredType = simpleName(variable.getType());
+        if (NOT_THREAD_SAFE_TYPES.contains(declaredType)) {
+            return Optional.of(declaredType);
         }
         return variable.getInitializer()
                 .filter(initializer -> initializer.isObjectCreationExpr())
                 .map(initializer -> initializer.asObjectCreationExpr().getType().getNameAsString())
-                .filter(SIMPLE_DATE_FORMAT::equals)
-                .isPresent();
+                .filter(NOT_THREAD_SAFE_TYPES::contains);
     }
 
     // java.text.SimpleDateFormat -> SimpleDateFormat

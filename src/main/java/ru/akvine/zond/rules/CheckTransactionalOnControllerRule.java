@@ -2,7 +2,6 @@ package ru.akvine.zond.rules;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
-import com.github.javaparser.ast.body.MethodDeclaration;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;

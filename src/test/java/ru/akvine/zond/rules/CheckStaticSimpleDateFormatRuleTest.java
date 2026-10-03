@@ -26,10 +26,13 @@ class CheckStaticSimpleDateFormatRuleTest {
                     private static final ThreadLocal<SimpleDateFormat> SAFE = ThreadLocal.withInitial(() -> new SimpleDateFormat("yyyy"));
                     private static final DateTimeFormatter MODERN = DateTimeFormatter.ISO_DATE;
                     void local() { SimpleDateFormat local = new SimpleDateFormat("yyyy"); }
+                    private static final Calendar CALENDAR = Calendar.getInstance();
+                    private static Calendar gregorian = new GregorianCalendar();
+                    private final Calendar instanceCalendar = Calendar.getInstance();
                 }
                 """));
 
-        assertThat(violations).extracting(Violation::line).containsExactly(2, 3, 4);
+        assertThat(violations).extracting(Violation::line).containsExactly(2, 3, 4, 9, 10);
         assertThat(violations).allMatch(violation -> violation.ruleCode().equals("jr:9"));
         assertThat(violations).allMatch(violation -> violation.errorLevel() == ErrorLevel.CRITICAL);
         assertThat(violations).allMatch(violation -> violation.errorType() == ErrorType.DATE_AND_TIME);
