@@ -11,4 +11,5 @@ public class RuleCodes {
     public final static String CHECK_AUTOWIRED_ON_STATIC_FIELD_RULE_CODE = "jr:4";
     public final static String CHECK_TRANSACTIONAL_ON_CONTROLLER_RULE_CODE = "jr:5";
     public final static String CHECK_FIELD_INJECTION_RULE_CODE = "jr:6";
+    public final static String CHECK_MUTABLE_STATE_IN_SINGLETON_BEAN_RULE_CODE = "jr:7";
 }
