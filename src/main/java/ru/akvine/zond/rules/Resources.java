@@ -1,0 +1,65 @@
+package ru.akvine.zond.rules;
+
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.VariableDeclarationExpr;
+import com.github.javaparser.ast.stmt.ExpressionStmt;
+import lombok.experimental.UtilityClass;
+
+import java.util.Set;
+
+/**
+ * Ресурсы, которые нужно закрывать. Типы не разрешаем, поэтому узнаем их по известным именам классов и методов.
+ */
+@UtilityClass
+class Resources {
+    private final static String FILES = "Files";
+    private final static String SYSTEM_IN = "System.in";
+
+    private final static Set<String> RESOURCE_TYPES = Set.of(
+            "FileInputStream", "FileOutputStream", "FileReader", "FileWriter", "RandomAccessFile",
+            "BufferedReader", "BufferedWriter", "BufferedInputStream", "BufferedOutputStream",
+            "InputStreamReader", "OutputStreamWriter", "PrintWriter", "PrintStream", "Scanner",
+            "DataInputStream", "DataOutputStream", "ObjectInputStream", "ObjectOutputStream",
+            "ZipInputStream", "ZipOutputStream", "GZIPInputStream", "GZIPOutputStream",
+            "Socket", "ServerSocket");
+
+    private final static Set<String> FILES_RESOURCE_METHODS = Set.of(
+            "lines", "list", "walk", "find",
+            "newInputStream", "newOutputStream", "newBufferedReader", "newBufferedWriter", "newDirectoryStream");
+
+    private final static Set<String> RESOURCE_METHODS = Set.of(
+            "getConnection", "prepareStatement", "prepareCall", "createStatement", "executeQuery", "openStream");
+
+    /**
+     * @return true, если выражение открывает ресурс: new FileInputStream(...), Files.lines(...), getConnection()
+     */
+    boolean opens(Expression initializer) {
+        Expression value = Nodes.unwrap(initializer);
+        if (value.isObjectCreationExpr()) {
+            // new Scanner(System.in): стандартный ввод закрывать не нужно
+            return RESOURCE_TYPES.contains(value.asObjectCreationExpr().getType().getNameAsString())
+                    && !value.toString().contains(SYSTEM_IN);
+        }
+        if (value.isMethodCallExpr()) {
+            MethodCallExpr call = value.asMethodCallExpr();
+            boolean filesResource = FILES_RESOURCE_METHODS.contains(call.getNameAsString())
+                    && MethodCalls.isCallOn(call, FILES, call.getNameAsString());
+            return filesResource || (call.getScope().isPresent() && RESOURCE_METHODS.contains(call.getNameAsString()));
+        }
+        return false;
+    }
+
+    /**
+     * @return true для обычной локальной переменной: не поле, не ресурс в try (...) и не счетчик цикла
+     */
+    boolean isLocalVariable(VariableDeclarator variable) {
+        return variable.getParentNode()
+                .filter(parent -> parent instanceof VariableDeclarationExpr)
+                .flatMap(Node::getParentNode)
+                .filter(parent -> parent instanceof ExpressionStmt)
+                .isPresent();
+    }
+}

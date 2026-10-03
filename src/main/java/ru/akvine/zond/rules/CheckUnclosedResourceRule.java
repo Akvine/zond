@@ -5,8 +5,6 @@ import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
-import com.github.javaparser.ast.expr.VariableDeclarationExpr;
-import com.github.javaparser.ast.stmt.ExpressionStmt;
 import com.github.javaparser.ast.stmt.TryStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -23,24 +21,7 @@ import java.util.Set;
 public class CheckUnclosedResourceRule extends AbstractRule {
     private static final String CLOSE = "close";
     private static final String FILES = "Files";
-    private static final String SYSTEM_IN = "System.in";
-
-    // Типы не разрешаем, поэтому ресурсы узнаем по известным именам классов и методов
-    private static final Set<String> RESOURCE_TYPES = Set.of(
-            "FileInputStream", "FileOutputStream", "FileReader", "FileWriter", "RandomAccessFile",
-            "BufferedReader", "BufferedWriter", "BufferedInputStream", "BufferedOutputStream",
-            "InputStreamReader", "OutputStreamWriter", "PrintWriter", "PrintStream", "Scanner",
-            "DataInputStream", "DataOutputStream", "ObjectInputStream", "ObjectOutputStream",
-            "ZipInputStream", "ZipOutputStream", "GZIPInputStream", "GZIPOutputStream",
-            "Socket", "ServerSocket");
-
     private static final Set<String> FILES_STREAM_METHODS = Set.of("lines", "list", "walk", "find");
-    private static final Set<String> FILES_RESOURCE_METHODS = Set.of(
-            "lines", "list", "walk", "find",
-            "newInputStream", "newOutputStream", "newBufferedReader", "newBufferedWriter", "newDirectoryStream");
-
-    private static final Set<String> RESOURCE_METHODS = Set.of(
-            "getConnection", "prepareStatement", "prepareCall", "createStatement", "executeQuery", "openStream");
 
     // Завершающие операции стрима: после них закрыть стрим уже некому
     private static final Set<String> TERMINAL_OPERATIONS = Set.of(
@@ -62,8 +43,8 @@ public class CheckUnclosedResourceRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
 
         for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
-            if (isLocalVariable(variable)
-                    && variable.getInitializer().filter(this::opensResource).isPresent()
+            if (Resources.isLocalVariable(variable)
+                    && variable.getInitializer().filter(Resources::opens).isPresent()
                     && isNeverClosed(variable)) {
                 violations.add(violation(sourceFile, variable,
                         "Ресурс '" + variable.getNameAsString() + "' открыт и не закрыт:"
@@ -89,31 +70,6 @@ public class CheckUnclosedResourceRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.RESOURCE;
-    }
-
-    // Обычная локальная переменная: не поле, не ресурс в try (...) и не счетчик цикла
-    private boolean isLocalVariable(VariableDeclarator variable) {
-        return variable.getParentNode()
-                .filter(parent -> parent instanceof VariableDeclarationExpr)
-                .flatMap(Node::getParentNode)
-                .filter(parent -> parent instanceof ExpressionStmt)
-                .isPresent();
-    }
-
-    private boolean opensResource(Expression initializer) {
-        Expression value = Nodes.unwrap(initializer);
-        if (value.isObjectCreationExpr()) {
-            // new Scanner(System.in): стандартный ввод закрывать не нужно
-            return RESOURCE_TYPES.contains(value.asObjectCreationExpr().getType().getNameAsString())
-                    && !value.toString().contains(SYSTEM_IN);
-        }
-        if (value.isMethodCallExpr()) {
-            MethodCallExpr call = value.asMethodCallExpr();
-            boolean filesResource = FILES_RESOURCE_METHODS.contains(call.getNameAsString())
-                    && MethodCalls.isCallOn(call, FILES, call.getNameAsString());
-            return filesResource || (call.getScope().isPresent() && RESOURCE_METHODS.contains(call.getNameAsString()));
-        }
-        return false;
     }
 
     private boolean isNeverClosed(VariableDeclarator variable) {
