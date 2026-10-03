@@ -21,6 +21,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String REPORT_OPTION = "report";
     private static final String DISABLE_OPTION = "disable";
     private static final String MIN_LEVEL_OPTION = "min-level";
+    private static final String SKIP_TESTS_OPTION = "skip-tests";
     private static final String RULES_SEPARATOR = ",";
     private static final String EXIT_COMMAND = "exit";
 
@@ -121,7 +122,17 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
                 : settings.disabledRules() + RULES_SEPARATOR + disabledByArgument;
 
         String minLevel = optionValue(args, MIN_LEVEL_OPTION);
-        return ScanOptions.parse(disabled, minLevel == null ? settings.minLevel() : minLevel);
+        return ScanOptions.parse(disabled, minLevel == null ? settings.minLevel() : minLevel)
+                .withSkipTests(resolveSkipTests(args));
+    }
+
+    // --skip-tests и --skip-tests=true включают пропуск, --skip-tests=false отменяет заданный в app.properties
+    private boolean resolveSkipTests(ApplicationArguments args) {
+        if (!args.containsOption(SKIP_TESTS_OPTION)) {
+            return settings.skipTests();
+        }
+        String value = optionValue(args, SKIP_TESTS_OPTION);
+        return value == null || value.isBlank() || Boolean.parseBoolean(value.trim());
     }
 
     private String optionValue(ApplicationArguments args, String name) {

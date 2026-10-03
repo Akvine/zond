@@ -87,6 +87,21 @@ class ScanRunnerTest {
     }
 
     @Test
+    void skipTestsArgumentExcludesTestDirectories() throws IOException {
+        // Единственный файл с нарушением переносим в каталог test
+        Path test = Files.createDirectories(dir.resolve("src/test/java"));
+        Files.move(dir.resolve("Bad.java"), test.resolve("Bad.java"));
+
+        ScanRunner withTests = runner("");
+        withTests.run(new DefaultApplicationArguments("--path=" + dir));
+        assertThat(withTests.getExitCode()).isEqualTo(1);
+
+        ScanRunner withoutTests = runner("");
+        withoutTests.run(new DefaultApplicationArguments("--path=" + dir, "--skip-tests"));
+        assertThat(withoutTests.getExitCode()).isZero();
+    }
+
+    @Test
     void unknownMinLevelIsAnError() {
         ScanRunner runner = runner("");
 
@@ -110,7 +125,7 @@ class ScanRunnerTest {
                         List.of(new CheckTransactionOnPrivateMethodRule()),
                         (number, total, rule) -> {}),
                 new PrinterFactory(new ReportFormatter()),
-                new ZondSettings(reportPath, "", ""),
+                new ZondSettings(reportPath, "", "", ""),
                 consoleInput);
     }
 }

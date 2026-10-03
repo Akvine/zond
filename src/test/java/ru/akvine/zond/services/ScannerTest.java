@@ -162,6 +162,37 @@ class ScannerTest {
     }
 
     @Test
+    void skipsTestDirectoriesWhenAsked(@TempDir Path dir) throws IOException {
+        String code = """
+                class Sample {
+                    @Transactional
+                    private void save() {}
+                }
+                """;
+        Path main = Files.createDirectories(dir.resolve("src/main/java"));
+        Path test = Files.createDirectories(dir.resolve("src/test/java/nested"));
+        Files.writeString(main.resolve("Main.java"), code);
+        Files.writeString(test.resolve("MainTest.java"), code);
+        Files.writeString(dir.resolve("src/test/application.properties"), "spring.jpa.hibernate.ddl-auto=validate\n");
+        ScanOptions skipTests = ScanOptions.defaults().withSkipTests(true);
+
+        ScanResult everything = scanner.scan(dir);
+        assertThat(everything.filesCount()).isEqualTo(3);
+        assertThat(everything.violations()).hasSize(2);
+        assertThat(everything.testsSkipped()).isFalse();
+
+        ScanResult withoutTests = scanner.scan(dir, skipTests);
+        assertThat(withoutTests.filesCount()).isEqualTo(1);
+        assertThat(withoutTests.violations())
+                .extracting(violation -> violation.file().getFileName().toString())
+                .containsExactly("Main.java");
+        assertThat(new ReportFormatter().format(withoutTests)).contains("Файлов проверено: 1 (каталоги test пропущены)");
+
+        // Если сканировать попросили сам каталог test, он проверяется
+        assertThat(scanner.scan(dir.resolve("src/test"), skipTests).violations()).hasSize(1);
+    }
+
+    @Test
     void suppressesViolationsInConfigFiles(@TempDir Path dir) throws IOException {
         Files.writeString(dir.resolve("application.properties"), """
                 spring.jpa.hibernate.ddl-auto=update

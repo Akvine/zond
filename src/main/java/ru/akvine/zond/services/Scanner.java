@@ -34,8 +34,9 @@ public class Scanner {
     }
 
     public ScanResult scan(Path root, ScanOptions options) {
-        LoadResult loaded = sourceLoader.load(root);
-        List<ConfigFile> configFiles = configLoader.load(root);
+        // Файлы, исключенные настройками, отсеиваются до разбора
+        LoadResult loaded = sourceLoader.load(root, file -> options.includes(root, file));
+        List<ConfigFile> configFiles = configLoader.load(root, file -> options.includes(root, file));
 
         // Spring отдает правила в произвольном порядке - выстраиваем по номеру, чтобы прогресс шел предсказуемо
         List<Rule> enabledRules = rules.stream().filter(Rule::enabled).toList();
@@ -66,6 +67,7 @@ public class Scanner {
                 enabledRules.size() - activeRules.size(),
                 violations,
                 found - violations.size(),
+                options.skipTests(),
                 loaded.failedFiles());
     }
 

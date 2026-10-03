@@ -14,7 +14,11 @@ public class ReportFormatter {
         StringBuilder report = new StringBuilder();
         report.append("Zond: отчет о сканировании").append(newLine);
         report.append("Путь: ").append(result.root().toAbsolutePath().normalize()).append(newLine);
-        report.append("Файлов проверено: ").append(result.filesCount()).append(newLine);
+        report.append("Файлов проверено: ").append(result.filesCount());
+        if (result.testsSkipped()) {
+            report.append(" (каталоги test пропущены)");
+        }
+        report.append(newLine);
         report.append("Активных правил: ").append(result.rulesCount());
         if (result.disabledRulesCount() > 0) {
             report.append(" (отключено настройками: ").append(result.disabledRulesCount()).append(')');

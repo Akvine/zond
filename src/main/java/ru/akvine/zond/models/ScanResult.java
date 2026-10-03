@@ -10,6 +10,7 @@ import java.util.List;
  * @param disabledRulesCount сколько правил отключено настройками: списком правил или порогом уровня
  * @param violations         найденные проблемы
  * @param suppressedCount    сколько проблем скрыто комментариями zond:ignore
+ * @param testsSkipped       каталоги test не проверялись
  * @param failedFiles        файлы, которые не удалось разобрать
  */
 public record ScanResult(
@@ -19,6 +20,7 @@ public record ScanResult(
         int disabledRulesCount,
         List<Violation> violations,
         int suppressedCount,
+        boolean testsSkipped,
         List<Path> failedFiles) {
 
     public boolean hasViolations() {

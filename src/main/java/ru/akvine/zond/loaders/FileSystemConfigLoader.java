@@ -14,6 +14,7 @@ import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -41,14 +42,14 @@ public class FileSystemConfigLoader implements ConfigLoader {
     }
 
     @Override
-    public List<ConfigFile> load(Path root) {
+    public List<ConfigFile> load(Path root, Predicate<Path> included) {
         if (!Files.exists(root)) {
             return List.of();
         }
 
         List<ConfigFile> files = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(root)) {
-            for (Path path : paths.filter(Files::isRegularFile).filter(this::isConfig).sorted().toList()) {
+            for (Path path : paths.filter(Files::isRegularFile).filter(this::isConfig).filter(included).sorted().toList()) {
                 List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
                 boolean isProperties = path.getFileName().toString().endsWith(PROPERTIES_EXTENSION);
                 files.add(new ConfigFile(path, isProperties ? parseProperties(lines) : parseYaml(lines)));

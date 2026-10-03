@@ -2,6 +2,7 @@ package ru.akvine.zond.models;
 
 import ru.akvine.zond.enums.ErrorLevel;
 
+import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.Locale;
 import java.util.Set;
@@ -12,15 +13,40 @@ import java.util.stream.Collectors;
  *
  * @param disabledRules коды и имена отключенных правил в нижнем регистре: jr:40, checkmagicnumberrule
  * @param minLevel      наименее строгий уровень, который еще попадает в отчет
+ * @param skipTests     не проверять файлы из каталогов test
  */
-public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel) {
+public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel, boolean skipTests) {
     private static final String SEPARATOR = "[,;\\s]+";
+    private static final String TEST_DIRECTORY = "test";
 
     /**
-     * @return настройки по умолчанию: все правила, все уровни
+     * @return настройки по умолчанию: все правила, все уровни, все файлы
      */
     public static ScanOptions defaults() {
-        return new ScanOptions(Set.of(), ErrorLevel.INFO);
+        return new ScanOptions(Set.of(), ErrorLevel.INFO, false);
+    }
+
+    public ScanOptions withSkipTests(boolean skip) {
+        return new ScanOptions(disabledRules, minLevel, skip);
+    }
+
+    /**
+     * @param root с чего начато сканирование
+     * @return true, если файл нужно проверять
+     */
+    public boolean includes(Path root, Path file) {
+        if (!skipTests) {
+            return true;
+        }
+
+        // Смотрим только на часть пути ниже корня: если сканировать попросили сам каталог test, его и проверяем
+        Path relative = root.toAbsolutePath().normalize().relativize(file.toAbsolutePath().normalize());
+        for (Path part : relative) {
+            if (TEST_DIRECTORY.equals(part.toString())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
@@ -32,7 +58,7 @@ public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel) {
                 .filter(rule -> !rule.isBlank())
                 .map(ScanOptions::normalize)
                 .collect(Collectors.toSet());
-        return new ScanOptions(disabled, parseLevel(minLevel));
+        return new ScanOptions(disabled, parseLevel(minLevel), false);
     }
 
     /**

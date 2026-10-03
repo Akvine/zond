@@ -16,14 +16,24 @@ public class ZondSettings {
     private final String reportPath;
     private final String disabledRules;
     private final String minLevel;
+    private final String skipTests;
 
     public ZondSettings(
             @Value("${zond.report.path:}") String reportPath,
             @Value("${zond.rules.disabled:}") String disabledRules,
-            @Value("${zond.rules.min-level:}") String minLevel) {
+            @Value("${zond.rules.min-level:}") String minLevel,
+            @Value("${zond.scan.skip-tests:}") String skipTests) {
         this.reportPath = reportPath;
         this.disabledRules = disabledRules;
         this.minLevel = minLevel;
+        this.skipTests = skipTests;
+    }
+
+    /**
+     * @return true, если каталоги test проверять не нужно. Свойство без значения считается выключенным
+     */
+    public boolean skipTests() {
+        return Boolean.parseBoolean(skipTests.trim());
     }
 
     /**
