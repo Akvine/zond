@@ -6,10 +6,6 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.config.ZondSettings;
-import ru.akvine.zond.models.ScanOptions;
-import ru.akvine.zond.models.ScanResult;
-import ru.akvine.zond.printers.PrinterFactory;
-import ru.akvine.zond.services.Scanner;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -23,80 +19,33 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String MIN_LEVEL_OPTION = "min-level";
     private static final String SKIP_TESTS_OPTION = "skip-tests";
     private static final String RULES_SEPARATOR = ",";
-    private static final String EXIT_COMMAND = "exit";
 
-    private static final int EXIT_OK = 0;
-    private static final int EXIT_VIOLATIONS_FOUND = 1;
-    private static final int EXIT_ERROR = 2;
-
-    private final Scanner scanner;
-    private final PrinterFactory printerFactory;
+    private final ScanExecutor scanExecutor;
+    private final MainMenu mainMenu;
     private final ZondSettings settings;
-    private final ConsoleInput consoleInput;
 
-    private int exitCode = EXIT_OK;
+    private int exitCode = ScanExecutor.EXIT_OK;
 
     @Override
     public void run(ApplicationArguments args) {
-        ScanOptions options;
+        SessionSettings session;
         try {
-            options = resolveOptions(args);
+            session = resolveSettings(args);
         } catch (IllegalArgumentException exception) {
             // Ошибка в настройках: сканировать с неверным порогом уровня хуже, чем не сканировать вовсе
             System.err.println("Ошибка: " + exception.getMessage());
-            exitCode = EXIT_ERROR;
+            exitCode = ScanExecutor.EXIT_ERROR;
             return;
         }
 
-        Path report = resolveReport(args);
+        // Путь передан аргументом - сканируем и выходим, без меню: так приложение запускают скрипты и CI
         String path = resolvePath(args);
-        if (path != null) {
-            scan(path, report, options);
-            return;
-        }
-        runInteractive(report, options);
+        exitCode = path != null ? scanExecutor.scan(Path.of(path), session) : mainMenu.open(session);
     }
 
     @Override
     public int getExitCode() {
         return exitCode;
-    }
-
-    // Путь не передан аргументом - спрашиваем у пользователя, пока он не выйдет
-    private void runInteractive(Path report, ScanOptions options) {
-        System.out.println("Введите путь к .java файлу или директории ('" + EXIT_COMMAND
-                + "' или пустая строка - выход)");
-        while (true) {
-            String line = consoleInput.readLine("> ");
-            if (line == null) {
-                return;
-            }
-
-            String path = unquote(line.trim());
-            if (path.isEmpty() || EXIT_COMMAND.equalsIgnoreCase(path)) {
-                return;
-            }
-            scan(path, report, options);
-        }
-    }
-
-    private void scan(String path, Path report, ScanOptions options) {
-        try {
-            ScanResult result = scanner.scan(Path.of(path), options);
-            printerFactory.create(report).print(result);
-            exitCode = result.hasViolations() ? EXIT_VIOLATIONS_FOUND : EXIT_OK;
-        } catch (RuntimeException exception) {
-            System.err.println("Ошибка: " + exception.getMessage());
-            exitCode = EXIT_ERROR;
-        }
-    }
-
-    // Проводник Windows при "Копировать как путь" оборачивает путь в кавычки
-    private String unquote(String value) {
-        if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
-            return value.substring(1, value.length() - 1).trim();
-        }
-        return value;
     }
 
     // --path=... либо первый позиционный аргумент
@@ -108,22 +57,20 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         return args.getNonOptionArgs().isEmpty() ? null : args.getNonOptionArgs().get(0);
     }
 
-    // --report=... важнее, чем zond.report.path из app.properties
-    private Path resolveReport(ApplicationArguments args) {
+    // Аргументы важнее app.properties; правила из --disable=... добавляются к отключенным в файле
+    private SessionSettings resolveSettings(ApplicationArguments args) {
         String report = optionValue(args, REPORT_OPTION);
-        return report == null ? settings.reportPath() : Path.of(report);
-    }
-
-    // Правила из --disable=... добавляются к отключенным в app.properties; --min-level=... заменяет порог из файла
-    private ScanOptions resolveOptions(ApplicationArguments args) {
         String disabledByArgument = optionValue(args, DISABLE_OPTION);
         String disabled = disabledByArgument == null
                 ? settings.disabledRules()
                 : settings.disabledRules() + RULES_SEPARATOR + disabledByArgument;
-
         String minLevel = optionValue(args, MIN_LEVEL_OPTION);
-        return ScanOptions.parse(disabled, minLevel == null ? settings.minLevel() : minLevel)
-                .withSkipTests(resolveSkipTests(args));
+
+        return SessionSettings.of(
+                report == null ? settings.reportPath() : Path.of(report),
+                disabled,
+                minLevel == null ? settings.minLevel() : minLevel,
+                resolveSkipTests(args));
     }
 
     // --skip-tests и --skip-tests=true включают пропуск, --skip-tests=false отменяет заданный в app.properties

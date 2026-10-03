@@ -30,4 +30,16 @@ public class ConsoleInput {
             throw new UncheckedIOException("Не удалось прочитать ввод", exception);
         }
     }
+
+    /**
+     * @return введенная строка без пробелов по краям
+     * @throws InputClosedException если ввод закончился
+     */
+    public String ask(String prompt) {
+        String line = readLine(prompt);
+        if (line == null) {
+            throw new InputClosedException();
+        }
+        return line.trim();
+    }
 }

@@ -22,8 +22,6 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 public class Scanner {
-    private static final String CODE_SEPARATOR = ":";
-
     private final SourceLoader sourceLoader;
     private final ConfigLoader configLoader;
     private final List<Rule> rules;
@@ -38,11 +36,11 @@ public class Scanner {
         LoadResult loaded = sourceLoader.load(root, file -> options.includes(root, file));
         List<ConfigFile> configFiles = configLoader.load(root, file -> options.includes(root, file));
 
-        // Spring отдает правила в произвольном порядке - выстраиваем по номеру, чтобы прогресс шел предсказуемо
+        // Правила идут по номеру кода, чтобы прогресс шел предсказуемо
         List<Rule> enabledRules = rules.stream().filter(Rule::enabled).toList();
         List<Rule> activeRules = enabledRules.stream()
                 .filter(rule -> options.allows(rule.code(), rule.name(), rule.errorLevel()))
-                .sorted(Comparator.comparingInt(rule -> codeNumber(rule.code())))
+                .sorted(RuleCatalog.BY_CODE)
                 .toList();
 
         List<Violation> violations = new ArrayList<>();
@@ -81,13 +79,5 @@ public class Scanner {
         }
         return sources.stream().flatMap(source -> rule.check(source).stream()).toList();
     }
-
-    // jr:12 -> 12; код без номера уходит в конец
-    private int codeNumber(String code) {
-        try {
-            return Integer.parseInt(code.substring(code.lastIndexOf(CODE_SEPARATOR) + 1));
-        } catch (NumberFormatException exception) {
-            return Integer.MAX_VALUE;
-        }
-    }
 }
+
