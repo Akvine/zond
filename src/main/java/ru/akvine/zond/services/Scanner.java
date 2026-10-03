@@ -7,6 +7,7 @@ import ru.akvine.zond.models.LoadResult;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.Rule;
 
 import java.nio.file.Path;
@@ -36,6 +37,10 @@ public class Scanner {
         for (int index = 0; index < activeRules.size(); index++) {
             Rule rule = activeRules.get(index);
             progressListener.onRuleStarted(index + 1, activeRules.size(), rule);
+            if (rule instanceof ProjectRule projectRule) {
+                violations.addAll(projectRule.checkProject(loaded.sources()));
+                continue;
+            }
             for (SourceFile source : loaded.sources()) {
                 violations.addAll(rule.check(source));
             }
