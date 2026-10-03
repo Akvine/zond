@@ -50,10 +50,9 @@ public class CheckConditionAwaitOutsideLoopRule extends AbstractRule {
         return ErrorType.CONCURRENCY;
     }
 
-    // По типу переменной, чтобы не спутать с CountDownLatch.await(); если тип по файлу не определить - по имени
+    // По типу, чтобы не спутать с CountDownLatch.await(); если тип определить не удалось - по имени
     private boolean isCondition(Expression scope) {
-        return LocalTypes.typeOf(scope)
-                .map(CONDITION::equals)
-                .orElseGet(() -> scope.toString().toLowerCase().contains(CONDITION.toLowerCase()));
+        return LocalTypes.isAnyOf(scope, Set.of(CONDITION),
+                () -> scope.toString().toLowerCase().contains(CONDITION.toLowerCase()));
     }
 }

@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules;
 
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -17,7 +18,12 @@ public class CheckMissingBatchProcessingRule extends AbstractRule {
     private static final String UPDATE = "update";
     private static final String EXECUTE_UPDATE = "executeUpdate";
 
-    // Типы не разрешаем, поэтому JdbcTemplate и EntityManager узнаем по имени объекта
+    // JdbcTemplate, Statement и EntityManager узнаем по типу, а если тип определить не удалось - по имени объекта
+    private static final Set<String> JDBC_TEMPLATE_TYPES = Set.of(
+            "JdbcTemplate", "JdbcOperations", "NamedParameterJdbcTemplate", "NamedParameterJdbcOperations");
+    private static final Set<String> STATEMENT_TYPES = Set.of("Statement", "Query");
+    private static final Set<String> ENTITY_MANAGER_TYPES = Set.of("EntityManager", "Session");
+
     private static final Pattern JDBC_TEMPLATE = Pattern.compile(".*jdbctemplate.*", Pattern.CASE_INSENSITIVE);
     private static final Pattern ENTITY_MANAGER =
             Pattern.compile("^(em|session)$|.*entitymanager.*", Pattern.CASE_INSENSITIVE);
@@ -65,15 +71,19 @@ public class CheckMissingBatchProcessingRule extends AbstractRule {
             return Optional.empty();
         }
 
-        String receiver = MethodCalls.receiverName(call.getScope().get());
+        Expression scope = call.getScope().get();
+        String receiver = MethodCalls.receiverName(scope);
         String method = call.getNameAsString();
-        if (UPDATE.equals(method) && JDBC_TEMPLATE.matcher(receiver).matches()) {
+        if (UPDATE.equals(method) && Types.isKindOf(scope, JDBC_TEMPLATE_TYPES)
+                .orElseGet(() -> JDBC_TEMPLATE.matcher(receiver).matches())) {
             return Optional.of("используйте batchUpdate(...)");
         }
-        if (EXECUTE_UPDATE.equals(method) && !Repositories.isRepository(receiver)) {
+        if (EXECUTE_UPDATE.equals(method) && Types.isKindOf(scope, STATEMENT_TYPES)
+                .orElseGet(() -> !Repositories.isRepository(receiver))) {
             return Optional.of("используйте addBatch() и executeBatch()");
         }
-        if (ENTITY_MANAGER_WRITES.contains(method) && ENTITY_MANAGER.matcher(receiver).matches()) {
+        if (ENTITY_MANAGER_WRITES.contains(method) && Types.isKindOf(scope, ENTITY_MANAGER_TYPES)
+                .orElseGet(() -> ENTITY_MANAGER.matcher(receiver).matches())) {
             return Optional.of("включите hibernate.jdbc.batch_size и делайте flush() / clear() пачками");
         }
         return Optional.empty();

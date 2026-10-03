@@ -13,6 +13,7 @@ import ru.akvine.zond.models.Violation;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -21,7 +22,9 @@ public class CheckLogPlaceholderMismatchRule extends AbstractRule {
     private static final Pattern PLACEHOLDER = Pattern.compile("(?<!\\\\)\\{}");
     private static final String ARRAY_SUFFIX = "[]";
 
-    // Типы не разрешаем: исключение в конце списка аргументов узнаем по имени
+    // Исключение в конце списка аргументов узнаем по типу, а если тип определить не удалось - по имени
+    private static final Set<String> THROWABLE = Set.of("Throwable");
+
     private static final Pattern EXCEPTION_NAME =
             Pattern.compile("^(e|ex|exc|t|th|cause|error|throwable)$|.*(exception|error|throwable)$", Pattern.CASE_INSENSITIVE);
 
@@ -91,8 +94,12 @@ public class CheckLogPlaceholderMismatchRule extends AbstractRule {
         return count;
     }
 
-    // Переменная блока catch либо имя, похожее на исключение
+    // Переменная блока catch, выражение с типом исключения либо имя, похожее на исключение
     private boolean isException(Expression argument, MethodCallExpr call) {
+        Optional<Boolean> byType = Types.isKindOf(argument, THROWABLE);
+        if (byType.isPresent()) {
+            return byType.get();
+        }
         if (!argument.isNameExpr()) {
             return false;
         }

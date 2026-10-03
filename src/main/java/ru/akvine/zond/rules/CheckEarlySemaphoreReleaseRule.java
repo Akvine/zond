@@ -86,11 +86,10 @@ public class CheckEarlySemaphoreReleaseRule extends AbstractRule {
         return ErrorType.CONCURRENCY;
     }
 
-    // По типу переменной; если тип по файлу не определить - по имени
+    // По типу; если тип определить не удалось - по имени
     private boolean isSemaphore(Expression scope) {
-        return LocalTypes.typeOf(scope)
-                .map(SEMAPHORE::equals)
-                .orElseGet(() -> scope.toString().toLowerCase().contains(SEMAPHORE.toLowerCase()));
+        return LocalTypes.isAnyOf(scope, Set.of(SEMAPHORE),
+                () -> scope.toString().toLowerCase().contains(SEMAPHORE.toLowerCase()));
     }
 
     // Захват того же семафора выше по методу

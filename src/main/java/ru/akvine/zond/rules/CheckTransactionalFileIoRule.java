@@ -12,13 +12,16 @@ import java.util.Set;
 
 @Component
 public class CheckTransactionalFileIoRule extends AbstractTransactionalBlockingCallRule {
-    // Типы не разрешаем, поэтому файловые операции узнаем по известным классам и методам
+    // Файловые операции узнаем по известным классам и методам; где тип удается разрешить - проверяем и его
     private static final Set<String> FILE_UTILITIES = Set.of("Files", "FileUtils", "FileCopyUtils", "ImageIO");
     private static final Set<String> FILE_TYPES = Set.of(
             "FileInputStream", "FileOutputStream", "FileReader", "FileWriter", "RandomAccessFile");
 
     // MultipartFile.transferTo(...)
     private static final Set<String> FILE_METHODS = Set.of("transferTo");
+
+    // У этих типов transferTo пишет на диск; у InputStream и Reader - копирует поток в памяти
+    private static final Set<String> TRANSFER_TYPES = Set.of("MultipartFile", "Part", "FileChannel");
 
     @Override
     public String code() {
@@ -42,18 +45,32 @@ public class CheckTransactionalFileIoRule extends AbstractTransactionalBlockingC
 
     @Override
     protected Optional<String> describeBlockingCall(Node node) {
-        if (node instanceof ObjectCreationExpr creation
-                && FILE_TYPES.contains(creation.getType().getNameAsString())) {
+        if (node instanceof ObjectCreationExpr creation && isFileType(creation)) {
             return Optional.of("new " + creation.getType().getNameAsString());
         }
 
         if (node instanceof MethodCallExpr call && call.getScope().isPresent()) {
             String receiver = MethodCalls.receiverName(call.getScope().get());
-            if (FILE_UTILITIES.contains(receiver) || FILE_METHODS.contains(call.getNameAsString())) {
+            if (isFileUtility(call, receiver) || isFileTransfer(call)) {
                 return Optional.of(receiver + "." + call.getNameAsString());
             }
         }
         return Optional.empty();
+    }
+
+    // Сам класс либо его наследник; собственный класс проекта с таким же именем файлом не считается
+    private boolean isFileType(ObjectCreationExpr creation) {
+        return Types.isKindOf(creation.getType(), FILE_TYPES)
+                .orElseGet(() -> FILE_TYPES.contains(creation.getType().getNameAsString()));
+    }
+
+    private boolean isFileUtility(MethodCallExpr call, String receiver) {
+        return FILE_UTILITIES.contains(receiver) && !Types.isDeclaredInProject(call);
+    }
+
+    private boolean isFileTransfer(MethodCallExpr call) {
+        return FILE_METHODS.contains(call.getNameAsString())
+                && Types.isKindOf(call.getScope().get(), TRANSFER_TYPES).orElse(true);
     }
 
     @Override

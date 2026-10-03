@@ -75,11 +75,9 @@ public class CheckIgnoredSubmitResultRule extends AbstractRule {
         return ErrorType.CONCURRENCY;
     }
 
-    // По типу переменной; если тип по файлу не определить - по имени: executor, threadPool, getScheduler()
+    // По типу; если тип определить не удалось - по имени: executor, threadPool, getScheduler()
     private boolean isExecutor(Expression scope) {
-        return LocalTypes.typeOf(scope)
-                .map(EXECUTOR_TYPES::contains)
-                .orElseGet(() -> EXECUTOR_NAME.matcher(lastName(scope)).matches());
+        return LocalTypes.isAnyOf(scope, EXECUTOR_TYPES, () -> EXECUTOR_NAME.matcher(lastName(scope)).matches());
     }
 
     private String lastName(Expression scope) {

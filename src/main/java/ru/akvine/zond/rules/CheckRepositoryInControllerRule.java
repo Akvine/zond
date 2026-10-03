@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules;
 
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.type.Type;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -16,8 +17,11 @@ import java.util.regex.Pattern;
 public class CheckRepositoryInControllerRule extends AbstractRule {
     private static final Set<String> CONTROLLER_ANNOTATIONS = Set.of("Controller", "RestController");
 
-    // Типы не разрешаем, поэтому репозиторий узнаем по имени типа
-    private static final Pattern REPOSITORY_TYPE = Pattern.compile(".*(Repository|Dao|DAO)$|^EntityManager$|^JdbcTemplate$");
+    private static final String REPOSITORY = "Repository";
+
+    // Репозиторий узнаем по имени типа либо его предка: interface Users extends JpaRepository
+    private static final Pattern REPOSITORY_TYPE =
+            Pattern.compile(".*(Repository|Dao|DAO)$|^EntityManager$|^JdbcTemplate$");
 
     @Override
     public String code() {
@@ -37,8 +41,8 @@ public class CheckRepositoryInControllerRule extends AbstractRule {
                 continue;
             }
             SpringBeans.findDependencies(type).stream()
+                    .filter(this::isRepository)
                     .map(SpringBeans.Dependency::type)
-                    .filter(dependency -> REPOSITORY_TYPE.matcher(dependency).matches())
                     .findFirst()
                     .ifPresent(repository -> violations.add(violation(sourceFile, type,
                             "Контроллер '" + type.getNameAsString() + "' зависит от '" + repository + "' напрямую:"
@@ -56,5 +60,14 @@ public class CheckRepositoryInControllerRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.CODE_SMELL;
+    }
+
+    private boolean isRepository(SpringBeans.Dependency dependency) {
+        Type type = dependency.declaredType();
+        boolean annotated = Types.projectTypeAnnotations(type)
+                .filter(annotations -> annotations.contains(REPOSITORY))
+                .isPresent();
+        return annotated || Types.matches(type, name -> REPOSITORY_TYPE.matcher(name).matches())
+                .orElseGet(() -> REPOSITORY_TYPE.matcher(dependency.type()).matches());
     }
 }

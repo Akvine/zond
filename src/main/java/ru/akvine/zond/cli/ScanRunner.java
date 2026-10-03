@@ -18,6 +18,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String DISABLE_OPTION = "disable";
     private static final String MIN_LEVEL_OPTION = "min-level";
     private static final String SKIP_TESTS_OPTION = "skip-tests";
+    private static final String CLASSPATH_OPTION = "classpath";
     private static final String RULES_SEPARATOR = ",";
 
     private final ScanExecutor scanExecutor;
@@ -66,11 +67,16 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
                 : settings.disabledRules() + RULES_SEPARATOR + disabledByArgument;
         String minLevel = optionValue(args, MIN_LEVEL_OPTION);
 
-        return SessionSettings.of(
+        SessionSettings session = SessionSettings.of(
                 report == null ? settings.reportPath() : Path.of(report),
                 disabled,
                 minLevel == null ? settings.minLevel() : minLevel,
                 resolveSkipTests(args));
+
+        // --classpath=... заменяет библиотеки из zond.scan.classpath
+        String classpath = optionValue(args, CLASSPATH_OPTION);
+        session.setClasspath(classpath == null ? settings.classpath() : ZondSettings.parseClasspath(classpath));
+        return session;
     }
 
     // --skip-tests и --skip-tests=true включают пропуск, --skip-tests=false отменяет заданный в app.properties

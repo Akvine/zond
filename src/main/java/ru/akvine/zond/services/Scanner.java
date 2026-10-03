@@ -33,7 +33,7 @@ public class Scanner {
 
     public ScanResult scan(Path root, ScanOptions options) {
         // Файлы, исключенные настройками, отсеиваются до разбора
-        LoadResult loaded = sourceLoader.load(root, file -> options.includes(root, file));
+        LoadResult loaded = sourceLoader.load(root, file -> options.includes(root, file), options.classpath());
         List<ConfigFile> configFiles = configLoader.load(root, file -> options.includes(root, file));
 
         // Правила идут по номеру кода, чтобы прогресс шел предсказуемо

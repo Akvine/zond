@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules;
 
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import lombok.experimental.UtilityClass;
 
 import java.util.Set;
@@ -10,7 +11,7 @@ class ExecutorCreations {
     private final static String EXECUTORS = "Executors";
     private final static String FACTORY_PREFIX = "new";
 
-    // Типы не разрешаем, поэтому пулы потоков узнаем по известным именам классов
+    // Пулы потоков: известные классы и их наследники; собственный класс проекта с таким же именем - не пул
     private final static Set<String> EXECUTOR_TYPES = Set.of(
             "ThreadPoolExecutor", "ScheduledThreadPoolExecutor", "ForkJoinPool", "ThreadPoolTaskExecutor",
             "ThreadPoolTaskScheduler");
@@ -21,7 +22,8 @@ class ExecutorCreations {
     boolean creates(Expression expression) {
         Expression value = Nodes.unwrap(expression);
         if (value.isObjectCreationExpr()) {
-            return EXECUTOR_TYPES.contains(value.asObjectCreationExpr().getType().getNameAsString());
+            ClassOrInterfaceType type = value.asObjectCreationExpr().getType();
+            return Types.isKindOf(type, EXECUTOR_TYPES).orElseGet(() -> EXECUTOR_TYPES.contains(type.getNameAsString()));
         }
         return value.isMethodCallExpr()
                 && value.asMethodCallExpr().getNameAsString().startsWith(FACTORY_PREFIX)

@@ -9,6 +9,7 @@ import ru.akvine.zond.models.ScanOptions;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
@@ -39,6 +40,11 @@ public class SessionSettings {
      * Коды и имена отключенных правил в том виде, как их задал пользователь
      */
     private final Set<String> disabledRules = new LinkedHashSet<>();
+
+    /**
+     * Библиотеки проверяемого проекта, по которым разрешаются типы
+     */
+    private List<Path> classpath = List.of();
 
     /**
      * @param reportFile    файл отчета либо null для вывода в консоль
@@ -96,6 +102,8 @@ public class SessionSettings {
     }
 
     public ScanOptions toScanOptions() {
-        return ScanOptions.parse(disabledRulesAsText(), minLevel.name()).withSkipTests(skipTests);
+        return ScanOptions.parse(disabledRulesAsText(), minLevel.name())
+                .withSkipTests(skipTests)
+                .withClasspath(classpath);
     }
 }

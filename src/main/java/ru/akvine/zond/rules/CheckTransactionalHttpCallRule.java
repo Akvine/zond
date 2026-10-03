@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -12,7 +13,15 @@ import java.util.regex.Pattern;
 
 @Component
 public class CheckTransactionalHttpCallRule extends AbstractTransactionalBlockingCallRule {
-    // Типы не разрешаем, поэтому HTTP-клиент узнаем по имени объекта либо по характерному методу
+    // HTTP-клиент узнаем по типу, а если тип определить не удалось - по имени объекта либо по характерному методу
+    private static final Set<String> HTTP_CLIENT_TYPES = Set.of(
+            "RestTemplate", "RestOperations", "WebClient", "RestClient", "HttpClient", "CloseableHttpClient",
+            "OkHttpClient");
+
+    // У URL сетевые только openStream() и openConnection(), а не getHost() или getPath()
+    private static final Set<String> URL_TYPES = Set.of("URL", "URLConnection");
+    private static final String FEIGN_CLIENT = "FeignClient";
+
     private static final Pattern HTTP_CLIENT = Pattern.compile(
             ".*(resttemplate|webclient|restclient|httpclient|feign).*|.*client$", Pattern.CASE_INSENSITIVE);
 
@@ -46,9 +55,24 @@ public class CheckTransactionalHttpCallRule extends AbstractTransactionalBlockin
             return Optional.empty();
         }
 
-        String receiver = MethodCalls.receiverName(call.getScope().get());
-        boolean isHttp = HTTP_METHODS.contains(call.getNameAsString()) || HTTP_CLIENT.matcher(receiver).matches();
-        return isHttp ? Optional.of(receiver + "." + call.getNameAsString()) : Optional.empty();
+        Expression scope = call.getScope().get();
+        String receiver = MethodCalls.receiverName(scope);
+        return isHttpClient(scope, call.getNameAsString(), receiver)
+                ? Optional.of(receiver + "." + call.getNameAsString())
+                : Optional.empty();
+    }
+
+    private boolean isHttpClient(Expression scope, String method, String receiver) {
+        // Интерфейс с @FeignClient - свой класс проекта, по имени типа его не узнать
+        if (Types.annotations(scope).contains(FEIGN_CLIENT)) {
+            return true;
+        }
+        if (Types.isKindOf(scope, URL_TYPES).orElse(false)) {
+            return HTTP_METHODS.contains(method);
+        }
+        // Тип из JDK, не связанный с сетью (Exchanger.exchange(), Map client), под имена подходит случайно
+        return Types.matches(scope, HTTP_CLIENT_TYPES::contains)
+                .orElseGet(() -> HTTP_METHODS.contains(method) || HTTP_CLIENT.matcher(receiver).matches());
     }
 
     @Override

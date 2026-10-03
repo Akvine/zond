@@ -11,7 +11,6 @@ import ru.akvine.zond.models.Violation;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -52,7 +51,7 @@ public abstract class AbstractSelfInvocationRule extends AbstractRule {
                     if (!isSelfCall(call, type)) {
                         continue;
                     }
-                    findCallee(call, proxied).ifPresent(callee -> {
+                    MethodCalls.findCallee(call, proxied).ifPresent(callee -> {
                         String annotation = Annotations.find(callee, annotations())
                                 .map(AnnotationExpr::getNameAsString)
                                 .orElse("");
@@ -81,13 +80,5 @@ public abstract class AbstractSelfInvocationRule extends AbstractRule {
             current = current.getParentNode().orElse(null);
         }
         return current;
-    }
-
-    // Типы не разрешаем, поэтому перегрузки различаем только по числу аргументов
-    private Optional<MethodDeclaration> findCallee(MethodCallExpr call, List<MethodDeclaration> candidates) {
-        return candidates.stream()
-                .filter(method -> method.getNameAsString().equals(call.getNameAsString()))
-                .filter(method -> method.getParameters().size() == call.getArguments().size())
-                .findFirst();
     }
 }

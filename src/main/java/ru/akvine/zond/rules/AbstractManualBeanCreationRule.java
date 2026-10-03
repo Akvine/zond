@@ -22,7 +22,8 @@ public abstract class AbstractManualBeanCreationRule extends AbstractRule {
             Set.of("Component", "Service", "Repository", "Controller", "RestController");
 
     /**
-     * Типы не разрешаем, поэтому бин узнаем по имени класса
+     * Шаблон имени класса, по которому узнается бин. Если класс найден в исходниках проекта,
+     * дополнительно проверяется, что на нем есть стереотип Spring
      */
     protected abstract Pattern beanTypeName();
 
@@ -40,7 +41,7 @@ public abstract class AbstractManualBeanCreationRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         return sourceFile.unit().findAll(ObjectCreationExpr.class).stream()
                 .filter(creation -> isBeanType(creation.getType().getNameAsString()))
-                .filter(creation -> !isDeclaredHereAsPlainClass(sourceFile, creation.getType().getNameAsString()))
+                .filter(creation -> !isPlainClass(sourceFile, creation))
                 .filter(creation -> !isInsideBeanDefinition(creation))
                 .filter(creation -> !TestClasses.isInside(creation))
                 .map(creation -> violation(sourceFile, creation,
@@ -53,6 +54,16 @@ public abstract class AbstractManualBeanCreationRule extends AbstractRule {
 
     private boolean isBeanType(String typeName) {
         return beanTypeName().matcher(typeName).matches() && !notBeanTypes().contains(typeName);
+    }
+
+    // Класс без стереотипа (где бы в проекте он ни был объявлен) и класс из JDK - не бины
+    private boolean isPlainClass(SourceFile sourceFile, ObjectCreationExpr creation) {
+        if (Types.isJdkType(creation.getType())) {
+            return true;
+        }
+        return Types.projectTypeAnnotations(creation.getType())
+                .map(annotations -> annotations.stream().noneMatch(STEREOTYPE_ANNOTATIONS::contains))
+                .orElseGet(() -> isDeclaredHereAsPlainClass(sourceFile, creation.getType().getNameAsString()));
     }
 
     // Класс объявлен в этом же файле без стереотипа - это обычный класс, а не бин

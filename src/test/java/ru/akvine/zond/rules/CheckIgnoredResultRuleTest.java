@@ -24,6 +24,10 @@ class CheckIgnoredResultRuleTest {
                         amount.intValueExact();
                         print(text.trim());
                         list.removeIf(item -> text.equals(item));
+                        String chosen = switch (list.size()) {
+                            case 0 -> text.trim();
+                            default -> text.strip();
+                        };
                     }
                 }
                 """)).containsExactly(3, 4, 5, 6, 7);

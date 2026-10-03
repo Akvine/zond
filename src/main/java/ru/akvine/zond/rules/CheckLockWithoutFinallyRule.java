@@ -54,12 +54,11 @@ public class CheckLockWithoutFinallyRule extends AbstractRule {
         return ErrorType.CONCURRENCY;
     }
 
-    // По типу переменной; если тип по файлу не определить - по имени: lock, readLock(), writeLock.
+    // По типу; если тип определить не удалось - по имени: lock, readLock(), writeLock.
     // Именно окончание имени: иначе под правило попадет blockService.lock()
     private boolean isLock(Expression scope) {
-        return LocalTypes.typeOf(scope)
-                .map(LOCK_TYPES::contains)
-                .orElseGet(() -> MethodCalls.receiverName(scope).toLowerCase().endsWith(LOCK_NAME));
+        return LocalTypes.isAnyOf(scope, LOCK_TYPES,
+                () -> MethodCalls.receiverName(scope).toLowerCase().endsWith(LOCK_NAME));
     }
 
     // В том же методе есть unlock() того же замка, и стоит он в finally

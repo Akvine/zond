@@ -4,6 +4,7 @@ import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.models.LoadResult;
 import ru.akvine.zond.models.SourceFile;
@@ -23,14 +24,15 @@ public class FileSystemSourceLoader implements SourceLoader {
     private static final String JAVA_EXTENSION = ".java";
 
     @Override
-    public LoadResult load(Path root, Predicate<Path> included) {
+    public LoadResult load(Path root, Predicate<Path> included, List<Path> classpath) {
         if (!Files.exists(root)) {
             throw new IllegalArgumentException("Путь не существует: " + root);
         }
 
-        JavaParser parser = new JavaParser(new ParserConfiguration()
-                .setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_21)
-                .setCharacterEncoding(StandardCharsets.UTF_8));
+        // Разрешение типов ленивое: деревья получают ссылку на решатель, а считается тип только когда его спросит правило
+        ProjectTypeSolver typeSolver = new ProjectTypeSolver(classpath);
+        JavaParser parser = new JavaParser(configuration()
+                .setSymbolResolver(new JavaSymbolSolver(typeSolver.solver())));
 
         List<SourceFile> sources = new ArrayList<>();
         List<Path> failedFiles = new ArrayList<>();
@@ -46,7 +48,15 @@ public class FileSystemSourceLoader implements SourceLoader {
                 failedFiles.add(file);
             }
         }
+
+        typeSolver.addSources(sources, configuration());
         return new LoadResult(sources, failedFiles);
+    }
+
+    private ParserConfiguration configuration() {
+        return new ParserConfiguration()
+                .setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_21)
+                .setCharacterEncoding(StandardCharsets.UTF_8);
     }
 
     private List<Path> findJavaFiles(Path root, Predicate<Path> included) {

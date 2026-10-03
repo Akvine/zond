@@ -61,7 +61,7 @@ public class CheckTransactionalSelfInvocationRule implements Rule {
                     if (!isSelfCall(call, type)) {
                         continue;
                     }
-                    findCallee(call, transactionalMethods)
+                    MethodCalls.findCallee(call, transactionalMethods)
                             .flatMap(callee -> describeProblem(type, caller, callee))
                             .ifPresent(message -> violations.add(new Violation(
                                     errorLevel(),
@@ -101,14 +101,6 @@ public class CheckTransactionalSelfInvocationRule implements Rule {
             current = current.getParentNode().orElse(null);
         }
         return current;
-    }
-
-    // Типы не разрешаем, поэтому перегрузки различаем только по числу аргументов
-    private Optional<MethodDeclaration> findCallee(MethodCallExpr call, List<MethodDeclaration> candidates) {
-        return candidates.stream()
-                .filter(method -> method.getNameAsString().equals(call.getNameAsString()))
-                .filter(method -> method.getParameters().size() == call.getArguments().size())
-                .findFirst();
     }
 
     private Optional<String> describeProblem(

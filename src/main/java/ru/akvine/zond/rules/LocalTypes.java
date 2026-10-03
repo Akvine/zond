@@ -18,11 +18,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 /**
- * Типы без полноценного разрешения: только то, что видно из объявлений в этом же файле
- * (локальные переменные, параметры, поля) и из литералов.
+ * Типы выражений. Сначала быстрый путь - то, что видно из объявлений в этом же файле (локальные переменные,
+ * параметры, поля) и из литералов; если так тип не определить, спрашиваем решатель типов ({@link Types}).
  */
 @UtilityClass
 class LocalTypes {
@@ -34,10 +35,30 @@ class LocalTypes {
     }
 
     /**
-     * @return простое имя типа выражения (String, int, BigDecimal) либо пусто, если по файлу его не определить
+     * @return простое имя типа выражения (String, int, BigDecimal) либо пусто, если тип определить не удалось
      */
     Optional<String> typeOf(Expression expression) {
         Expression value = Nodes.unwrap(expression);
+        return declaredTypeOf(value).or(() -> Types.simpleName(value));
+    }
+
+    /**
+     * Является ли объект одним из перечисленных библиотечных типов (Lock, ExecutorService) либо их наследником.
+     *
+     * @param byName запасная проверка по имени объекта - на случай, когда тип определить не удалось
+     */
+    boolean isAnyOf(Expression expression, Set<String> typeNames, Supplier<Boolean> byName) {
+        Expression value = Nodes.unwrap(expression);
+        Optional<String> type = typeOf(value);
+        if (type.filter(typeNames::contains).isPresent()) {
+            return true;
+        }
+        // Тип назван иначе, но может оказаться наследником: class OrderLock extends ReentrantLock
+        return Types.isKindOf(value, typeNames).orElseGet(() -> type.isEmpty() && byName.get());
+    }
+
+    // Тип по литералу или объявлению в этом же файле
+    private Optional<String> declaredTypeOf(Expression value) {
         if (value.isStringLiteralExpr() || value.isTextBlockLiteralExpr()) {
             return Optional.of("String");
         }

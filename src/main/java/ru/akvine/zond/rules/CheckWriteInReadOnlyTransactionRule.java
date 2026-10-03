@@ -114,13 +114,15 @@ public class CheckWriteInReadOnlyTransactionRule implements Rule {
     }
 
     /**
-     * Типы не разрешаем, поэтому записью считаем только вызов на поле класса (репозиторий, DAO, другой сервис).
+     * Записью считаем только вызов на поле класса (репозиторий, DAO, другой сервис); поле с типом из JDK
+     * (коллекция, StringBuilder, AtomicLong) хранилищем не является.
      *
      * @return имя поля, на котором вызван метод
      */
     private Optional<String> findStorageField(
             MethodCallExpr call, Map<String, String> fieldTypes, Set<String> localNames) {
         return call.getScope()
+                .filter(scope -> !Types.isJdkType(scope))
                 .flatMap(scope -> fieldName(scope, localNames))
                 .filter(fieldTypes::containsKey)
                 .filter(field -> isStorageType(fieldTypes.get(field)));

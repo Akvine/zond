@@ -21,7 +21,8 @@ import java.util.regex.Pattern;
 public class CheckParallelStreamWithIoRule extends AbstractRule {
     private static final Set<String> PARALLEL_METHODS = Set.of("parallelStream", "parallel");
 
-    // Типы не разрешаем, поэтому ввод-вывод узнаем по именам: получателя вызова, метода или создаваемого класса
+    // Ввод-вывод узнаем по именам: типа получателя вызова (а если тип определить не удалось - самого получателя),
+    // метода или создаваемого класса
     private static final String FILES = "Files";
     private static final Pattern IO_RECEIVER = Pattern.compile(
             ".*(repository|repo|dao|client|template|connection|socket|channel)$|.*(http|jdbc).*",
@@ -89,7 +90,7 @@ public class CheckParallelStreamWithIoRule extends AbstractRule {
             if (node instanceof MethodReferenceExpr reference && isIoReference(reference)) {
                 return Optional.of(reference.toString());
             }
-            if (node instanceof ObjectCreationExpr creation && IO_TYPES.contains(creation.getType().getNameAsString())) {
+            if (node instanceof ObjectCreationExpr creation && isIoType(creation)) {
                 return Optional.of("new " + creation.getType().getNameAsString());
             }
         }
@@ -106,10 +107,20 @@ public class CheckParallelStreamWithIoRule extends AbstractRule {
         return IO_METHODS.contains(reference.getIdentifier()) || isIoReceiver(reference.getScope());
     }
 
+    private boolean isIoType(ObjectCreationExpr creation) {
+        return Types.isKindOf(creation.getType(), IO_TYPES)
+                .orElseGet(() -> IO_TYPES.contains(creation.getType().getNameAsString()));
+    }
+
     // Именно класс Files, а не переменная files
     private boolean isIoReceiver(Expression scope) {
         String name = lastName(scope);
-        return FILES.equals(name) || IO_RECEIVER.matcher(name).matches();
+        if (FILES.equals(name)) {
+            return true;
+        }
+        // String client, Map template - имя похоже, но тип из JDK и к вводу-выводу отношения не имеет
+        return Types.matches(Nodes.unwrap(scope), type -> IO_RECEIVER.matcher(type).matches())
+                .orElseGet(() -> IO_RECEIVER.matcher(name).matches());
     }
 
     // this.userRepository -> userRepository, getClient() -> getClient

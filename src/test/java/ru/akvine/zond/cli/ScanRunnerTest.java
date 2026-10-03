@@ -246,6 +246,6 @@ class ScanRunnerTest {
                         new SettingsStore(configDir.resolve("app.properties").toString())),
                 new RulesMenu(menu, catalog, ruleListFormatter, new RuleListWriter(ruleListFormatter)),
                 executor);
-        return new ScanRunner(executor, mainMenu, new ZondSettings(reportPath, "", "", ""));
+        return new ScanRunner(executor, mainMenu, new ZondSettings(reportPath, "", "", "", ""));
     }
 }

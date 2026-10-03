@@ -21,6 +21,10 @@ class CollectionKinds {
             Set.of("ConcurrentHashMap", "ConcurrentMap", "ConcurrentSkipListMap", "ConcurrentNavigableMap");
 
     boolean isConcurrentMap(Expression scope) {
+        // Объявление не в этом файле (поле другого класса, результат метода) - смотрим на настоящий тип
+        if (LocalTypes.findDeclaration(scope).isEmpty()) {
+            return Types.hierarchy(scope).stream().anyMatch(CONCURRENT_MAP_TYPES::contains);
+        }
         return LocalTypes.findDeclaration(scope)
                 .flatMap(CollectionKinds::implementation)
                 .filter(CONCURRENT_MAP_TYPES::contains)
@@ -31,6 +35,9 @@ class CollectionKinds {
      * @return true, если коллекция из выражения рассчитана на работу из нескольких потоков
      */
     boolean isThreadSafe(Expression scope) {
+        if (LocalTypes.findDeclaration(scope).isEmpty()) {
+            return Types.hierarchy(scope).stream().anyMatch(CollectionKinds::isThreadSafeType);
+        }
         return LocalTypes.findDeclaration(scope).filter(CollectionKinds::isThreadSafeDeclaration).isPresent();
     }
 
@@ -45,9 +52,13 @@ class CollectionKinds {
                         && call.getScope().filter(type -> MethodCalls.isType(type, COLLECTIONS)).isPresent())
                 .isPresent();
         return isSynchronizedWrapper || implementation(declaration)
-                .filter(type -> type.startsWith("Concurrent") || type.startsWith("CopyOnWrite")
-                        || type.endsWith("BlockingQueue") || type.endsWith("BlockingDeque"))
+                .filter(CollectionKinds::isThreadSafeType)
                 .isPresent();
+    }
+
+    private boolean isThreadSafeType(String type) {
+        return type.startsWith("Concurrent") || type.startsWith("CopyOnWrite")
+                || type.endsWith("BlockingQueue") || type.endsWith("BlockingDeque");
     }
 
     // Класс из new ...(), а если инициализатора нет - объявленный тип

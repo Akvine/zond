@@ -6,12 +6,14 @@ import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.VariableDeclarationExpr;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import lombok.experimental.UtilityClass;
 
 import java.util.Set;
 
 /**
- * Ресурсы, которые нужно закрывать. Типы не разрешаем, поэтому узнаем их по известным именам классов и методов.
+ * Ресурсы, которые нужно закрывать: известные классы, их наследники и методы, которые открывают ресурс.
+ * Где тип разрешить не удалось, судим по именам.
  */
 @UtilityClass
 class Resources {
@@ -36,25 +38,37 @@ class Resources {
     private final static Set<String> RESOURCE_METHODS = Set.of(
             "getConnection", "prepareStatement", "prepareCall", "createStatement", "executeQuery", "openStream");
 
+    private final static Set<String> CLOSEABLE = Set.of("AutoCloseable");
+
     /**
      * @return true, если выражение открывает ресурс: new FileInputStream(...), Files.lines(...), getConnection()
      */
     boolean opens(Expression initializer) {
         Expression value = Nodes.unwrap(initializer);
         if (value.isObjectCreationExpr()) {
-            String type = value.asObjectCreationExpr().getType().getNameAsString();
+            ClassOrInterfaceType type = value.asObjectCreationExpr().getType();
+            String typeName = type.getNameAsString();
+            // Собственный класс проекта с таким же именем (свой Scanner) - не ресурс, а наследник ресурса - ресурс
+            boolean isResource = Types.isKindOf(type, RESOURCE_TYPES)
+                    .orElseGet(() -> RESOURCE_TYPES.contains(typeName) && !isOwnClassNamedScanner(value, typeName));
             // new Scanner(System.in): стандартный ввод закрывать не нужно
-            return RESOURCE_TYPES.contains(type)
-                    && !value.toString().contains(SYSTEM_IN)
-                    && !isOwnClassNamedScanner(value, type);
+            return isResource && !value.toString().contains(SYSTEM_IN);
         }
         if (value.isMethodCallExpr()) {
             MethodCallExpr call = value.asMethodCallExpr();
             boolean filesResource = FILES_RESOURCE_METHODS.contains(call.getNameAsString())
                     && MethodCalls.isCallOn(call, FILES, call.getNameAsString());
-            return filesResource || (call.getScope().isPresent() && RESOURCE_METHODS.contains(call.getNameAsString()));
+            return filesResource || opensByMethodName(call);
         }
         return false;
+    }
+
+    // dataSource.getConnection(), url.openStream(). Свой метод с таким же именем, который возвращает
+    // не закрываемый объект (getConnection() с описанием соединения), ресурсом не считается
+    private boolean opensByMethodName(MethodCallExpr call) {
+        return call.getScope().isPresent()
+                && RESOURCE_METHODS.contains(call.getNameAsString())
+                && Types.isKindOf(call, CLOSEABLE).orElse(true);
     }
 
     // Scanner - слишком частое имя для своих классов: ресурсом считаем его только при импорте из java.util

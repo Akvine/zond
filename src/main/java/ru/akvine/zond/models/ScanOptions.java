@@ -4,6 +4,7 @@ import ru.akvine.zond.enums.ErrorLevel;
 
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -14,8 +15,9 @@ import java.util.stream.Collectors;
  * @param disabledRules коды и имена отключенных правил в нижнем регистре: jr:40, checkmagicnumberrule
  * @param minLevel      наименее строгий уровень, который еще попадает в отчет
  * @param skipTests     не проверять файлы из каталогов test
+ * @param classpath     jar-файлы и папки с библиотеками проекта: по ним разрешаются типы из зависимостей
  */
-public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel, boolean skipTests) {
+public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel, boolean skipTests, List<Path> classpath) {
     private static final String SEPARATOR = "[,;\\s]+";
     private static final String TEST_DIRECTORY = "test";
 
@@ -23,11 +25,15 @@ public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel, boolea
      * @return настройки по умолчанию: все правила, все уровни, все файлы
      */
     public static ScanOptions defaults() {
-        return new ScanOptions(Set.of(), ErrorLevel.INFO, false);
+        return new ScanOptions(Set.of(), ErrorLevel.INFO, false, List.of());
     }
 
     public ScanOptions withSkipTests(boolean skip) {
-        return new ScanOptions(disabledRules, minLevel, skip);
+        return new ScanOptions(disabledRules, minLevel, skip, classpath);
+    }
+
+    public ScanOptions withClasspath(List<Path> libraries) {
+        return new ScanOptions(disabledRules, minLevel, skipTests, List.copyOf(libraries));
     }
 
     /**
@@ -58,7 +64,7 @@ public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel, boolea
                 .filter(rule -> !rule.isBlank())
                 .map(ScanOptions::normalize)
                 .collect(Collectors.toSet());
-        return new ScanOptions(disabled, parseLevel(minLevel), false);
+        return new ScanOptions(disabled, parseLevel(minLevel), false, List.of());
     }
 
     /**

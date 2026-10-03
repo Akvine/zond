@@ -5,6 +5,8 @@ import org.springframework.context.annotation.PropertySource;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.List;
 
 /**
  * Настройки из внешнего файла: app.properties в рабочей директории либо файл из --config=<путь>.
@@ -13,20 +15,25 @@ import java.nio.file.Path;
 @Component
 @PropertySource(value = "file:${config:./app.properties}", ignoreResourceNotFound = true, encoding = "UTF-8")
 public class ZondSettings {
+    private static final String CLASSPATH_SEPARATOR = "[;,]";
+
     private final String reportPath;
     private final String disabledRules;
     private final String minLevel;
     private final String skipTests;
+    private final String classpath;
 
     public ZondSettings(
             @Value("${zond.report.path:}") String reportPath,
             @Value("${zond.rules.disabled:}") String disabledRules,
             @Value("${zond.rules.min-level:}") String minLevel,
-            @Value("${zond.scan.skip-tests:}") String skipTests) {
+            @Value("${zond.scan.skip-tests:}") String skipTests,
+            @Value("${zond.scan.classpath:}") String classpath) {
         this.reportPath = reportPath;
         this.disabledRules = disabledRules;
         this.minLevel = minLevel;
         this.skipTests = skipTests;
+        this.classpath = classpath;
     }
 
     /**
@@ -55,5 +62,20 @@ public class ZondSettings {
      */
     public String minLevel() {
         return minLevel;
+    }
+
+    /**
+     * @return библиотеки проверяемого проекта: jar-файлы и папки с ними, перечисленные через ";" или ","
+     */
+    public List<Path> classpath() {
+        return parseClasspath(classpath);
+    }
+
+    public static List<Path> parseClasspath(String classpath) {
+        return Arrays.stream(classpath.split(CLASSPATH_SEPARATOR))
+                .map(String::trim)
+                .filter(entry -> !entry.isEmpty())
+                .map(Path::of)
+                .toList();
     }
 }

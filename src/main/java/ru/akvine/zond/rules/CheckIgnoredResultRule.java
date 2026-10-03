@@ -1,8 +1,11 @@
 package ru.akvine.zond.rules;
 
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.SwitchExpr;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
+import com.github.javaparser.ast.stmt.SwitchEntry;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -41,7 +44,13 @@ public class CheckIgnoredResultRule extends AbstractRule {
         for (ExpressionStmt statement : sourceFile.unit().findAll(ExpressionStmt.class)) {
             // item -> text.equals(item): тело лямбды-выражения тоже хранится как оператор, но его результат нужен
             boolean isLambdaBody = statement.getParentNode().filter(parent -> parent instanceof LambdaExpr).isPresent();
-            if (isLambdaBody || !statement.getExpression().isMethodCallExpr()) {
+            // case A -> text.trim(); в switch-выражении - это значение ветки, а не отдельный оператор
+            boolean isSwitchValue = statement.getParentNode()
+                    .filter(parent -> parent instanceof SwitchEntry)
+                    .flatMap(Node::getParentNode)
+                    .filter(parent -> parent instanceof SwitchExpr)
+                    .isPresent();
+            if (isLambdaBody || isSwitchValue || !statement.getExpression().isMethodCallExpr()) {
                 continue;
             }
 

@@ -16,7 +16,10 @@ import java.util.stream.Collectors;
 
 @Component
 public class CheckTransactionalRollbackForCheckedExceptionRule implements Rule {
-    // Типы не разрешаем, поэтому unchecked-исключения узнаем по имени; все остальное из throws считаем checked
+    // Unchecked-исключение - наследник RuntimeException или Error. Если иерархию разрешить не удалось,
+    // узнаем его по имени; все остальное из throws считаем checked
+    private static final Set<String> UNCHECKED_ROOTS = Set.of("RuntimeException", "Error");
+
     private static final Set<String> UNCHECKED_EXCEPTIONS = Set.of(
             "RuntimeException",
             "Error",
@@ -103,10 +106,15 @@ public class CheckTransactionalRollbackForCheckedExceptionRule implements Rule {
                 .collect(Collectors.toSet());
 
         return method.getThrownExceptions().stream()
+                .filter(exception -> !isUnchecked(exception))
                 .map(this::simpleName)
-                .filter(exception -> !UNCHECKED_EXCEPTIONS.contains(exception))
                 .filter(exception -> !typeParameters.contains(exception))
                 .toList();
+    }
+
+    private boolean isUnchecked(ReferenceType exception) {
+        return Types.isKindOf(exception, UNCHECKED_ROOTS)
+                .orElseGet(() -> UNCHECKED_EXCEPTIONS.contains(simpleName(exception)));
     }
 
     // java.io.IOException -> IOException

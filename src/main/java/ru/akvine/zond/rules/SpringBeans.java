@@ -31,8 +31,10 @@ class SpringBeans {
 
     /**
      * Зависимость бина: тип и то, откладывается ли ее получение (@Lazy, ObjectProvider)
+     *
+     * @param declaredType тип так, как он записан в коде: по нему можно разрешить настоящий тип
      */
-    record Dependency(String type, boolean deferred) {
+    record Dependency(String type, boolean deferred, Type declaredType) {
     }
 
     boolean isBean(ClassOrInterfaceDeclaration type) {
@@ -88,13 +90,13 @@ class SpringBeans {
 
         // ObjectProvider<OrderService>, List<Handler>: зависимость - это тип внутри обертки
         if (type.isClassOrInterfaceType()) {
-            Optional<String> argument = type.asClassOrInterfaceType().getTypeArguments()
+            Optional<Type> argument = type.asClassOrInterfaceType().getTypeArguments()
                     .filter(arguments -> arguments.size() == 1)
-                    .map(arguments -> LocalTypes.typeName(arguments.get(0)));
+                    .map(arguments -> arguments.get(0));
             if (argument.isPresent()) {
-                return new Dependency(argument.get(), deferred);
+                return new Dependency(LocalTypes.typeName(argument.get()), deferred, argument.get());
             }
         }
-        return new Dependency(name, deferred);
+        return new Dependency(name, deferred, type);
     }
 }
