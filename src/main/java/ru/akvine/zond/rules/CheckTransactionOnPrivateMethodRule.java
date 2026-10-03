@@ -10,7 +10,6 @@ import java.util.List;
 
 @Component
 public class CheckTransactionOnPrivateMethodRule implements Rule {
-    private static final String TRANSACTIONAL = "Transactional";
 
     @Override
     public String name() {
@@ -36,7 +35,7 @@ public class CheckTransactionOnPrivateMethodRule implements Rule {
     public List<Violation> check(SourceFile sourceFile) {
         return sourceFile.unit().findAll(MethodDeclaration.class).stream()
                 .filter(MethodDeclaration::isPrivate)
-                .filter(this::isTransactional)
+                .filter(TransactionalAnnotations::isPresent)
                 .map(method -> new Violation(
                         errorLevel(),
                         code(),
@@ -51,11 +50,5 @@ public class CheckTransactionOnPrivateMethodRule implements Rule {
     @Override
     public ErrorLevel errorLevel() {
         return ErrorLevel.CRITICAL;
-    }
-
-    // Сравниваем по простому имени, чтобы поймать и @Transactional, и полное имя (spring / jakarta / javax)
-    private boolean isTransactional(MethodDeclaration method) {
-        return method.getAnnotations().stream()
-                .anyMatch(annotation -> TRANSACTIONAL.equals(annotation.getName().getIdentifier()));
     }
 }

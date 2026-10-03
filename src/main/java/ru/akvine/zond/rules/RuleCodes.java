@@ -6,4 +6,5 @@ import lombok.experimental.UtilityClass;
 public class RuleCodes {
 
     public final static String CHECK_TRANSACTION_ON_PRIVATE_METHOD_RULE_CODE = "jr:1";
+    public final static String CHECK_TRANSACTIONAL_SELF_INVOCATION_RULE_CODE = "jr:2";
 }
