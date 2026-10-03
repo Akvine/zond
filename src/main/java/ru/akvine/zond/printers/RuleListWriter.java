@@ -31,10 +31,11 @@ import java.util.Locale;
 @RequiredArgsConstructor
 public class RuleListWriter {
     private static final String SHEET = "Правила";
-    private static final List<String> HEADERS = List.of("Код", "Уровень", "Тип", "Правило", "Описание", "Состояние");
+    private static final List<String> HEADERS =
+            List.of("Код", "Уровень", "Тип", "Правило", "Описание", "Состояние", "Настройки");
 
     // Ширина колонок в символах, в порядке заголовков
-    private static final List<Integer> COLUMN_WIDTHS = List.of(9, 12, 24, 52, 120, 14);
+    private static final List<Integer> COLUMN_WIDTHS = List.of(9, 12, 24, 52, 120, 14, 90);
 
     // POI задает ширину колонки в 1/256 ширины символа
     private static final int WIDTH_UNIT = 256;
@@ -105,6 +106,10 @@ public class RuleListWriter {
                 description.setCellStyle(wrapped);
 
                 line.createCell(5).setCellValue(rule.active() ? ACTIVE : DISABLED);
+
+                Cell settings = line.createCell(6);
+                settings.setCellValue(String.join(System.lineSeparator(), rule.settings()));
+                settings.setCellStyle(wrapped);
             }
 
             try (OutputStream output = Files.newOutputStream(file)) {

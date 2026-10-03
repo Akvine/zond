@@ -4,6 +4,7 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.models.RuleParameter;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -12,7 +13,13 @@ import java.util.List;
 
 @Component
 public class CheckTooManyDependenciesRule extends AbstractRule {
-    private static final int MAX_DEPENDENCIES = 7;
+    private static final RuleParameter MAX_DEPENDENCIES =
+            new RuleParameter("max-dependencies", 7, "Допустимое число зависимостей бина");
+
+    @Override
+    public List<RuleParameter> parameters() {
+        return List.of(MAX_DEPENDENCIES);
+    }
 
     @Override
     public String code() {
@@ -21,7 +28,8 @@ public class CheckTooManyDependenciesRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет Spring-бины, в которые внедряется больше " + MAX_DEPENDENCIES + " зависимостей";
+        return "Сканирует код и ищет Spring-бины, в которые внедряется больше " + value(MAX_DEPENDENCIES)
+                + " зависимостей";
     }
 
     @Override
@@ -33,10 +41,10 @@ public class CheckTooManyDependenciesRule extends AbstractRule {
             }
 
             int dependencies = SpringBeans.findDependencies(type).size();
-            if (dependencies > MAX_DEPENDENCIES) {
+            if (dependencies > value(MAX_DEPENDENCIES)) {
                 violations.add(violation(sourceFile, type,
                         "В бин '" + type.getNameAsString() + "' внедряется " + dependencies + " зависимостей при"
-                                + " допустимых " + MAX_DEPENDENCIES + ": класс делает слишком много; выделите"
+                                + " допустимых " + value(MAX_DEPENDENCIES) + ": класс делает слишком много; выделите"
                                 + " часть обязанностей в отдельные бины"));
             }
         }

@@ -2,6 +2,7 @@ package ru.akvine.zond.rules;
 
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.models.RuleParameter;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -16,6 +17,13 @@ public interface Rule {
     String description();
 
     boolean enabled();
+
+    /**
+     * @return пороги правила, которые можно менять в настройках; у большинства правил их нет
+     */
+    default List<RuleParameter> parameters() {
+        return List.of();
+    }
 
     /**
      * Проверяет один исходный файл.

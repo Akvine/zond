@@ -4,6 +4,7 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.models.RuleParameter;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -12,7 +13,13 @@ import java.util.List;
 
 @Component
 public class CheckLongMethodRule extends AbstractRule {
-    private static final int MAX_LINES = 50;
+    private static final RuleParameter MAX_LINES =
+            new RuleParameter("max-lines", 50, "Допустимое число строк в методе");
+
+    @Override
+    public List<RuleParameter> parameters() {
+        return List.of(MAX_LINES);
+    }
 
     @Override
     public String code() {
@@ -21,7 +28,7 @@ public class CheckLongMethodRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет методы длиннее " + MAX_LINES + " строк";
+        return "Сканирует код и ищет методы длиннее " + value(MAX_LINES) + " строк";
     }
 
     @Override
@@ -36,10 +43,10 @@ public class CheckLongMethodRule extends AbstractRule {
             int lines = method.getBody().get().getRange()
                     .map(range -> range.end.line - range.begin.line + 1)
                     .orElse(0);
-            if (lines > MAX_LINES) {
+            if (lines > value(MAX_LINES)) {
                 violations.add(violation(sourceFile, method,
                         "Метод '" + method.getNameAsString() + "' занимает " + lines + " строк при допустимых "
-                                + MAX_LINES + ": такой метод делает несколько дел сразу, его трудно читать"
+                                + value(MAX_LINES) + ": такой метод делает несколько дел сразу, его трудно читать"
                                 + " и тестировать; разбейте на методы поменьше"));
             }
         }

@@ -7,6 +7,7 @@ import com.github.javaparser.ast.expr.StringLiteralExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.models.RuleParameter;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -17,10 +18,17 @@ import java.util.Map;
 
 @Component
 public class CheckDuplicateStringLiteralRule extends AbstractRule {
-    private static final int MIN_OCCURRENCES = 3;
+    private static final RuleParameter MIN_OCCURRENCES =
+            new RuleParameter("min-occurrences", 3, "Со скольких повторений литерал считается дублем");
 
     // Короткие строки вроде "", ", " и "id" повторяются естественно
-    private static final int MIN_LENGTH = 5;
+    private static final RuleParameter MIN_LENGTH =
+            new RuleParameter("min-length", 5, "Литералы короче этой длины не учитываются");
+
+    @Override
+    public List<RuleParameter> parameters() {
+        return List.of(MIN_OCCURRENCES, MIN_LENGTH);
+    }
 
     @Override
     public String code() {
@@ -29,20 +37,21 @@ public class CheckDuplicateStringLiteralRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет строковые литералы, повторенные в файле " + MIN_OCCURRENCES + " раза и больше";
+        return "Сканирует код и ищет строковые литералы, повторенные в файле " + value(MIN_OCCURRENCES)
+                + " раза и больше";
     }
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         Map<String, List<StringLiteralExpr>> occurrences = new LinkedHashMap<>();
         for (StringLiteralExpr literal : sourceFile.unit().findAll(StringLiteralExpr.class)) {
-            if (literal.asString().length() >= MIN_LENGTH && !isExcluded(literal)) {
+            if (literal.asString().length() >= value(MIN_LENGTH) && !isExcluded(literal)) {
                 occurrences.computeIfAbsent(literal.asString(), key -> new ArrayList<>()).add(literal);
             }
         }
 
         return occurrences.entrySet().stream()
-                .filter(entry -> entry.getValue().size() >= MIN_OCCURRENCES)
+                .filter(entry -> entry.getValue().size() >= value(MIN_OCCURRENCES))
                 .map(entry -> violation(sourceFile, entry.getValue().get(0),
                         "Строка \"" + entry.getKey() + "\" повторяется " + entry.getValue().size() + " раз(а):"
                                 + " при изменении легко поправить не все места, а опечатку в одном из них"

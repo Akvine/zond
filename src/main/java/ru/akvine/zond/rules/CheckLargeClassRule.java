@@ -4,6 +4,7 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.models.RuleParameter;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -12,8 +13,15 @@ import java.util.List;
 
 @Component
 public class CheckLargeClassRule extends AbstractRule {
-    private static final int MAX_LINES = 500;
-    private static final int MAX_METHODS = 30;
+    private static final RuleParameter MAX_LINES =
+            new RuleParameter("max-lines", 500, "Допустимое число строк в классе");
+    private static final RuleParameter MAX_METHODS =
+            new RuleParameter("max-methods", 30, "Допустимое число методов в классе");
+
+    @Override
+    public List<RuleParameter> parameters() {
+        return List.of(MAX_LINES, MAX_METHODS);
+    }
 
     @Override
     public String code() {
@@ -22,7 +30,8 @@ public class CheckLargeClassRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет классы длиннее " + MAX_LINES + " строк или с числом методов больше " + MAX_METHODS;
+        return "Сканирует код и ищет классы длиннее " + value(MAX_LINES)
+                + " строк или с числом методов больше " + value(MAX_METHODS);
     }
 
     @Override
@@ -35,10 +44,11 @@ public class CheckLargeClassRule extends AbstractRule {
 
             int lines = type.getRange().map(range -> range.end.line - range.begin.line + 1).orElse(0);
             int methods = type.getMethods().size();
-            if (lines > MAX_LINES || methods > MAX_METHODS) {
+            if (lines > value(MAX_LINES) || methods > value(MAX_METHODS)) {
                 violations.add(violation(sourceFile, type,
                         "Класс '" + type.getNameAsString() + "' слишком большой (" + lines + " строк, " + methods
-                                + " методов при допустимых " + MAX_LINES + " и " + MAX_METHODS + "): у него"
+                                + " методов при допустимых " + value(MAX_LINES) + " и "
+                                + value(MAX_METHODS) + "): у него"
                                 + " несколько обязанностей; разделите его на классы по обязанностям"));
             }
         }

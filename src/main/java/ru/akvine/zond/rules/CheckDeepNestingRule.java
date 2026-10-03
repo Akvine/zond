@@ -13,6 +13,7 @@ import com.github.javaparser.ast.stmt.WhileStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.models.RuleParameter;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -20,7 +21,13 @@ import java.util.List;
 
 @Component
 public class CheckDeepNestingRule extends AbstractRule {
-    private static final int MAX_DEPTH = 4;
+    private static final RuleParameter MAX_DEPTH =
+            new RuleParameter("max-depth", 4, "Допустимая глубина вложенности управляющих конструкций");
+
+    @Override
+    public List<RuleParameter> parameters() {
+        return List.of(MAX_DEPTH);
+    }
 
     @Override
     public String code() {
@@ -29,7 +36,7 @@ public class CheckDeepNestingRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет управляющие конструкции, вложенные глубже " + MAX_DEPTH + " уровней";
+        return "Сканирует код и ищет управляющие конструкции, вложенные глубже " + value(MAX_DEPTH) + " уровней";
     }
 
     @Override
@@ -37,10 +44,10 @@ public class CheckDeepNestingRule extends AbstractRule {
         // Сообщаем о конструкции, с которой предел превышен; то, что вложено еще глубже, не дублируем
         return sourceFile.unit().findAll(Statement.class).stream()
                 .filter(this::isNesting)
-                .filter(statement -> depth(statement) == MAX_DEPTH + 1)
+                .filter(statement -> depth(statement) == value(MAX_DEPTH) + 1)
                 .filter(statement -> !TestClasses.isInside(statement))
                 .map(statement -> violation(sourceFile, statement,
-                        "Вложенность управляющих конструкций больше " + MAX_DEPTH + " уровней: чтобы понять"
+                        "Вложенность управляющих конструкций больше " + value(MAX_DEPTH) + " уровней: чтобы понять"
                                 + " эту строку, нужно удержать в голове все условия выше; вынесите вложенную"
                                 + " часть в отдельный метод или выходите из метода раньше"))
                 .toList();

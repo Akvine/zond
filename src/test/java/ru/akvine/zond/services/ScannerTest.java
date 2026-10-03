@@ -2,6 +2,7 @@ package ru.akvine.zond.services;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.ScanOptions;
@@ -28,7 +29,8 @@ class ScannerTest {
             new FileSystemSourceLoader(),
             new FileSystemConfigLoader(),
             List.of(new CheckTransactionOnPrivateMethodRule()),
-            (number, total, rule) -> {});
+            (number, total, rule) -> {},
+                RuleSettings.empty());
 
     @Test
     void reportsProgressForEachRuleInCodeOrder(@TempDir Path dir) throws IOException {
@@ -41,7 +43,8 @@ class ScannerTest {
                         new CheckAutowiredOnStaticFieldRule(),
                         new CheckTransactionalSelfInvocationRule(),
                         new CheckTransactionOnPrivateMethodRule()),
-                (number, total, rule) -> progress.add(number + " / " + total + " " + rule.code()));
+                (number, total, rule) -> progress.add(number + " / " + total + " " + rule.code()),
+                RuleSettings.empty());
 
         ordered.scan(dir);
 
@@ -103,7 +106,8 @@ class ScannerTest {
                 new FileSystemSourceLoader(),
                 new FileSystemConfigLoader(),
                 List.of(new CheckTransactionOnPrivateMethodRule(), new CheckFieldInjectionRule()),
-                (number, total, rule) -> {});
+                (number, total, rule) -> {},
+                RuleSettings.empty());
 
         assertThat(twoRules.scan(dir).violations()).extracting(violation -> violation.ruleCode())
                 .containsExactly("jr:6", "jr:1");
@@ -204,7 +208,8 @@ class ScannerTest {
                 new FileSystemSourceLoader(),
                 new FileSystemConfigLoader(),
                 List.of(new CheckDdlAutoRule(), new CheckSecretInConfigRule()),
-                (number, total, rule) -> {});
+                (number, total, rule) -> {},
+                RuleSettings.empty());
 
         ScanResult result = configRules.scan(dir);
 

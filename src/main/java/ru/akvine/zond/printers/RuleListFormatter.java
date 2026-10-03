@@ -41,6 +41,8 @@ public class RuleListFormatter {
                         .append(rule.active() ? "" : DISABLED_MARK)
                         .append(LINE_SEPARATOR);
                 text.append(DESCRIPTION_INDENT).append(describe(rule)).append(LINE_SEPARATOR);
+                rule.settings().forEach(setting ->
+                        text.append(DESCRIPTION_INDENT).append(setting).append(LINE_SEPARATOR));
             }
         }
         return text.toString();

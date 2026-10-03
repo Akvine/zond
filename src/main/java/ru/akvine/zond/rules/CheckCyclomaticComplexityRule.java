@@ -13,6 +13,7 @@ import com.github.javaparser.ast.stmt.WhileStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.models.RuleParameter;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -21,7 +22,13 @@ import java.util.List;
 
 @Component
 public class CheckCyclomaticComplexityRule extends AbstractRule {
-    private static final int MAX_COMPLEXITY = 10;
+    private static final RuleParameter MAX_COMPLEXITY =
+            new RuleParameter("max-complexity", 10, "Допустимая цикломатическая сложность метода");
+
+    @Override
+    public List<RuleParameter> parameters() {
+        return List.of(MAX_COMPLEXITY);
+    }
 
     @Override
     public String code() {
@@ -30,7 +37,7 @@ public class CheckCyclomaticComplexityRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет методы с цикломатической сложностью выше " + MAX_COMPLEXITY;
+        return "Сканирует код и ищет методы с цикломатической сложностью выше " + value(MAX_COMPLEXITY);
     }
 
     @Override
@@ -42,10 +49,10 @@ public class CheckCyclomaticComplexityRule extends AbstractRule {
             }
 
             int complexity = complexity(method);
-            if (complexity > MAX_COMPLEXITY) {
+            if (complexity > value(MAX_COMPLEXITY)) {
                 violations.add(violation(sourceFile, method,
                         "Цикломатическая сложность метода '" + method.getNameAsString() + "' - " + complexity
-                                + " при допустимой " + MAX_COMPLEXITY + ": столько независимых путей выполнения"
+                                + " при допустимой " + value(MAX_COMPLEXITY) + ": столько независимых путей выполнения"
                                 + " нужно удержать в голове и покрыть тестами; разбейте метод на части"));
             }
         }

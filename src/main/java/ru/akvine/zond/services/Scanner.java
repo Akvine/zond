@@ -2,6 +2,8 @@ package ru.akvine.zond.services;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import ru.akvine.zond.config.RuleSettings;
+import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.loaders.ConfigLoader;
 import ru.akvine.zond.loaders.SourceLoader;
 import ru.akvine.zond.models.ConfigFile;
@@ -26,6 +28,7 @@ public class Scanner {
     private final ConfigLoader configLoader;
     private final List<Rule> rules;
     private final ScanProgressListener progressListener;
+    private final RuleSettings ruleSettings;
 
     public ScanResult scan(Path root) {
         return scan(root, ScanOptions.defaults());
@@ -39,7 +42,7 @@ public class Scanner {
         // Правила идут по номеру кода, чтобы прогресс шел предсказуемо
         List<Rule> enabledRules = rules.stream().filter(Rule::enabled).toList();
         List<Rule> activeRules = enabledRules.stream()
-                .filter(rule -> options.allows(rule.code(), rule.name(), rule.errorLevel()))
+                .filter(rule -> options.allows(rule.code(), rule.name(), levelOf(rule)))
                 .sorted(RuleCatalog.BY_CODE)
                 .toList();
 
@@ -47,7 +50,7 @@ public class Scanner {
         for (int index = 0; index < activeRules.size(); index++) {
             Rule rule = activeRules.get(index);
             progressListener.onRuleStarted(index + 1, activeRules.size(), rule);
-            violations.addAll(apply(rule, loaded.sources(), configFiles));
+            violations.addAll(withLevel(levelOf(rule), apply(rule, loaded.sources(), configFiles)));
         }
 
         // Находки, которые в самом коде помечены комментарием zond:ignore
@@ -67,6 +70,25 @@ public class Scanner {
                 found - violations.size(),
                 options.skipTests(),
                 loaded.failedFiles());
+    }
+
+    // Уровень правила можно переопределить в настройках: zond.rule.jr-36.level=INFO
+    private ErrorLevel levelOf(Rule rule) {
+        return ruleSettings.level(rule.code(), rule.name()).orElseGet(rule::errorLevel);
+    }
+
+    // Правило проставляет находкам свой уровень - заменяем его действующим
+    private List<Violation> withLevel(ErrorLevel level, List<Violation> violations) {
+        return violations.stream()
+                .map(violation -> violation.errorLevel() == level ? violation : new Violation(
+                        level,
+                        violation.errorType(),
+                        violation.ruleCode(),
+                        violation.ruleName(),
+                        violation.file(),
+                        violation.line(),
+                        violation.message()))
+                .toList();
     }
 
     // Правило проверяет либо файлы настроек, либо проект целиком, либо каждый Java-файл по отдельности

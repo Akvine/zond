@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.DefaultApplicationArguments;
+import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.config.ZondSettings;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
@@ -25,6 +26,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.List;
+import java.util.Map;
 import java.util.Queue;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -44,6 +46,9 @@ class ScanRunnerTest {
 
     @TempDir
     Path configDir;
+
+    // Настройки правил (zond.rule.*), с которыми создается приложение
+    private RuleSettings ruleSettings = RuleSettings.empty();
 
     @BeforeEach
     void setUp() throws IOException {
@@ -218,6 +223,30 @@ class ScanRunnerTest {
         assertThat(runner.getExitCode()).isEqualTo(2);
     }
 
+    @Test
+    void ruleLevelFromSettingsIsApplied() throws IOException {
+        // Единственное правило понижено до INFO - при пороге MAJOR оно не запускается
+        ruleSettings = RuleSettings.of(Map.of("jr-1.level", "info"));
+        ScanRunner hidden = runner("");
+        hidden.run(new DefaultApplicationArguments("--path=" + dir, "--min-level=MAJOR"));
+        assertThat(hidden.getExitCode()).isZero();
+
+        Path report = dir.resolve("level-report.txt");
+        ScanRunner shown = runner(report.toString());
+        shown.run(new DefaultApplicationArguments("--path=" + dir));
+        assertThat(Files.readString(report)).contains("[INFO]").doesNotContain("[CRITICAL]");
+    }
+
+    @Test
+    void mistakeInRuleSettingsIsAnError() {
+        ruleSettings = RuleSettings.of(Map.of("jr-999.level", "INFO"));
+        ScanRunner runner = runner("");
+
+        runner.run(new DefaultApplicationArguments("--path=" + dir));
+
+        assertThat(runner.getExitCode()).isEqualTo(2);
+    }
+
     private ScanRunner runner(String reportPath, String... inputLines) {
         Queue<String> input = new ArrayDeque<>(List.of(inputLines));
         ConsoleInput consoleInput = new ConsoleInput() {
@@ -228,7 +257,7 @@ class ScanRunnerTest {
         };
 
         List<Rule> rules = List.of(new CheckTransactionOnPrivateMethodRule());
-        RuleCatalog catalog = new RuleCatalog(rules);
+        RuleCatalog catalog = new RuleCatalog(rules, ruleSettings);
         ConsoleMenu menu = new ConsoleMenu(consoleInput);
         FolderPicker folderPicker = new FolderPicker(consoleInput);
         RuleListFormatter ruleListFormatter = new RuleListFormatter();
@@ -237,7 +266,8 @@ class ScanRunnerTest {
                         new FileSystemSourceLoader(),
                         new FileSystemConfigLoader(),
                         rules,
-                        (number, total, rule) -> {}),
+                        (number, total, rule) -> {},
+                        ruleSettings),
                 new PrinterFactory(new ReportFormatter()));
         MainMenu mainMenu = new MainMenu(
                 menu,
@@ -246,6 +276,6 @@ class ScanRunnerTest {
                         new SettingsStore(configDir.resolve("app.properties").toString())),
                 new RulesMenu(menu, catalog, ruleListFormatter, new RuleListWriter(ruleListFormatter)),
                 executor);
-        return new ScanRunner(executor, mainMenu, new ZondSettings(reportPath, "", "", "", ""));
+        return new ScanRunner(executor, mainMenu, new ZondSettings(reportPath, "", "", "", ""), catalog);
     }
 }

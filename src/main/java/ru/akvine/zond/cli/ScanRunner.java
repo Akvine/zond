@@ -6,6 +6,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.config.ZondSettings;
+import ru.akvine.zond.services.RuleCatalog;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -24,16 +25,24 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private final ScanExecutor scanExecutor;
     private final MainMenu mainMenu;
     private final ZondSettings settings;
+    private final RuleCatalog ruleCatalog;
 
     private int exitCode = ScanExecutor.EXIT_OK;
 
     @Override
     public void run(ApplicationArguments args) {
+        // Ошибка в настройках: сканировать с неверным порогом хуже, чем не сканировать вовсе
+        List<String> problems = ruleCatalog.findSettingsProblems();
+        if (!problems.isEmpty()) {
+            problems.forEach(problem -> System.err.println("Ошибка: " + problem));
+            exitCode = ScanExecutor.EXIT_ERROR;
+            return;
+        }
+
         SessionSettings session;
         try {
             session = resolveSettings(args);
         } catch (IllegalArgumentException exception) {
-            // Ошибка в настройках: сканировать с неверным порогом уровня хуже, чем не сканировать вовсе
             System.err.println("Ошибка: " + exception.getMessage());
             exitCode = ScanExecutor.EXIT_ERROR;
             return;
