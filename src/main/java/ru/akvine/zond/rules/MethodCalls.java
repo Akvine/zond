@@ -15,6 +15,24 @@ class MethodCalls {
                 && call.getScope().filter(scope -> isType(scope, typeName)).isPresent();
     }
 
+    /**
+     * @return последнее имя в выражении, на котором вызван метод:
+     * this.userRepository -> userRepository, getClient() -> getClient, Files -> Files
+     */
+    String receiverName(Expression scope) {
+        Expression value = Nodes.unwrap(scope);
+        if (value.isFieldAccessExpr()) {
+            return value.asFieldAccessExpr().getNameAsString();
+        }
+        if (value.isMethodCallExpr()) {
+            return value.asMethodCallExpr().getNameAsString();
+        }
+        if (value.isTypeExpr()) {
+            return LocalTypes.typeName(value.asTypeExpr().getType());
+        }
+        return value.toString();
+    }
+
     // Типы не разрешаем, поэтому сравниваем по простому имени
     boolean isType(Expression expression, String typeName) {
         if (expression.isNameExpr()) {

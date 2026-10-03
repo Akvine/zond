@@ -75,7 +75,10 @@ class ScanRunnerTest {
             }
         };
         return new ScanRunner(
-                new Scanner(new FileSystemSourceLoader(), List.of(new CheckTransactionOnPrivateMethodRule())),
+                new Scanner(
+                        new FileSystemSourceLoader(),
+                        List.of(new CheckTransactionOnPrivateMethodRule()),
+                        (number, total, rule) -> {}),
                 new PrinterFactory(new ReportFormatter()),
                 new ZondSettings(reportPath),
                 consoleInput);

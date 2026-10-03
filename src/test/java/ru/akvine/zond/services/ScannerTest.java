@@ -6,18 +6,40 @@ import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.printers.FilePrinter;
 import ru.akvine.zond.printers.ReportFormatter;
+import ru.akvine.zond.rules.CheckAutowiredOnStaticFieldRule;
 import ru.akvine.zond.rules.CheckTransactionOnPrivateMethodRule;
+import ru.akvine.zond.rules.CheckTransactionalSelfInvocationRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ScannerTest {
-    private final Scanner scanner =
-            new Scanner(new FileSystemSourceLoader(), List.of(new CheckTransactionOnPrivateMethodRule()));
+    private final Scanner scanner = new Scanner(
+            new FileSystemSourceLoader(),
+            List.of(new CheckTransactionOnPrivateMethodRule()),
+            (number, total, rule) -> {});
+
+    @Test
+    void reportsProgressForEachRuleInCodeOrder(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("Sample.java"), "class Sample {}");
+        List<String> progress = new ArrayList<>();
+        Scanner ordered = new Scanner(
+                new FileSystemSourceLoader(),
+                List.of(
+                        new CheckAutowiredOnStaticFieldRule(),
+                        new CheckTransactionalSelfInvocationRule(),
+                        new CheckTransactionOnPrivateMethodRule()),
+                (number, total, rule) -> progress.add(number + " / " + total + " " + rule.code()));
+
+        ordered.scan(dir);
+
+        assertThat(progress).containsExactly("1 / 3 jr:1", "2 / 3 jr:2", "3 / 3 jr:4");
+    }
 
     @Test
     void scansDirectoryAndWritesReport(@TempDir Path dir) throws IOException {

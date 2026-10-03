@@ -58,4 +58,16 @@ public class RuleCodes {
     public final static String CHECK_PEEK_WITH_SIDE_EFFECT_RULE_CODE = "jr:51";
     public final static String CHECK_COLLECT_UNBOUNDED_STREAM_RULE_CODE = "jr:52";
     public final static String CHECK_FLAT_MAP_INFINITE_STREAM_RULE_CODE = "jr:53";
+    public final static String CHECK_ASYNC_WITHOUT_EXECUTOR_RULE_CODE = "jr:54";
+    public final static String CHECK_LAZY_INJECTION_RULE_CODE = "jr:55";
+    public final static String CHECK_CACHEABLE_SELF_INVOCATION_RULE_CODE = "jr:56";
+    public final static String CHECK_TRANSACTIONAL_HTTP_CALL_RULE_CODE = "jr:57";
+    public final static String CHECK_TRANSACTIONAL_FILE_IO_RULE_CODE = "jr:58";
+    public final static String CHECK_TRANSACTIONAL_ON_FINAL_RULE_CODE = "jr:59";
+    public final static String CHECK_RETRYABLE_SELF_INVOCATION_RULE_CODE = "jr:60";
+    public final static String CHECK_MANUAL_SERVICE_CREATION_RULE_CODE = "jr:61";
+    public final static String CHECK_MANUAL_REPOSITORY_CREATION_RULE_CODE = "jr:62";
+    public final static String CHECK_REPOSITORY_CALL_IN_LOOP_RULE_CODE = "jr:63";
+    public final static String CHECK_SCHEDULED_WITHOUT_LOCK_RULE_CODE = "jr:64";
+    public final static String CHECK_ASYNC_VOID_RULE_CODE = "jr:65";
 }
