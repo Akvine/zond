@@ -47,4 +47,10 @@ public class RuleCodes {
     public final static String CHECK_MAGIC_NUMBER_RULE_CODE = "jr:40";
     public final static String CHECK_TODO_COMMENT_RULE_CODE = "jr:41";
     public final static String CHECK_NAMING_CONVENTION_RULE_CODE = "jr:42";
+    public final static String CHECK_THIS_ESCAPE_IN_CONSTRUCTOR_RULE_CODE = "jr:43";
+    public final static String CHECK_EARLY_SEMAPHORE_RELEASE_RULE_CODE = "jr:44";
+    public final static String CHECK_CONDITION_AWAIT_OUTSIDE_LOOP_RULE_CODE = "jr:45";
+    public final static String CHECK_WAIT_WITHOUT_TIMEOUT_RULE_CODE = "jr:46";
+    public final static String CHECK_IGNORED_SUBMIT_RESULT_RULE_CODE = "jr:47";
+    public final static String CHECK_PUT_IF_ABSENT_WITH_LOGIC_RULE_CODE = "jr:48";
 }
