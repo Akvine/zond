@@ -17,6 +17,9 @@ class TransactionalAnnotations {
     private final static Set<String> OWN_BEHAVIOR_PROPAGATIONS =
             Set.of("REQUIRES_NEW", "NESTED", "NOT_SUPPORTED", "NEVER");
 
+    // rollbackFor / rollbackForClassName - spring, rollbackOn - jakarta / javax
+    private final static Set<String> ROLLBACK_ATTRIBUTES = Set.of("rollbackFor", "rollbackForClassName", "rollbackOn");
+
     // Сравниваем по простому имени, чтобы поймать и @Transactional, и полное имя (spring / jakarta / javax)
     Optional<AnnotationExpr> find(NodeWithAnnotations<?> node) {
         return node.getAnnotations().stream()
@@ -36,6 +39,15 @@ class TransactionalAnnotations {
                 .map(TransactionalAnnotations::lastIdentifier)
                 .filter(OWN_BEHAVIOR_PROPAGATIONS::contains)
                 .findFirst();
+    }
+
+    /**
+     * @return true, если в аннотации явно задано, при каких исключениях откатывать транзакцию
+     */
+    boolean hasRollbackRule(AnnotationExpr annotation) {
+        return annotation.isNormalAnnotationExpr()
+                && annotation.asNormalAnnotationExpr().getPairs().stream()
+                .anyMatch(pair -> ROLLBACK_ATTRIBUTES.contains(pair.getNameAsString()));
     }
 
     private List<Expression> memberValues(AnnotationExpr annotation) {
