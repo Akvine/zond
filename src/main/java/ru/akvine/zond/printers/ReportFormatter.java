@@ -23,6 +23,7 @@ public class ReportFormatter {
             for (Violation violation : result.violations()) {
                 report
                         .append("[").append(violation.errorLevel()).append("] ")
+                        .append("[").append(violation.errorType()).append("] ")
                         .append('[').append(violation.ruleCode()).append("] ")
                         .append(violation.file()).append(':').append(violation.line())
                         .append(" - ").append(violation.message())

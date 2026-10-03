@@ -8,6 +8,7 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
+import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -64,6 +65,7 @@ public class CheckTransactionalSelfInvocationRule implements Rule {
                             .flatMap(callee -> describeProblem(type, caller, callee))
                             .ifPresent(message -> violations.add(new Violation(
                                     errorLevel(),
+                                    errorType(),
                                     code(),
                                     name(),
                                     sourceFile.path(),
@@ -78,6 +80,11 @@ public class CheckTransactionalSelfInvocationRule implements Rule {
     @Override
     public ErrorLevel errorLevel() {
         return ErrorLevel.CRITICAL;
+    }
+
+    @Override
+    public ErrorType errorType() {
+        return ErrorType.LOGICAL;
     }
 
     // save() или this.save() прямо в этом классе, а не во вложенном

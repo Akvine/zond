@@ -3,6 +3,7 @@ package ru.akvine.zond.rules;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
+import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -38,6 +39,7 @@ public class CheckTransactionOnPrivateMethodRule implements Rule {
                 .filter(TransactionalAnnotations::isPresent)
                 .map(method -> new Violation(
                         errorLevel(),
+                        errorType(),
                         code(),
                         name(),
                         sourceFile.path(),
@@ -50,5 +52,10 @@ public class CheckTransactionOnPrivateMethodRule implements Rule {
     @Override
     public ErrorLevel errorLevel() {
         return ErrorLevel.CRITICAL;
+    }
+
+    @Override
+    public ErrorType errorType() {
+        return ErrorType.LOGICAL;
     }
 }

@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules;
 
 import ru.akvine.zond.enums.ErrorLevel;
+import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -25,4 +26,6 @@ public interface Rule {
 
 
     ErrorLevel errorLevel();
+
+    ErrorType errorType();
 }
