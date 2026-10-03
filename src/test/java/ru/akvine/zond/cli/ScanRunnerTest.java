@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.DefaultApplicationArguments;
 import ru.akvine.zond.config.ZondSettings;
+import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.printers.PrinterFactory;
 import ru.akvine.zond.printers.ReportFormatter;
@@ -77,6 +78,7 @@ class ScanRunnerTest {
         return new ScanRunner(
                 new Scanner(
                         new FileSystemSourceLoader(),
+                        new FileSystemConfigLoader(),
                         List.of(new CheckTransactionOnPrivateMethodRule()),
                         (number, total, rule) -> {}),
                 new PrinterFactory(new ReportFormatter()),

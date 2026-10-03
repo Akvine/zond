@@ -2,6 +2,7 @@ package ru.akvine.zond.services;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.printers.FilePrinter;
@@ -21,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ScannerTest {
     private final Scanner scanner = new Scanner(
             new FileSystemSourceLoader(),
+            new FileSystemConfigLoader(),
             List.of(new CheckTransactionOnPrivateMethodRule()),
             (number, total, rule) -> {});
 
@@ -30,6 +32,7 @@ class ScannerTest {
         List<String> progress = new ArrayList<>();
         Scanner ordered = new Scanner(
                 new FileSystemSourceLoader(),
+                new FileSystemConfigLoader(),
                 List.of(
                         new CheckAutowiredOnStaticFieldRule(),
                         new CheckTransactionalSelfInvocationRule(),

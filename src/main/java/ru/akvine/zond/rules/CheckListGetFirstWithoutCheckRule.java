@@ -42,6 +42,8 @@ public class CheckListGetFirstWithoutCheckRule extends AbstractRule {
                 .filter(call -> call.getArgument(0).isIntegerLiteralExpr()
                         && FIRST_INDEX.equals(call.getArgument(0).asIntegerLiteralExpr().getValue()))
                 .filter(call -> call.getScope().filter(scope -> isUncheckedList(scope, call)).isPresent())
+                // В тестах размер списка проверяют утверждением (hasSize, assertEquals), а не условием
+                .filter(call -> !TestClasses.isInside(call))
                 .map(call -> violation(sourceFile, call,
                         "'" + call + "' без проверки на пустоту: на пустом списке будет IndexOutOfBoundsException;"
                                 + " проверьте isEmpty() либо используйте stream().findFirst()"))
