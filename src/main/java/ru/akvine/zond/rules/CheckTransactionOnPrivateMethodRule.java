@@ -2,6 +2,7 @@ package ru.akvine.zond.rules;
 
 import com.github.javaparser.ast.body.MethodDeclaration;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -37,6 +38,7 @@ public class CheckTransactionOnPrivateMethodRule implements Rule {
                 .filter(MethodDeclaration::isPrivate)
                 .filter(this::isTransactional)
                 .map(method -> new Violation(
+                        errorLevel(),
                         code(),
                         name(),
                         sourceFile.path(),
@@ -44,6 +46,11 @@ public class CheckTransactionOnPrivateMethodRule implements Rule {
                         "@Transactional над приватным методом '" + method.getNameAsString()
                                 + "' не работает: Spring-прокси не перехватывает приватные методы"))
                 .toList();
+    }
+
+    @Override
+    public ErrorLevel errorLevel() {
+        return ErrorLevel.CRITICAL;
     }
 
     // Сравниваем по простому имени, чтобы поймать и @Transactional, и полное имя (spring / jakarta / javax)

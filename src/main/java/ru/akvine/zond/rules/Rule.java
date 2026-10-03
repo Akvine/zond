@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules;
 
+import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -21,4 +22,7 @@ public interface Rule {
      * @return найденные нарушения или пустой список
      */
     List<Violation> check(SourceFile sourceFile);
+
+
+    ErrorLevel errorLevel();
 }

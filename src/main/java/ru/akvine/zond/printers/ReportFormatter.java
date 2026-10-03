@@ -21,7 +21,9 @@ public class ReportFormatter {
         if (result.hasViolations()) {
             report.append(newLine);
             for (Violation violation : result.violations()) {
-                report.append('[').append(violation.ruleCode()).append("] ")
+                report
+                        .append("[").append(violation.errorLevel()).append("] ")
+                        .append('[').append(violation.ruleCode()).append("] ")
                         .append(violation.file()).append(':').append(violation.line())
                         .append(" - ").append(violation.message())
                         .append(" (").append(violation.ruleName()).append(')')
