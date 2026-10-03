@@ -6,6 +6,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.config.ZondSettings;
+import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.printers.PrinterFactory;
 import ru.akvine.zond.services.Scanner;
@@ -18,6 +19,9 @@ import java.util.List;
 public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String PATH_OPTION = "path";
     private static final String REPORT_OPTION = "report";
+    private static final String DISABLE_OPTION = "disable";
+    private static final String MIN_LEVEL_OPTION = "min-level";
+    private static final String RULES_SEPARATOR = ",";
     private static final String EXIT_COMMAND = "exit";
 
     private static final int EXIT_OK = 0;
@@ -33,13 +37,23 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
 
     @Override
     public void run(ApplicationArguments args) {
+        ScanOptions options;
+        try {
+            options = resolveOptions(args);
+        } catch (IllegalArgumentException exception) {
+            // Ошибка в настройках: сканировать с неверным порогом уровня хуже, чем не сканировать вовсе
+            System.err.println("Ошибка: " + exception.getMessage());
+            exitCode = EXIT_ERROR;
+            return;
+        }
+
         Path report = resolveReport(args);
         String path = resolvePath(args);
         if (path != null) {
-            scan(path, report);
+            scan(path, report, options);
             return;
         }
-        runInteractive(report);
+        runInteractive(report, options);
     }
 
     @Override
@@ -48,7 +62,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     }
 
     // Путь не передан аргументом - спрашиваем у пользователя, пока он не выйдет
-    private void runInteractive(Path report) {
+    private void runInteractive(Path report, ScanOptions options) {
         System.out.println("Введите путь к .java файлу или директории ('" + EXIT_COMMAND
                 + "' или пустая строка - выход)");
         while (true) {
@@ -61,13 +75,13 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
             if (path.isEmpty() || EXIT_COMMAND.equalsIgnoreCase(path)) {
                 return;
             }
-            scan(path, report);
+            scan(path, report, options);
         }
     }
 
-    private void scan(String path, Path report) {
+    private void scan(String path, Path report, ScanOptions options) {
         try {
-            ScanResult result = scanner.scan(Path.of(path));
+            ScanResult result = scanner.scan(Path.of(path), options);
             printerFactory.create(report).print(result);
             exitCode = result.hasViolations() ? EXIT_VIOLATIONS_FOUND : EXIT_OK;
         } catch (RuntimeException exception) {
@@ -97,6 +111,17 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private Path resolveReport(ApplicationArguments args) {
         String report = optionValue(args, REPORT_OPTION);
         return report == null ? settings.reportPath() : Path.of(report);
+    }
+
+    // Правила из --disable=... добавляются к отключенным в app.properties; --min-level=... заменяет порог из файла
+    private ScanOptions resolveOptions(ApplicationArguments args) {
+        String disabledByArgument = optionValue(args, DISABLE_OPTION);
+        String disabled = disabledByArgument == null
+                ? settings.disabledRules()
+                : settings.disabledRules() + RULES_SEPARATOR + disabledByArgument;
+
+        String minLevel = optionValue(args, MIN_LEVEL_OPTION);
+        return ScanOptions.parse(disabled, minLevel == null ? settings.minLevel() : minLevel);
     }
 
     private String optionValue(ApplicationArguments args, String name) {

@@ -4,10 +4,14 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
+import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.printers.FilePrinter;
 import ru.akvine.zond.printers.ReportFormatter;
 import ru.akvine.zond.rules.CheckAutowiredOnStaticFieldRule;
+import ru.akvine.zond.rules.CheckDdlAutoRule;
+import ru.akvine.zond.rules.CheckFieldInjectionRule;
+import ru.akvine.zond.rules.CheckSecretInConfigRule;
 import ru.akvine.zond.rules.CheckTransactionOnPrivateMethodRule;
 import ru.akvine.zond.rules.CheckTransactionalSelfInvocationRule;
 
@@ -80,5 +84,101 @@ class ScannerTest {
                 .contains("[jr:1]")
                 .contains("Bad.java:2")
                 .contains("Broken.java");
+    }
+
+    @Test
+    void skipsRulesDisabledByOptions(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("Sample.java"), """
+                @Service
+                class Sample {
+                    @Autowired
+                    private Repository repository;
+
+                    @Transactional
+                    private void save() {}
+                }
+                """);
+        // jr:1 - CRITICAL, jr:6 - MINOR
+        Scanner twoRules = new Scanner(
+                new FileSystemSourceLoader(),
+                new FileSystemConfigLoader(),
+                List.of(new CheckTransactionOnPrivateMethodRule(), new CheckFieldInjectionRule()),
+                (number, total, rule) -> {});
+
+        assertThat(twoRules.scan(dir).violations()).extracting(violation -> violation.ruleCode())
+                .containsExactly("jr:6", "jr:1");
+
+        ScanResult byCode = twoRules.scan(dir, ScanOptions.parse("jr:1", ""));
+        assertThat(byCode.violations()).extracting(violation -> violation.ruleCode()).containsExactly("jr:6");
+        assertThat(byCode.rulesCount()).isEqualTo(1);
+        assertThat(byCode.disabledRulesCount()).isEqualTo(1);
+
+        ScanResult byName = twoRules.scan(dir, ScanOptions.parse("CheckFieldInjectionRule", ""));
+        assertThat(byName.violations()).extracting(violation -> violation.ruleCode()).containsExactly("jr:1");
+
+        ScanResult byLevel = twoRules.scan(dir, ScanOptions.parse("", "MAJOR"));
+        assertThat(byLevel.violations()).extracting(violation -> violation.ruleCode()).containsExactly("jr:1");
+        assertThat(byLevel.disabledRulesCount()).isEqualTo(1);
+    }
+
+    @Test
+    void hidesViolationsSuppressedByComments(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("Bad.java"), """
+                class Bad {
+                    @Transactional
+                    private void first() {}
+                    // zond:ignore jr:1 - знаем, исправим позже
+                    @Transactional
+                    private void second() {}
+                    @Transactional // zond:ignore
+                    private void third() {}
+                    // zond:ignore jr:999
+                    @Transactional
+                    private void fourth() {}
+                }
+                """);
+        Files.writeString(dir.resolve("FileLevel.java"), """
+                // zond:ignore-file CheckTransactionOnPrivateMethodRule
+                class FileLevel {
+                    @Transactional
+                    private void save() {}
+                }
+                """);
+        // Слово внутри строкового литерала подавлением не считается
+        Files.writeString(dir.resolve("Literal.java"), """
+                class Literal {
+                    @Transactional private void save() { String text = "zond:ignore"; }
+                }
+                """);
+
+        ScanResult result = scanner.scan(dir);
+
+        assertThat(result.violations())
+                .extracting(violation -> violation.file().getFileName() + ":" + violation.line())
+                .containsExactly("Bad.java:2", "Bad.java:10", "Literal.java:2");
+        assertThat(result.suppressedCount()).isEqualTo(3);
+        assertThat(new ReportFormatter().format(result))
+                .contains("Найдено проблем: 3 (скрыто комментариями zond:ignore: 3)");
+    }
+
+    @Test
+    void suppressesViolationsInConfigFiles(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("application.properties"), """
+                spring.jpa.hibernate.ddl-auto=update
+                # zond:ignore jr:204
+                spring.datasource.password=s3cret
+                app.api.token=abcdef
+                """);
+        Scanner configRules = new Scanner(
+                new FileSystemSourceLoader(),
+                new FileSystemConfigLoader(),
+                List.of(new CheckDdlAutoRule(), new CheckSecretInConfigRule()),
+                (number, total, rule) -> {});
+
+        ScanResult result = configRules.scan(dir);
+
+        assertThat(result.violations()).extracting(violation -> violation.ruleCode() + ":" + violation.line())
+                .containsExactly("jr:200:1", "jr:204:4");
+        assertThat(result.suppressedCount()).isEqualTo(1);
     }
 }

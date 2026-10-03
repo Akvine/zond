@@ -4,14 +4,22 @@ import java.nio.file.Path;
 import java.util.List;
 
 /**
- * @param root        что сканировали
- * @param filesCount  сколько файлов успешно разобрано
- * @param rulesCount  сколько правил было активно
- * @param violations  найденные проблемы
- * @param failedFiles файлы, которые не удалось разобрать
+ * @param root               что сканировали
+ * @param filesCount         сколько файлов успешно разобрано
+ * @param rulesCount         сколько правил было активно
+ * @param disabledRulesCount сколько правил отключено настройками: списком правил или порогом уровня
+ * @param violations         найденные проблемы
+ * @param suppressedCount    сколько проблем скрыто комментариями zond:ignore
+ * @param failedFiles        файлы, которые не удалось разобрать
  */
 public record ScanResult(
-        Path root, int filesCount, int rulesCount, List<Violation> violations, List<Path> failedFiles) {
+        Path root,
+        int filesCount,
+        int rulesCount,
+        int disabledRulesCount,
+        List<Violation> violations,
+        int suppressedCount,
+        List<Path> failedFiles) {
 
     public boolean hasViolations() {
         return !violations.isEmpty();

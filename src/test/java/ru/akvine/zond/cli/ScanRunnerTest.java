@@ -67,6 +67,34 @@ class ScanRunnerTest {
         assertThat(runner.getExitCode()).isZero();
     }
 
+    @Test
+    void minLevelArgumentHidesLessSevereRules() {
+        ScanRunner runner = runner("");
+
+        // Единственное правило имеет уровень CRITICAL - при пороге BLOCKER оно не запускается
+        runner.run(new DefaultApplicationArguments("--path=" + dir, "--min-level=BLOCKER"));
+
+        assertThat(runner.getExitCode()).isZero();
+    }
+
+    @Test
+    void disableArgumentSwitchesRuleOff() {
+        ScanRunner runner = runner("");
+
+        runner.run(new DefaultApplicationArguments("--path=" + dir, "--disable=jr:1"));
+
+        assertThat(runner.getExitCode()).isZero();
+    }
+
+    @Test
+    void unknownMinLevelIsAnError() {
+        ScanRunner runner = runner("");
+
+        runner.run(new DefaultApplicationArguments("--path=" + dir, "--min-level=HIGH"));
+
+        assertThat(runner.getExitCode()).isEqualTo(2);
+    }
+
     private ScanRunner runner(String reportPath, String... inputLines) {
         Queue<String> input = new ArrayDeque<>(List.of(inputLines));
         ConsoleInput consoleInput = new ConsoleInput() {
@@ -82,7 +110,7 @@ class ScanRunnerTest {
                         List.of(new CheckTransactionOnPrivateMethodRule()),
                         (number, total, rule) -> {}),
                 new PrinterFactory(new ReportFormatter()),
-                new ZondSettings(reportPath),
+                new ZondSettings(reportPath, "", ""),
                 consoleInput);
     }
 }

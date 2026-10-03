@@ -14,9 +14,16 @@ import java.nio.file.Path;
 @PropertySource(value = "file:${config:./app.properties}", ignoreResourceNotFound = true, encoding = "UTF-8")
 public class ZondSettings {
     private final String reportPath;
+    private final String disabledRules;
+    private final String minLevel;
 
-    public ZondSettings(@Value("${zond.report.path:}") String reportPath) {
+    public ZondSettings(
+            @Value("${zond.report.path:}") String reportPath,
+            @Value("${zond.rules.disabled:}") String disabledRules,
+            @Value("${zond.rules.min-level:}") String minLevel) {
         this.reportPath = reportPath;
+        this.disabledRules = disabledRules;
+        this.minLevel = minLevel;
     }
 
     /**
@@ -24,5 +31,19 @@ public class ZondSettings {
      */
     public Path reportPath() {
         return reportPath.isBlank() ? null : Path.of(reportPath.trim());
+    }
+
+    /**
+     * @return отключенные правила через запятую (коды или имена) либо пустая строка
+     */
+    public String disabledRules() {
+        return disabledRules;
+    }
+
+    /**
+     * @return имя уровня, ниже которого находки не показываются, либо пустая строка
+     */
+    public String minLevel() {
+        return minLevel;
     }
 }

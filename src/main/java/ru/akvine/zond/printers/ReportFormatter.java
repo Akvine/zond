@@ -15,8 +15,17 @@ public class ReportFormatter {
         report.append("Zond: отчет о сканировании").append(newLine);
         report.append("Путь: ").append(result.root().toAbsolutePath().normalize()).append(newLine);
         report.append("Файлов проверено: ").append(result.filesCount()).append(newLine);
-        report.append("Активных правил: ").append(result.rulesCount()).append(newLine);
-        report.append("Найдено проблем: ").append(result.violations().size()).append(newLine);
+        report.append("Активных правил: ").append(result.rulesCount());
+        if (result.disabledRulesCount() > 0) {
+            report.append(" (отключено настройками: ").append(result.disabledRulesCount()).append(')');
+        }
+        report.append(newLine);
+
+        report.append("Найдено проблем: ").append(result.violations().size());
+        if (result.suppressedCount() > 0) {
+            report.append(" (скрыто комментариями zond:ignore: ").append(result.suppressedCount()).append(')');
+        }
+        report.append(newLine);
 
         if (result.hasViolations()) {
             report.append(newLine);

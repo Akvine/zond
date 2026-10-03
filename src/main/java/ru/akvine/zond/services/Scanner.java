@@ -6,6 +6,7 @@ import ru.akvine.zond.loaders.ConfigLoader;
 import ru.akvine.zond.loaders.SourceLoader;
 import ru.akvine.zond.models.ConfigFile;
 import ru.akvine.zond.models.LoadResult;
+import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
@@ -29,12 +30,17 @@ public class Scanner {
     private final ScanProgressListener progressListener;
 
     public ScanResult scan(Path root) {
+        return scan(root, ScanOptions.defaults());
+    }
+
+    public ScanResult scan(Path root, ScanOptions options) {
         LoadResult loaded = sourceLoader.load(root);
         List<ConfigFile> configFiles = configLoader.load(root);
 
         // Spring отдает правила в произвольном порядке - выстраиваем по номеру, чтобы прогресс шел предсказуемо
-        List<Rule> activeRules = rules.stream()
-                .filter(Rule::enabled)
+        List<Rule> enabledRules = rules.stream().filter(Rule::enabled).toList();
+        List<Rule> activeRules = enabledRules.stream()
+                .filter(rule -> options.allows(rule.code(), rule.name(), rule.errorLevel()))
                 .sorted(Comparator.comparingInt(rule -> codeNumber(rule.code())))
                 .toList();
 
@@ -45,6 +51,11 @@ public class Scanner {
             violations.addAll(apply(rule, loaded.sources(), configFiles));
         }
 
+        // Находки, которые в самом коде помечены комментарием zond:ignore
+        Suppressions suppressions = new Suppressions();
+        int found = violations.size();
+        violations.removeIf(suppressions::isSuppressed);
+
         // Проверка идет по правилам, а читать отчет удобнее по файлам
         violations.sort(Comparator.comparing((Violation violation) -> violation.file().toString())
                 .thenComparingInt(Violation::line));
@@ -52,7 +63,9 @@ public class Scanner {
                 root,
                 loaded.sources().size() + configFiles.size(),
                 activeRules.size(),
+                enabledRules.size() - activeRules.size(),
                 violations,
+                found - violations.size(),
                 loaded.failedFiles());
     }
 
