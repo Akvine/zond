@@ -271,4 +271,26 @@ public class RuleCodes {
     public final static String CHECK_SPRING_BOOT_TEST_WITHOUT_CONTEXT_RULE_CODE = "jr:265";
     public final static String CHECK_CONSTANT_ASSERTION_RULE_CODE = "jr:266";
     public final static String CHECK_BYTE_ARRAY_LOGGING_RULE_CODE = "jr:267";
+    public final static String CHECK_MODIFYING_QUERY_MISUSE_RULE_CODE = "jr:268";
+    public final static String CHECK_QUERY_PARAMETER_MISMATCH_RULE_CODE = "jr:269";
+    public final static String CHECK_FETCH_JOIN_WITH_PAGINATION_RULE_CODE = "jr:270";
+    public final static String CHECK_NATIVE_PAGING_WITHOUT_COUNT_QUERY_RULE_CODE = "jr:271";
+    public final static String CHECK_SELECT_STAR_RULE_CODE = "jr:272";
+    public final static String CHECK_SINGLE_RESULT_WITHOUT_HANDLING_RULE_CODE = "jr:273";
+    public final static String CHECK_JDBC_TRANSACTION_WITHOUT_ROLLBACK_RULE_CODE = "jr:274";
+    public final static String CHECK_CONSTRAINT_ON_WRONG_TYPE_RULE_CODE = "jr:275";
+    public final static String CHECK_CONSTRAINT_WITHOUT_VALIDATED_RULE_CODE = "jr:276";
+    public final static String CHECK_NESTED_DTO_WITHOUT_VALID_RULE_CODE = "jr:277";
+    public final static String CHECK_REPOSITORY_COLLECTION_PARAMETER_RULE_CODE = "jr:278";
+    public final static String CHECK_NULL_CHECK_WRONG_OPERATOR_RULE_CODE = "jr:279";
+    public final static String CHECK_INCOMPATIBLE_TYPES_RULE_CODE = "jr:280";
+    public final static String CHECK_EXCEPTION_NOT_THROWN_RULE_CODE = "jr:281";
+    public final static String CHECK_FORMAT_ARGUMENTS_MISMATCH_RULE_CODE = "jr:282";
+    public final static String CHECK_DUPLICATE_CONDITION_RULE_CODE = "jr:283";
+    public final static String CHECK_INDEX_OF_POSITIVE_RULE_CODE = "jr:284";
+    public final static String CHECK_NON_SHORT_CIRCUIT_LOGIC_RULE_CODE = "jr:285";
+    public final static String CHECK_NARROWING_CAST_RULE_CODE = "jr:286";
+    public final static String CHECK_MUTABLE_PUBLIC_CONSTANT_RULE_CODE = "jr:287";
+    public final static String CHECK_SIZE_COMPARED_TO_ZERO_RULE_CODE = "jr:288";
+    public final static String CHECK_RAW_TYPE_RULE_CODE = "jr:289";
 }

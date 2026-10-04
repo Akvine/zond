@@ -1,7 +1,7 @@
 # Zond
 
 Консольный статический анализатор Java-кода. Проверяет исходники и файлы настроек Spring-приложения
-по набору правил (сейчас их 266) и выводит найденные проблемы в консоль, текстовый файл или Excel.
+по набору правил (сейчас их 288) и выводит найденные проблемы в консоль, текстовый файл или Excel.
 
 Работает без базы данных и внешних сервисов: на входе папка с кодом, на выходе отчет.
 
@@ -251,7 +251,7 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
 **1. Заведите код** — следующую по номеру константу в `rules/RuleCodes.java`:
 
 ```java
-public final static String CHECK_THREAD_STOP_RULE_CODE = "jr:268";
+public final static String CHECK_THREAD_STOP_RULE_CODE = "jr:290";
 ```
 
 **2. Напишите класс** в пакете `ru.akvine.zond.rules`. Проще всего унаследоваться от `AbstractRule`:
