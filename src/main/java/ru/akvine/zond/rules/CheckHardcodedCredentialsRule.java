@@ -21,22 +21,9 @@ public class CheckHardcodedCredentialsRule extends AbstractRule {
     private static final String SECRET_WORDS =
             "password|passwd|pwd|secret|token|api_?key|private_?key|access_?key|credential";
 
-    private static final Pattern SECRET_NAME =
-            Pattern.compile(".*(" + SECRET_WORDS + ").*", Pattern.CASE_INSENSITIVE);
-
-    // TOKEN_HEADER = "X-Auth-Token", PASSWORD_PARAM = "pass", INVALID_TOKEN_CODE = "E42":
-    // в таких константах лежит не секрет, а его название или что-то, что к нему относится
-    private static final Pattern NOT_SECRET_NAME = Pattern.compile(
-            ".*(header|param|parameter|field|name|prefix|suffix|path|url|uri|property|attribute|claim|type|label"
-                    + "|message|pattern|regex|format|column|cookie|code|error|words|id)$",
-            Pattern.CASE_INSENSITIVE);
-
     // setPassword("..."), withToken("..."), password("...")
     private static final Pattern SECRET_SETTER =
             Pattern.compile("^(set|with)?(" + SECRET_WORDS + ")$", Pattern.CASE_INSENSITIVE);
-
-    // ${db.password}, #{...}: значение подставляется из настроек
-    private static final Pattern PLACEHOLDER_VALUE = Pattern.compile("^[$#]\\{.*");
 
     @Override
     public String code() {
@@ -96,9 +83,8 @@ public class CheckHardcodedCredentialsRule extends AbstractRule {
     }
 
     private boolean isSecret(String name, Expression value) {
-        return SECRET_NAME.matcher(name).matches()
-                && !NOT_SECRET_NAME.matcher(name).matches()
-                && isSecretValue(value, name);
+        // TOKEN_HEADER, REVOKE_TOKEN_BUTTON_TEXT, tokenService: слово о секрете в имени есть, но самого секрета нет
+        return Secrets.isSecretName(name) && isSecretValue(value, name);
     }
 
     private boolean isSecretValue(Expression expression, String name) {
@@ -107,8 +93,9 @@ public class CheckHardcodedCredentialsRule extends AbstractRule {
             return false;
         }
 
+        // Подпись, сообщение, адрес, название параметра или подстановка из настроек - не секрет
         String text = value.asStringLiteralExpr().asString();
-        if (text.isBlank() || PLACEHOLDER_VALUE.matcher(text).matches()) {
+        if (!Secrets.isSecretValue(text)) {
             return false;
         }
 
