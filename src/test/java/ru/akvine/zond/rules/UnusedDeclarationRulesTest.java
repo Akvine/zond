@@ -122,6 +122,51 @@ class UnusedDeclarationRulesTest {
     }
 
     @Test
+    void codeReachedOnlyFromDeadCodeIsDeadToo() {
+        Map<String, String> files = Map.of(
+                "Main.java", "class Main { public static void main(String[] args) { new Service().run(); } }",
+                "Service.java", """
+                        class Service {
+                            void run() { step(); }
+                            void step() {}
+                            void legacy() { helper(); new Formatter().format(); }
+                            void helper() { deep(); }
+                            private void deep() {}
+                            private void lonely() {}
+                        }
+                        """,
+                "Formatter.java", "class Formatter { void format() {} }",
+                "Old.java", "class Old { void run() { new OldHelper().help(); } }",
+                "OldHelper.java", "class OldHelper { void help() {} }",
+                "Ping.java", "class Ping { Pong pong; }",
+                "Pong.java", "class Pong { Ping ping; }");
+
+        List<Violation> methods = RuleTests.checkProject(new CheckUnusedMethodRule(), files);
+        // lonely() без единого вызова находит правило о приватных методах, а deep() мертв из-за цепочки
+        assertThat(names(methods)).containsExactlyInAnyOrder(
+                "Service.legacy", "Service.helper", "Service.deep", "Formatter.format");
+        assertThat(messageAbout(methods, "Service.legacy")).contains("нигде в проекте не вызывается");
+        assertThat(messageAbout(methods, "Service.helper"))
+                .contains("вызывается только из неиспользуемого кода (Service.legacy)");
+        assertThat(messageAbout(methods, "Formatter.format")).contains("(Service.legacy)");
+
+        List<Violation> classes = RuleTests.checkProject(new CheckUnusedClassRule(), files);
+        // Ping и Pong ссылаются только друг на друга
+        assertThat(names(classes)).containsExactlyInAnyOrder("Old", "OldHelper", "Ping", "Pong");
+        assertThat(messageAbout(classes, "Old")).contains("нигде в проекте не используется");
+        assertThat(messageAbout(classes, "OldHelper"))
+                .contains("используется только в неиспользуемых классах (Old)");
+    }
+
+    private String messageAbout(List<Violation> violations, String name) {
+        return violations.stream()
+                .map(Violation::message)
+                .filter(message -> message.contains("'" + name + "'"))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Нет находки о " + name));
+    }
+
+    @Test
     void singleFileIsNotEnoughToJudge() {
         assertThat(RuleTests.check(new CheckUnusedMethodRule(), "class Report { void print() {} }")).isEmpty();
         assertThat(RuleTests.check(new CheckUnusedClassRule(), "class Report { void print() {} }")).isEmpty();

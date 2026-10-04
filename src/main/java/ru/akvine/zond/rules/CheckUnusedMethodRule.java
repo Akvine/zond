@@ -10,17 +10,9 @@ import ru.akvine.zond.models.Violation;
 
 import java.util.List;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 @Component
 public class CheckUnusedMethodRule extends AbstractUnusedDeclarationRule {
-    // getName(), setName(...), isActive(): их вызывают по имени свойства Jackson, JPA, шаблоны и Spring
-    private static final Pattern ACCESSOR = Pattern.compile("^(get|set|is)[A-Z].*");
-
-    // Методы, которые вызывает сама JVM или стандартная библиотека
-    private static final Set<String> STANDARD_METHODS = Set.of(
-            "equals", "hashCode", "toString", "compareTo", "clone", "finalize", "close",
-            "readObject", "writeObject", "readResolve", "writeReplace", "valueOf", "values");
 
     @Override
     public String code() {
@@ -29,25 +21,37 @@ public class CheckUnusedMethodRule extends AbstractUnusedDeclarationRule {
 
     @Override
     public String description() {
-        return "Сканирует проект и ищет методы, которые нигде не вызываются";
+        return "Сканирует проект и ищет методы, которые нигде не вызываются либо вызываются только"
+                + " из такого же неиспользуемого кода";
     }
 
     @Override
     protected void check(
-            SourceFile sourceFile, TypeDeclaration<?> type, boolean unused, ProjectUsages usages,
-            List<Violation> violations) {
+            SourceFile sourceFile, TypeDeclaration<?> type, ProjectUsages usages, List<Violation> violations) {
         // О неиспользуемом классе сообщает отдельное правило - перечислять еще и его методы незачем
-        if (unused || isInsideUnused(type, usages)) {
+        if (usages.isTypeDead(type) || isInsideDead(type, usages)) {
             return;
         }
         for (MethodDeclaration method : type.getMethods()) {
-            if (isCandidate(method, usages) && !usages.mayOverride(method, type) && !usages.isMethodUsed(method)) {
-                violations.add(violation(sourceFile, method,
-                        "Метод '" + type.getNameAsString() + "." + method.getNameAsString() + "' нигде в проекте"
-                                + " не вызывается: мертвый код приходится читать и сопровождать впустую;"
-                                + " удалите его. Если его вызывают извне (другой модуль, рефлексия, шаблон),"
-                                + " скройте находку комментарием zond:ignore"));
+            if (!usages.isMethodDead(method)) {
+                continue;
             }
+
+            // Приватный метод без единого вызова находит отдельное правило в пределах файла
+            Set<String> callers = usages.callersOf(method);
+            if (method.isPrivate() && callers.isEmpty()) {
+                continue;
+            }
+
+            // Метод, который вызывается только из мертвого кода, сам мертв: удалять их нужно вместе
+            String reason = callers.isEmpty()
+                    ? "нигде в проекте не вызывается"
+                    : "вызывается только из неиспользуемого кода (" + String.join(", ", callers) + ")";
+            violations.add(violation(sourceFile, method,
+                    "Метод '" + type.getNameAsString() + "." + method.getNameAsString() + "' " + reason
+                            + ": мертвый код приходится читать и сопровождать впустую;"
+                            + " удалите его. Если его вызывают извне (другой модуль, рефлексия, шаблон),"
+                            + " скройте находку комментарием zond:ignore"));
         }
     }
 
@@ -59,16 +63,5 @@ public class CheckUnusedMethodRule extends AbstractUnusedDeclarationRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.CODE_SMELL;
-    }
-
-    // Приватные методы проверяет отдельное правило в пределах файла. Метод с аннотацией (@GetMapping, @Bean,
-    // @Scheduled, @Override) вызывает фреймворк либо код через тип предка
-    private boolean isCandidate(MethodDeclaration method, ProjectUsages usages) {
-        String name = method.getNameAsString();
-        return !method.isPrivate()
-                && !usages.isFrameworkEntry(method)
-                && !isMain(method)
-                && !ACCESSOR.matcher(name).matches()
-                && !STANDARD_METHODS.contains(name);
     }
 }

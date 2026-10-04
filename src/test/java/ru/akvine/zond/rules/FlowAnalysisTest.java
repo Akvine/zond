@@ -80,6 +80,74 @@ class FlowAnalysisTest {
     }
 
     @Test
+    void customerNamedClientIsNotHttpClient() throws IOException {
+        List<Violation> found = check(new CheckTransactionalHttpCallRule(), Map.of(
+                "Sender", SENDER,
+                "Client", """
+                        package demo;
+
+                        @Entity
+                        @Data
+                        @Accessors(chain = true)
+                        public class Client {
+                            private String chatId;
+                            private boolean active;
+
+                            public void decreaseTests() {}
+                        }
+                        """,
+                "ClientModel", """
+                        package demo;
+
+                        public class ClientModel {
+                            public String getToken() { return ""; }
+                        }
+                        """,
+                "Subscriptions", """
+                        package demo;
+
+                        public class Subscriptions {
+                            private Sender sender;
+
+                            @Transactional
+                            public void add(Client client, ClientModel currentClient, Order order) {
+                                client.getChatId();
+                                client.decreaseTests();
+                                client.setChatId("1").setActive(true);
+                                currentClient.getToken();
+                                order.getOwnerClient().getChatId();
+                                sender.send();
+                            }
+                        }
+                        """));
+
+        // Сущность и модель с именем на "client" - объекты с данными; настоящий HTTP-вызов спрятан в sender.send()
+        assertThat(found).singleElement().satisfies(violation -> {
+            assertThat(place(violation)).isEqualTo("Subscriptions:13");
+            assertThat(violation.message()).contains("restTemplate.postForObject (через вызов send)");
+        });
+    }
+
+    @Test
+    void objectNamedClientIsJudgedByWhatIsDoneWithIt() {
+        // Типы неизвестны: чтение и запись свойств - работа с данными, остальное - возможное обращение по сети
+        assertThat(RuleTests.lines(new CheckTransactionalHttpCallRule(), """
+                class Orders {
+                    @Transactional
+                    public void place(Order order) {
+                        client.getChatId();
+                        ownerClient.isActive();
+                        order.getClient().getId();
+                        order.setClient(client).setActive(true);
+                        paymentClient.charge(order);
+                        paymentClient.getOrders(order.getId());
+                        restClient.getStatus();
+                    }
+                }
+                """)).containsExactly(8, 9, 10);
+    }
+
+    @Test
     void callOfInterfaceMethodLeadsToImplementation() throws IOException {
         List<Violation> found = check(new CheckTransactionalHttpCallRule(), Map.of(
                 "Gateway", """
@@ -194,6 +262,111 @@ class FlowAnalysisTest {
                     .contains("customerRepository.findById")
                     .contains("через вызов enrich -> load");
         });
+    }
+
+    @Test
+    void findsWriteHiddenBehindCallFromReadOnlyTransaction() throws IOException {
+        List<Violation> found = check(new CheckWriteInReadOnlyTransactionRule(), Map.of(
+                "Archive", """
+                        package demo;
+
+                        public class Archive {
+                            private ReportRepository reportRepository;
+
+                            public void store() {
+                                reportRepository.save(null);
+                            }
+                        }
+                        """,
+                "Audit", """
+                        package demo;
+
+                        public class Audit {
+                            private AuditRepository auditRepository;
+
+                            @Transactional(propagation = Propagation.REQUIRES_NEW)
+                            public void record() {
+                                auditRepository.save(null);
+                            }
+                        }
+                        """,
+                "Reports", """
+                        package demo;
+
+                        public class Reports {
+                            private Archive archive;
+                            private Audit audit;
+
+                            @Transactional(readOnly = true)
+                            public void build() {
+                                archive.store();
+                                audit.record();
+                            }
+                        }
+                        """));
+
+        // store() выполняется в той же readOnly-транзакции, а record() с REQUIRES_NEW открывает свою
+        assertThat(found).singleElement().satisfies(violation -> {
+            assertThat(place(violation)).isEqualTo("Reports:9");
+            assertThat(violation.message())
+                    .contains("'store(...)'")
+                    .contains("reportRepository.save")
+                    .contains("через вызов store");
+        });
+    }
+
+    @Test
+    void followsResourceThroughProjectMethods() {
+        List<Violation> found = RuleTests.check(new CheckUnclosedResourceRule(), """
+                class Sample {
+                    void leaksThroughHelper() throws Exception {
+                        FileReader reader = new FileReader("a.txt");
+                        print(reader);
+                    }
+
+                    void closesInHelper() throws Exception {
+                        FileReader reader = new FileReader("a.txt");
+                        consume(reader);
+                    }
+
+                    void usesFactory() throws Exception {
+                        FileReader reader = open("a.txt");
+                        reader.read();
+                    }
+
+                    void givesAway() throws Exception {
+                        FileReader reader = open("a.txt");
+                        external.handle(reader);
+                    }
+
+                    void onlyChecks() throws Exception {
+                        FileReader reader = new FileReader("a.txt");
+                        if (reader != null) {
+                            log.info("opened {}", reader);
+                        }
+                    }
+
+                    void print(FileReader reader) throws Exception {
+                        System.out.println(reader.read());
+                    }
+
+                    void consume(FileReader reader) throws Exception {
+                        try (reader) {
+                            reader.read();
+                        }
+                    }
+
+                    FileReader open(String name) throws Exception {
+                        return new FileReader(name);
+                    }
+                }
+                """);
+
+        assertThat(found).extracting(Violation::line).containsExactly(3, 13, 23);
+        // Метод проекта, которому отдан ресурс, его тоже не закрывает
+        assertThat(found.get(0).message()).contains("передается в print, но и там не закрывается");
+        // Ресурс открыт не здесь, а в методе, который его вернул
+        assertThat(found.get(1).message()).contains("полученный из 'open(...)'");
     }
 
     @Test

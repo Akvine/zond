@@ -118,6 +118,10 @@ public class CheckParallelStreamWithIoRule extends AbstractRule {
         if (FILES.equals(name)) {
             return true;
         }
+        // Сущность Client, модель Connection: имя похоже, но это объект с данными
+        if (Types.projectType(Nodes.unwrap(scope)).filter(DataObjects::isDataObject).isPresent()) {
+            return false;
+        }
         // String client, Map template - имя похоже, но тип из JDK и к вводу-выводу отношения не имеет
         return Types.matches(Nodes.unwrap(scope), type -> IO_RECEIVER.matcher(type).matches())
                 .orElseGet(() -> IO_RECEIVER.matcher(name).matches());
