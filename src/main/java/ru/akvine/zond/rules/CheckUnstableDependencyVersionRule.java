@@ -33,7 +33,7 @@ public class CheckUnstableDependencyVersionRule extends AbstractContextRule {
     public List<Violation> checkContext(ScanContext context) {
         List<Violation> violations = new ArrayList<>();
         for (TextFile file : context.textFiles()) {
-            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file)) {
+            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file, context.textFiles())) {
                 describeProblem(dependency.version()).ifPresent(problem -> violations.add(violation(
                         file.path(), dependency.line(),
                         "Зависимость " + dependency.coordinates() + ":" + dependency.version() + " - " + problem

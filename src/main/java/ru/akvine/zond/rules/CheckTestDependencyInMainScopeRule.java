@@ -32,7 +32,7 @@ public class CheckTestDependencyInMainScopeRule extends AbstractContextRule {
     public List<Violation> checkContext(ScanContext context) {
         List<Violation> violations = new ArrayList<>();
         for (TextFile file : context.textFiles()) {
-            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file)) {
+            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file, context.textFiles())) {
                 if (isTestLibrary(dependency) && !dependency.isTestOnly() && !dependency.managed()) {
                     violations.add(violation(file.path(), dependency.line(),
                             "Тестовая библиотека " + dependency.coordinates() + " подключена к основному коду"

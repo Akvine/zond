@@ -1,7 +1,7 @@
 package ru.akvine.zond.loaders;
 
 import org.springframework.stereotype.Component;
-import ru.akvine.zond.enums.FileKind;
+import ru.akvine.zond.enums.TextFileType;
 import ru.akvine.zond.models.TextFile;
 
 import java.io.IOException;
@@ -40,7 +40,9 @@ public class FileSystemTextFileLoader implements TextFileLoader {
     // Файл в другой кодировке или недоступный для чтения пропускаем
     private void read(Path path, List<TextFile> files) {
         try {
-            files.add(new TextFile(path, Files.readAllLines(path, StandardCharsets.UTF_8)));
+            List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
+            // XML и YAML бывают какими угодно: что это за файл, видно только по содержимому
+            TextFileType.of(path, lines).ifPresent(type -> files.add(new TextFile(path, lines, type)));
         } catch (IOException | RuntimeException exception) {
             System.err.println("Не удалось прочитать " + path + ": " + exception.getMessage());
         }
@@ -52,7 +54,6 @@ public class FileSystemTextFileLoader implements TextFileLoader {
                 return false;
             }
         }
-        // Файлы настроек Spring читает и разбирает ConfigLoader
-        return FileKind.of(path.getFileName().toString()).filter(kind -> kind != FileKind.CONFIG).isPresent();
+        return TextFileType.isCandidate(path);
     }
 }

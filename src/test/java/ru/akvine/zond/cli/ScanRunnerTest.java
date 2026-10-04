@@ -139,7 +139,7 @@ class ScanRunnerTest {
                 "4", "2",                      // минимальный уровень: CRITICAL
                 "5", "1", "jr:1, jr:999", "4", // отключить правило, неизвестное пропускается
                 "6", "generated, *Dto.java",   // исключенные пути
-                "7", "1", "6",                 // SQL-файлы: не проверять
+                "7", "1", "9",                 // миграции БД: не проверять
                 "8",
                 SCAN, EXIT);
 
@@ -157,7 +157,10 @@ class ScanRunnerTest {
                 "zond.scan.build-files=true",
                 "zond.scan.docker=true",
                 "zond.scan.config=true",
-                "zond.scan.messages=true");
+                "zond.scan.messages=true",
+                "zond.scan.logging=true",
+                "zond.scan.kubernetes=true",
+                "zond.scan.ci=true");
         // Единственное правило отключено - проблем нет, отчет лежит в новой папке
         assertThat(reports.resolve("old.xlsx")).exists();
         assertThat(runner.getExitCode()).isZero();

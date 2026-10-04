@@ -3,6 +3,8 @@ package ru.akvine.zond.loaders;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.models.ConfigFile;
 import ru.akvine.zond.models.ConfigProperty;
+import ru.akvine.zond.parsers.YamlNode;
+import ru.akvine.zond.parsers.YamlParser;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -13,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 import java.util.regex.Matcher;
@@ -85,9 +88,35 @@ public class FileSystemConfigLoader implements ConfigLoader {
         return properties;
     }
 
-    // Упрощенный разбор: вложенные ключи со скалярными значениями. Списки и многострочные блоки пропускаются -
-    // для проверок нужны только свойства вида spring.jpa.hibernate.ddl-auto
+    // Ключи вложенных словарей соединяются точкой, элементы списков получают индекс - так же свойства
+    // называет Spring: app.servers[0].host
     private List<ConfigProperty> parseYaml(List<String> lines) {
+        Optional<List<YamlNode>> documents = YamlParser.parse(lines);
+        if (documents.isEmpty()) {
+            // Файл с подстановками сборки (@project.version@) - не корректный YAML, но ключи в нем прочитать можно
+            return parseYamlByLines(lines);
+        }
+        List<ConfigProperty> properties = new ArrayList<>();
+        documents.get().forEach(document -> flatten("", document, properties));
+        return properties;
+    }
+
+    private void flatten(String prefix, YamlNode node, List<ConfigProperty> properties) {
+        if (node.isScalar()) {
+            // Свойство без значения прежний разбор тоже пропускал: проверять в нем нечего
+            if (!prefix.isEmpty() && !node.text().isEmpty()) {
+                properties.add(new ConfigProperty(prefix, node.text(), node.line()));
+            }
+            return;
+        }
+        node.entries().forEach((key, value) -> flatten(prefix.isEmpty() ? key : prefix + "." + key, value, properties));
+        for (int index = 0; index < node.items().size(); index++) {
+            flatten(prefix + "[" + index + "]", node.items().get(index), properties);
+        }
+    }
+
+    // Запасной разбор по строкам: вложенные ключи со скалярными значениями, без списков и многострочных блоков
+    private List<ConfigProperty> parseYamlByLines(List<String> lines) {
         List<ConfigProperty> properties = new ArrayList<>();
         Deque<YamlKey> path = new ArrayDeque<>();
 

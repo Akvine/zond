@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.enums.ErrorLevel;
+import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.loaders.ConfigLoader;
 import ru.akvine.zond.loaders.SourceLoader;
 import ru.akvine.zond.loaders.TextFileLoader;
@@ -47,8 +48,13 @@ public class Scanner {
         // Файлы, исключенные настройками, отсеиваются до разбора
         LoadResult loaded = sourceLoader.load(
                 root, file -> options.includes(root, file), options.classpath(), options.threadCount());
-        List<ConfigFile> configFiles = configLoader.load(root, file -> options.includes(root, file));
-        List<TextFile> textFiles = textFileLoader.load(root, file -> options.includes(root, file));
+        // Виды файлов, отключенные настройками zond.scan.*, в проверку не попадают
+        List<ConfigFile> configFiles = options.scans(FileKind.CONFIG)
+                ? configLoader.load(root, file -> options.includes(root, file))
+                : List.of();
+        List<TextFile> textFiles = textFileLoader.load(root, file -> options.includes(root, file)).stream()
+                .filter(file -> options.scans(file.type().getKind()))
+                .toList();
         ScanContext context = new ScanContext(root, loaded.sources(), configFiles, textFiles);
 
         // Правила идут по номеру кода, чтобы прогресс шел предсказуемо

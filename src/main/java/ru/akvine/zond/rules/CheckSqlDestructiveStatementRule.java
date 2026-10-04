@@ -25,14 +25,14 @@ public class CheckSqlDestructiveStatementRule extends AbstractContextRule {
 
     @Override
     public String description() {
-        return "Сканирует SQL-миграции и ищет команды, которые безвозвратно удаляют данные: DROP TABLE, DROP COLUMN, TRUNCATE";
+        return "Сканирует миграции (SQL и журналы Liquibase) и ищет команды, которые безвозвратно удаляют данные: DROP TABLE, DROP COLUMN, TRUNCATE";
     }
 
     @Override
     public List<Violation> checkContext(ScanContext context) {
         List<Violation> violations = new ArrayList<>();
         for (TextFile file : context.textFiles()) {
-            if (!TextFiles.isSql(file)) {
+            if (!TextFiles.isMigration(file)) {
                 continue;
             }
             for (SqlStatements.Statement statement : SqlStatements.of(file)) {

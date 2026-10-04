@@ -1,11 +1,11 @@
 package ru.akvine.zond.rules;
 
 import lombok.experimental.UtilityClass;
+import ru.akvine.zond.enums.TextFileType;
 import ru.akvine.zond.models.TextFile;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -14,12 +14,6 @@ import java.util.regex.Pattern;
  */
 @UtilityClass
 class TextFiles {
-    private static final String SQL_EXTENSION = ".sql";
-    private static final String POM = "pom.xml";
-    private static final String GRADLE_PREFIX = "build.gradle";
-    private static final String DOCKERFILE = "dockerfile";
-    private static final Pattern MESSAGES = Pattern.compile("^messages.*\\.properties$");
-
     // key=value, key: value, key value
     private static final Pattern PROPERTY_LINE = Pattern.compile("^\\s*([^=:\\s]+)\\s*[=:]?\\s*(.*)$");
 
@@ -29,25 +23,45 @@ class TextFiles {
     record Entry(String key, String value, int line) {
     }
 
-    boolean isSql(TextFile file) {
-        return lowerName(file).endsWith(SQL_EXTENSION);
+    /**
+     * @return true для миграций базы данных: SQL-файла либо журнала Liquibase в XML или YAML
+     */
+    boolean isMigration(TextFile file) {
+        return file.type() == TextFileType.SQL
+                || file.type() == TextFileType.LIQUIBASE_XML
+                || file.type() == TextFileType.LIQUIBASE_YAML;
     }
 
     boolean isPom(TextFile file) {
-        return POM.equals(lowerName(file));
+        return file.type() == TextFileType.POM;
     }
 
     boolean isGradle(TextFile file) {
-        return lowerName(file).startsWith(GRADLE_PREFIX);
+        return file.type() == TextFileType.GRADLE;
     }
 
     boolean isDockerfile(TextFile file) {
-        String name = lowerName(file);
-        return name.equals(DOCKERFILE) || name.startsWith(DOCKERFILE + ".") || name.endsWith("." + DOCKERFILE);
+        return file.type() == TextFileType.DOCKERFILE;
+    }
+
+    boolean isCompose(TextFile file) {
+        return file.type() == TextFileType.COMPOSE;
     }
 
     boolean isMessages(TextFile file) {
-        return MESSAGES.matcher(file.name()).matches();
+        return file.type() == TextFileType.MESSAGES;
+    }
+
+    boolean isLogConfig(TextFile file) {
+        return file.type() == TextFileType.LOGBACK || file.type() == TextFileType.LOG4J2;
+    }
+
+    boolean isKubernetes(TextFile file) {
+        return file.type() == TextFileType.KUBERNETES;
+    }
+
+    boolean isCi(TextFile file) {
+        return file.type() == TextFileType.GITLAB_CI || file.type() == TextFileType.GITHUB_WORKFLOW;
     }
 
     /**
@@ -70,9 +84,5 @@ class TextFiles {
             }
         }
         return entries;
-    }
-
-    private String lowerName(TextFile file) {
-        return file.name().toLowerCase(Locale.ROOT);
     }
 }

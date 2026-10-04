@@ -1,7 +1,7 @@
 # Zond
 
 Консольный статический анализатор Java-кода. Проверяет исходники, файлы настроек Spring-приложения,
-SQL-миграции, файлы сборки и Dockerfile по набору правил (сейчас их 305) и выводит найденные проблемы в консоль, текстовый файл или Excel.
+миграции БД, файлы сборки, Docker, Kubernetes, CI и настройки логирования по набору правил (сейчас их 321) и выводит найденные проблемы в консоль, текстовый файл или Excel.
 
 Работает без базы данных и внешних сервисов: на входе папка с кодом, на выходе отчет.
 
@@ -84,7 +84,7 @@ java -jar build/libs/zond-0.0.1-SNAPSHOT.jar --path=/projects/shop --report=repo
 | `--classpath=<пути>` | Библиотеки проверяемого проекта: jar-файлы или папки с ними через `;`. См. [Разрешение типов](#разрешение-типов). |
 | `--exclude=<шаблоны>` | Пути, которые не нужно сканировать, через запятую. Добавляются к заданным в настройках. См. [Исключение путей](#исключение-путей). |
 | `--threads=<число>` | Число потоков сканирования: `1` — в один поток, `0` — по числу ядер процессора. См. [Параллельное сканирование](#параллельное-сканирование). |
-| `--scan-sql`, `--scan-build-files`, `--scan-docker`, `--scan-config`, `--scan-messages` | Проверять ли этот вид файлов: `--scan-sql=false` отключает. См. [Что проверяется кроме Java](#что-проверяется-кроме-java). |
+| `--scan-sql`, `--scan-build-files`, `--scan-docker`, `--scan-config`, `--scan-messages`, `--scan-logging`, `--scan-kubernetes`, `--scan-ci` | Проверять ли этот вид файлов: `--scan-sql=false` отключает. См. [Что проверяется кроме Java](#что-проверяется-кроме-java). |
 | `--config=<файл>` | Файл настроек вместо `./app.properties`. |
 | `--zond.rule.<правило>.<параметр>=<значение>` | Порог или уровень отдельного правила. См. [Настройка отдельных правил](#настройка-отдельных-правил). |
 
@@ -104,7 +104,7 @@ java -jar build/libs/zond-0.0.1-SNAPSHOT.jar --path=/projects/shop --report=repo
 | `zond.scan.classpath` | пусто | Библиотеки проверяемого проекта для разрешения типов. |
 | `zond.scan.exclude` | пусто | Пути, которые не нужно сканировать: шаблоны через запятую. |
 | `zond.scan.threads` | `1` | Число потоков сканирования: `1` — в один поток, `0` — по числу ядер. |
-| `zond.scan.sql`, `zond.scan.build-files`, `zond.scan.docker`, `zond.scan.config`, `zond.scan.messages` | `true` | Проверять ли этот вид файлов помимо Java. |
+| `zond.scan.sql`, `zond.scan.build-files`, `zond.scan.docker`, `zond.scan.config`, `zond.scan.messages`, `zond.scan.logging`, `zond.scan.kubernetes`, `zond.scan.ci` | `true` | Проверять ли этот вид файлов помимо Java. |
 | `zond.rule.<правило>.<параметр>` | — | Пороги и уровень отдельных правил. |
 
 Пример:
@@ -144,9 +144,13 @@ SARIF (версия 2.1.0) понимают GitHub Code Scanning, GitLab, Azure 
 | Файлы | Что ищется | Правила |
 |---|---|---|
 | `application*`, `bootstrap*` с расширениями `.properties`, `.yml`, `.yaml` | опасные и пропущенные настройки Spring, секреты | jr:200 – jr:204 и другие |
-| `*.sql` | `DROP` / `TRUNCATE` и удаление колонок, `NOT NULL` без `DEFAULT` у новой колонки, внешний ключ без индекса, `UPDATE` / `DELETE` без `WHERE` | jr:290 – jr:293 |
+| `*.sql`, журналы Liquibase в XML и YAML | `DROP` / `TRUNCATE` и удаление колонок, `NOT NULL` без `DEFAULT` у новой колонки, внешний ключ без индекса, `UPDATE` / `DELETE` без `WHERE` | jr:290 – jr:293 |
 | `pom.xml`, `build.gradle`, `build.gradle.kts` | версии `SNAPSHOT`, `LATEST`, `1.+`; зависимость, объявленная дважды; тестовая библиотека в основной области | jr:294 – jr:296 |
 | `Dockerfile`, `Dockerfile.*`, `*.Dockerfile` | запуск от root, образ без версии или с `latest`, `ADD` вместо `COPY`, секрет в `ENV` / `ARG` | jr:297 – jr:300 |
+| `docker-compose*.yml`, `compose*.yml` | образ без версии; секрет в `environment`; `privileged`, сеть хоста, `docker.sock`; порт базы данных, открытый на всех интерфейсах | jr:311 – jr:314 |
+| `logback*.xml`, `log4j2*.xml` | корневой логгер с `DEBUG` / `TRACE`; запись в файл без ротации или без ограничения архивов; неподключенный аппендер; место вызова (`%M`, `%L`, `%C`) в шаблоне | jr:307 – jr:310 |
+| манифесты Kubernetes (YAML с `apiVersion` и `kind`) | контейнер без `requests` / `limits`; без `readinessProbe` / `livenessProbe`; образ без версии; `privileged`, root, сеть узла; секрет открытым текстом в `env`, `ConfigMap`, `Secret` | jr:315 – jr:319 |
+| `.gitlab-ci.yml`, `.github/workflows/*.yml` | секрет в переменных; действие GitHub, привязанное к ветке, и образ без версии; сборка с пропуском тестов | jr:320 – jr:322 |
 | код и настройки вместе | свойство читается в коде, но нигде не задано; свойство задано, но в коде не читается | jr:301, jr:302 |
 | `messages*.properties` | ключ есть не во всех языках; разные подстановки `{0}` у одного сообщения | jr:303 |
 | несколько файлов настроек | ключ задан дважды в одном файле; свойство есть в одном профиле и пропущено в другом; разные значения в `.properties` и `.yml` одного профиля | jr:304 – jr:306 |
@@ -159,15 +163,21 @@ zond.scan.build-files=true
 zond.scan.docker=true
 zond.scan.config=true
 zond.scan.messages=true
+zond.scan.logging=true
+zond.scan.kubernetes=true
+zond.scan.ci=true
 ```
 
 | Настройка | Аргумент | Какие файлы |
 |---|---|---|
-| `zond.scan.sql` | `--scan-sql` | `*.sql` |
+| `zond.scan.sql` | `--scan-sql` | `*.sql`, журналы Liquibase в XML и YAML |
 | `zond.scan.build-files` | `--scan-build-files` | `pom.xml`, `build.gradle`, `build.gradle.kts` |
-| `zond.scan.docker` | `--scan-docker` | `Dockerfile`, `Dockerfile.*`, `*.Dockerfile` |
+| `zond.scan.docker` | `--scan-docker` | `Dockerfile`, `Dockerfile.*`, `*.Dockerfile`, `docker-compose*.yml`, `compose*.yml` |
 | `zond.scan.config` | `--scan-config` | `application*`, `bootstrap*` с расширениями `.properties`, `.yml`, `.yaml` |
 | `zond.scan.messages` | `--scan-messages` | `messages*.properties` |
+| `zond.scan.logging` | `--scan-logging` | `logback*.xml`, `log4j2*.xml` |
+| `zond.scan.kubernetes` | `--scan-kubernetes` | YAML-файлы с `apiVersion` и `kind` |
+| `zond.scan.ci` | `--scan-ci` | `.gitlab-ci.yml`, `.github/workflows/*.yml` |
 
 Отключенные файлы не читаются вовсе, а правила для них находок не дают. При `zond.scan.config=false`
 не работает и сверка кода с настройками (jr:301, jr:302): судить о свойствах без файлов настроек нельзя.
@@ -183,8 +193,26 @@ zond.scan.messages=true
   `logging.*`, `management.*` и подобные) не проверяются.
 - Свойство с переменной окружения (`${DB_HOST}` заглавными буквами) и со значением по умолчанию
   (`${app.limit:5}`) пропущенным не считается.
-- YAML разбирается упрощенно: списки не читаются, поэтому свойство, заданное только элементом списка,
-  может быть названо пропущенным.
+- **Как разбираются файлы.** YAML читает SnakeYAML, XML — потоковый парсер из JDK: списки, многострочные
+  блоки, кавычки и комментарии понимаются так же, как их понимает само приложение. Элемент списка в
+  настройках получает ключ с индексом, как в Spring: `app.servers[0].host`. Файл, который корректным
+  YAML не является (подстановка сборки `@project.version@`, шаблон Helm), читается построчно, если это
+  настройки Spring, и пропускается в остальных случаях.
+- **Журналы Liquibase** узнаются по корневому элементу `databaseChangeLog`, имя файла может быть любым.
+  Каждое изменение (`createTable`, `addColumn`, `dropColumn`, `dropTable`, `createIndex`,
+  `addForeignKeyConstraint`, `update`, `delete`, `sql` и другие) переводится в равнозначную команду SQL
+  и проверяется теми же правилами jr:290 – jr:293. Блок `rollback` не проверяется: он выполняется,
+  только когда миграцию отменяют.
+- **Версии в `pom.xml`.** `${...}` заменяется значением из `<properties>` самого файла и родительских
+  `pom.xml` (по `<relativePath>`, по умолчанию `../pom.xml`), `${project.version}` — версией модуля.
+  Родитель, которого нет среди проверяемых файлов (например, `spring-boot-starter-parent`), не читается,
+  и версия остается неизвестной. Зависимости плагинов сборки не проверяются. В `build.gradle`
+  читаются только строки вида `implementation 'group:artifact:version'`: это программа, а не описание.
+- **Настройки логирования для тестов** (`logback-test.xml`, все из каталогов `test`) не проверяются.
+  Уровень корневого логгера (jr:307) не проверяется и внутри `<springProfile>` с профилями `dev`,
+  `local`, `test`.
+- **Сборка без тестов в CI** (jr:322) находкой не считается, если в том же файле есть другая команда
+  Maven или Gradle, которая тесты запускает.
 - Каталоги `build`, `target`, `out`, `node_modules`, `.git`, `.gradle`, `.idea` не просматриваются: там лежат копии файлов.
 
 ## Параллельное сканирование
@@ -352,7 +380,7 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
 **1. Заведите код** — следующую по номеру константу в `rules/RuleCodes.java`:
 
 ```java
-public final static String CHECK_THREAD_STOP_RULE_CODE = "jr:307";
+public final static String CHECK_THREAD_STOP_RULE_CODE = "jr:323";
 ```
 
 **2. Напишите класс** в пакете `ru.akvine.zond.rules`. Проще всего унаследоваться от `AbstractRule`:
@@ -410,7 +438,7 @@ public class CheckThreadStopRule extends AbstractRule {
 | Один Java-файл | `Rule` (через `AbstractRule`), метод `check(SourceFile)` |
 | Проект целиком: связи между классами из разных файлов | `ProjectRule`, метод `checkProject(List<SourceFile>)` |
 | Файл настроек `application.properties` / `.yml` | `ConfigRule` (через `AbstractConfigRule`), метод `checkConfig(ConfigFile)` |
-| SQL, `pom.xml`, `build.gradle`, Dockerfile, `messages*.properties` либо все сразу: код, настройки и эти файлы | `ContextRule` (через `AbstractContextRule`), метод `checkContext(ScanContext)` |
+| Миграции, файлы сборки, Docker, Kubernetes, CI, настройки логирования, `messages*.properties` либо все сразу: код, настройки и эти файлы | `ContextRule` (через `AbstractContextRule`), метод `checkContext(ScanContext)` |
 
 **4. Пользуйтесь готовыми помощниками** из того же пакета вместо разбора дерева вручную:
 
@@ -481,6 +509,7 @@ src/main/java/ru/akvine/zond
 ├── config      чтение app.properties: общие настройки и настройки правил
 ├── enums       уровни, типы проблем, форматы отчета
 ├── loaders     загрузка Java-файлов, файлов настроек и прочих текстовых файлов, решатель типов
+├── parsers     разбор YAML и XML с номерами строк
 ├── models      находка, результат сканирования, параметры запуска
 ├── printers    отчеты: консоль, текст, Excel; список правил
 ├── rules       правила и общие помощники

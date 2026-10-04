@@ -15,8 +15,6 @@ import java.util.Set;
 
 @Component
 public class CheckDockerUnpinnedImageRule extends AbstractContextRule {
-    private static final String SCRATCH = "scratch";
-    private static final String LATEST = "latest";
     private static final String FLAG_PREFIX = "--";
     private static final String AS = "as";
 
@@ -46,7 +44,7 @@ public class CheckDockerUnpinnedImageRule extends AbstractContextRule {
                 String[] words = instruction.arguments().split("\\s+");
                 int imageIndex = words[0].startsWith(FLAG_PREFIX) && words.length > 1 ? 1 : 0;
                 String image = words[imageIndex];
-                if (isUnpinned(image) && !stages.contains(image.toLowerCase(Locale.ROOT))) {
+                if (Images.isUnpinned(image) && !stages.contains(image.toLowerCase(Locale.ROOT))) {
                     violations.add(violation(file.path(), instruction.line(),
                             "Базовый образ '" + image + "' без точной версии: при следующей сборке под тем же"
                                     + " именем придет другой образ, и поведение изменится без единой правки"
@@ -68,16 +66,5 @@ public class CheckDockerUnpinnedImageRule extends AbstractContextRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.LOGICAL;
-    }
-
-    // Образ из переменной (${BASE_IMAGE}) проверить нельзя; образ с дайджестом (@sha256:...) закреплен намертво
-    private boolean isUnpinned(String image) {
-        if (image.equalsIgnoreCase(SCRATCH) || image.contains("$") || image.contains("@")) {
-            return false;
-        }
-        // Тег стоит после двоеточия в последней части имени: registry:5000/app - это порт, а не тег
-        String lastPart = image.substring(image.lastIndexOf('/') + 1);
-        int colon = lastPart.lastIndexOf(':');
-        return colon < 0 || LATEST.equals(lastPart.substring(colon + 1));
     }
 }

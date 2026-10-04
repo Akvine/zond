@@ -1,13 +1,14 @@
 package ru.akvine.zond.rules;
 
 import lombok.experimental.UtilityClass;
+import ru.akvine.zond.enums.TextFileType;
 import ru.akvine.zond.models.TextFile;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Разбор SQL-файла на отдельные команды. Комментарии отбрасываются, точка с запятой внутри строк
+ * Разбор миграции на отдельные команды SQL. Комментарии отбрасываются, точка с запятой внутри строк
  * и внутри тела функции ($$ ... $$) команду не завершает.
  */
 @UtilityClass
@@ -24,7 +25,17 @@ class SqlStatements {
     record Statement(String text, int line) {
     }
 
+    /**
+     * @return команды миграции: из SQL-файла как есть, из журнала Liquibase - в переводе на SQL
+     */
     List<Statement> of(TextFile file) {
+        if (!TextFiles.isMigration(file)) {
+            return List.of();
+        }
+        return file.type() == TextFileType.SQL ? parse(file.lines()) : Liquibase.statements(file);
+    }
+
+    List<Statement> parse(List<String> lines) {
         List<Statement> statements = new ArrayList<>();
         StringBuilder current = new StringBuilder();
         int startLine = 0;
@@ -32,8 +43,8 @@ class SqlStatements {
         boolean inString = false;
         boolean inDollarQuote = false;
 
-        for (int lineIndex = 0; lineIndex < file.lines().size(); lineIndex++) {
-            String line = file.lines().get(lineIndex);
+        for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
+            String line = lines.get(lineIndex);
             for (int index = 0; index < line.length(); index++) {
                 if (inBlockComment) {
                     if (line.startsWith(BLOCK_COMMENT_END, index)) {

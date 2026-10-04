@@ -53,7 +53,7 @@ public class CheckSqlForeignKeyWithoutIndexRule extends AbstractContextRule {
 
     @Override
     public String description() {
-        return "Сканирует SQL-миграции и ищет внешние ключи, по колонке которых нет индекса";
+        return "Сканирует миграции (SQL и журналы Liquibase) и ищет внешние ключи, по колонке которых нет индекса";
     }
 
     @Override
@@ -62,7 +62,7 @@ public class CheckSqlForeignKeyWithoutIndexRule extends AbstractContextRule {
         List<ForeignKey> foreignKeys = new ArrayList<>();
         Set<String> indexed = new HashSet<>();
         for (TextFile file : context.textFiles()) {
-            if (!TextFiles.isSql(file)) {
+            if (!TextFiles.isMigration(file)) {
                 continue;
             }
             for (SqlStatements.Statement statement : SqlStatements.of(file)) {

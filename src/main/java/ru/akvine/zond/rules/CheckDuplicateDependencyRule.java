@@ -31,7 +31,7 @@ public class CheckDuplicateDependencyRule extends AbstractContextRule {
             // Что и где объявлено в этом файле. В Gradle одна библиотека в разных конфигурациях
             // (implementation и annotationProcessor) - обычное дело, поэтому конфигурация входит в ключ
             Map<String, BuildFiles.Dependency> declared = new HashMap<>();
-            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file)) {
+            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file, context.textFiles())) {
                 if (dependency.managed()) {
                     continue;
                 }

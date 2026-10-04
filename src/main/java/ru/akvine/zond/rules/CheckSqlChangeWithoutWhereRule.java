@@ -23,14 +23,14 @@ public class CheckSqlChangeWithoutWhereRule extends AbstractContextRule {
 
     @Override
     public String description() {
-        return "Сканирует SQL-миграции и ищет UPDATE и DELETE без условия WHERE";
+        return "Сканирует миграции (SQL и журналы Liquibase) и ищет UPDATE и DELETE без условия WHERE";
     }
 
     @Override
     public List<Violation> checkContext(ScanContext context) {
         List<Violation> violations = new ArrayList<>();
         for (TextFile file : context.textFiles()) {
-            if (!TextFiles.isSql(file)) {
+            if (!TextFiles.isMigration(file)) {
                 continue;
             }
             for (SqlStatements.Statement statement : SqlStatements.of(file)) {

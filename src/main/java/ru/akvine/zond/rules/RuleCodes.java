@@ -310,4 +310,20 @@ public class RuleCodes {
     public final static String CHECK_DUPLICATE_PROPERTY_KEY_RULE_CODE = "jr:304";
     public final static String CHECK_PROFILE_PROPERTY_MISSING_RULE_CODE = "jr:305";
     public final static String CHECK_CONFLICTING_CONFIG_VALUES_RULE_CODE = "jr:306";
+    public final static String CHECK_LOG_ROOT_LEVEL_DEBUG_RULE_CODE = "jr:307";
+    public final static String CHECK_LOG_FILE_WITHOUT_ROTATION_RULE_CODE = "jr:308";
+    public final static String CHECK_LOG_UNUSED_APPENDER_RULE_CODE = "jr:309";
+    public final static String CHECK_LOG_CALLER_DATA_IN_PATTERN_RULE_CODE = "jr:310";
+    public final static String CHECK_COMPOSE_UNPINNED_IMAGE_RULE_CODE = "jr:311";
+    public final static String CHECK_COMPOSE_SECRET_IN_ENVIRONMENT_RULE_CODE = "jr:312";
+    public final static String CHECK_COMPOSE_PRIVILEGED_SERVICE_RULE_CODE = "jr:313";
+    public final static String CHECK_COMPOSE_DATABASE_PORT_EXPOSED_RULE_CODE = "jr:314";
+    public final static String CHECK_KUBERNETES_NO_RESOURCE_LIMITS_RULE_CODE = "jr:315";
+    public final static String CHECK_KUBERNETES_NO_PROBES_RULE_CODE = "jr:316";
+    public final static String CHECK_KUBERNETES_UNPINNED_IMAGE_RULE_CODE = "jr:317";
+    public final static String CHECK_KUBERNETES_PRIVILEGED_CONTAINER_RULE_CODE = "jr:318";
+    public final static String CHECK_KUBERNETES_SECRET_IN_MANIFEST_RULE_CODE = "jr:319";
+    public final static String CHECK_CI_SECRET_IN_VARIABLES_RULE_CODE = "jr:320";
+    public final static String CHECK_CI_UNPINNED_REFERENCE_RULE_CODE = "jr:321";
+    public final static String CHECK_CI_TESTS_SKIPPED_RULE_CODE = "jr:322";
 }

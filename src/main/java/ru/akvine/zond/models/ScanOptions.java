@@ -77,10 +77,6 @@ public record ScanOptions(
         if (exclusions.matches(root, file)) {
             return false;
         }
-        // Вид файла отключен настройкой: zond.scan.sql=false
-        if (FileKind.of(file.getFileName().toString()).filter(skippedKinds::contains).isPresent()) {
-            return false;
-        }
         if (!skipTests) {
             return true;
         }
@@ -106,6 +102,13 @@ public record ScanOptions(
                 .collect(Collectors.toSet());
         return new ScanOptions(
                 disabled, parseLevel(minLevel), false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of());
+    }
+
+    /**
+     * @return true, если файлы этого вида нужно проверять
+     */
+    public boolean scans(FileKind kind) {
+        return !skippedKinds.contains(kind);
     }
 
     /**
