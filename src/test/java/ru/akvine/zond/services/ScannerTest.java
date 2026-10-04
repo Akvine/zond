@@ -3,8 +3,10 @@ package ru.akvine.zond.services;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.config.RuleSettings;
+import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
+import ru.akvine.zond.loaders.FileSystemTextFileLoader;
 import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.printers.FilePrinter;
@@ -13,14 +15,17 @@ import ru.akvine.zond.rules.CheckAutowiredOnStaticFieldRule;
 import ru.akvine.zond.rules.CheckDdlAutoRule;
 import ru.akvine.zond.rules.CheckFieldInjectionRule;
 import ru.akvine.zond.rules.CheckSecretInConfigRule;
+import ru.akvine.zond.rules.CheckSqlDestructiveStatementRule;
 import ru.akvine.zond.rules.CheckTransactionOnPrivateMethodRule;
 import ru.akvine.zond.rules.CheckTransactionalSelfInvocationRule;
+import ru.akvine.zond.rules.CheckUnstableDependencyVersionRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -28,6 +33,7 @@ class ScannerTest {
     private final Scanner scanner = new Scanner(
             new FileSystemSourceLoader(),
             new FileSystemConfigLoader(),
+            new FileSystemTextFileLoader(),
             List.of(new CheckTransactionOnPrivateMethodRule()),
             (number, total, rule) -> {},
                 RuleSettings.empty());
@@ -39,6 +45,7 @@ class ScannerTest {
         Scanner ordered = new Scanner(
                 new FileSystemSourceLoader(),
                 new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(),
                 List.of(
                         new CheckAutowiredOnStaticFieldRule(),
                         new CheckTransactionalSelfInvocationRule(),
@@ -105,6 +112,7 @@ class ScannerTest {
         Scanner twoRules = new Scanner(
                 new FileSystemSourceLoader(),
                 new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(),
                 List.of(new CheckTransactionOnPrivateMethodRule(), new CheckFieldInjectionRule()),
                 (number, total, rule) -> {},
                 RuleSettings.empty());
@@ -207,6 +215,7 @@ class ScannerTest {
         Scanner configRules = new Scanner(
                 new FileSystemSourceLoader(),
                 new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(),
                 List.of(new CheckDdlAutoRule(), new CheckSecretInConfigRule()),
                 (number, total, rule) -> {},
                 RuleSettings.empty());
@@ -216,5 +225,120 @@ class ScannerTest {
         assertThat(result.violations()).extracting(violation -> violation.ruleCode() + ":" + violation.line())
                 .containsExactly("jr:200:1", "jr:204:4");
         assertThat(result.suppressedCount()).isEqualTo(1);
+    }
+
+    @Test
+    void scansSqlAndBuildFilesAndSuppressesTheirViolations(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("V1__init.sql"), """
+                drop table first_table;
+                -- zond:ignore jr:290 - таблица пуста
+                drop table second_table;
+                """);
+        Files.writeString(dir.resolve("pom.xml"), """
+                <project>
+                  <dependencies>
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>core</artifactId>
+                      <version>1.0-SNAPSHOT</version>
+                    </dependency>
+                    <!-- zond:ignore -->
+                    <dependency>
+                      <groupId>com.example</groupId>
+                      <artifactId>api</artifactId>
+                      <version>1.0-SNAPSHOT</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """);
+        // Каталог сборки не просматривается
+        Path target = Files.createDirectories(dir.resolve("target/classes"));
+        Files.writeString(target.resolve("V2__copy.sql"), "drop table third_table;\n");
+        Scanner textRules = new Scanner(
+                new FileSystemSourceLoader(),
+                new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(),
+                List.of(new CheckSqlDestructiveStatementRule(), new CheckUnstableDependencyVersionRule()),
+                (number, total, rule) -> {},
+                RuleSettings.empty());
+
+        ScanResult result = textRules.scan(dir);
+
+        assertThat(result.filesCount()).isEqualTo(2);
+        assertThat(result.violations())
+                .extracting(violation -> violation.file().getFileName() + ":" + violation.line())
+                .containsExactlyInAnyOrder("V1__init.sql:1", "pom.xml:3");
+        assertThat(result.suppressedCount()).isEqualTo(2);
+    }
+
+    @Test
+    void skipsFileKindsSwitchedOffByOptions(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("V1__init.sql"), "drop table old_table;\n");
+        Files.writeString(dir.resolve("application.properties"), "spring.jpa.hibernate.ddl-auto=update\n");
+        Scanner twoKinds = new Scanner(
+                new FileSystemSourceLoader(),
+                new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(),
+                List.of(new CheckDdlAutoRule(), new CheckSqlDestructiveStatementRule()),
+                (number, total, rule) -> {},
+                RuleSettings.empty());
+
+        assertThat(twoKinds.scan(dir).violations()).extracting(violation -> violation.ruleCode())
+                .containsExactly("jr:290", "jr:200");
+
+        ScanResult withoutSql = twoKinds.scan(dir, ScanOptions.defaults().withSkippedKinds(Set.of(FileKind.SQL)));
+        assertThat(withoutSql.violations()).extracting(violation -> violation.ruleCode()).containsExactly("jr:200");
+        assertThat(withoutSql.filesCount()).isEqualTo(1);
+
+        ScanResult withoutConfig = twoKinds.scan(dir, ScanOptions.defaults().withSkippedKinds(Set.of(FileKind.CONFIG)));
+        assertThat(withoutConfig.violations()).extracting(violation -> violation.ruleCode()).containsExactly("jr:290");
+
+        ScanResult nothing = twoKinds.scan(dir, ScanOptions.defaults().withSkippedKinds(Set.of(FileKind.values())));
+        assertThat(nothing.violations()).isEmpty();
+        assertThat(nothing.filesCount()).isZero();
+    }
+
+    @Test
+    void parallelScanGivesSameResultAsSequential(@TempDir Path dir) throws IOException {
+        for (int number = 0; number < 40; number++) {
+            Files.writeString(dir.resolve("Sample" + number + ".java"), """
+                    @Service
+                    class Sample%d {
+                        @Autowired
+                        private Repository repository;
+                        @Autowired
+                        private static Clock clock;
+
+                        @Transactional
+                        private void save() {}
+
+                        public void run() { save(); }
+                    }
+                    """.formatted(number));
+        }
+        Files.writeString(dir.resolve("application.properties"), "spring.jpa.hibernate.ddl-auto=update\n");
+        Files.writeString(dir.resolve("V1__init.sql"), "drop table old_table;\n");
+        Scanner manyRules = new Scanner(
+                new FileSystemSourceLoader(),
+                new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(),
+                List.of(
+                        new CheckAutowiredOnStaticFieldRule(),
+                        new CheckTransactionalSelfInvocationRule(),
+                        new CheckTransactionOnPrivateMethodRule(),
+                        new CheckFieldInjectionRule(),
+                        new CheckDdlAutoRule(),
+                        new CheckSqlDestructiveStatementRule()),
+                (number, total, rule) -> {},
+                RuleSettings.empty());
+
+        ScanResult sequential = manyRules.scan(dir, ScanOptions.defaults().withThreads(1));
+        ScanResult parallel = manyRules.scan(dir, ScanOptions.defaults().withThreads(4));
+        ScanResult allCores = manyRules.scan(dir, ScanOptions.defaults().withThreads(0));
+
+        assertThat(sequential.violations()).isNotEmpty();
+        assertThat(parallel.violations()).isEqualTo(sequential.violations());
+        assertThat(allCores.violations()).isEqualTo(sequential.violations());
+        assertThat(parallel.filesCount()).isEqualTo(sequential.filesCount());
     }
 }

@@ -2,7 +2,9 @@ package ru.akvine.zond.config;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.PropertySource;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.FileKind;
 
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -23,6 +25,8 @@ public class ZondSettings {
     private final String skipTests;
     private final String classpath;
     private final String exclude;
+    private final String threads;
+    private final Environment environment;
 
     public ZondSettings(
             @Value("${zond.report.path:}") String reportPath,
@@ -30,13 +34,17 @@ public class ZondSettings {
             @Value("${zond.rules.min-level:}") String minLevel,
             @Value("${zond.scan.skip-tests:}") String skipTests,
             @Value("${zond.scan.classpath:}") String classpath,
-            @Value("${zond.scan.exclude:}") String exclude) {
+            @Value("${zond.scan.exclude:}") String exclude,
+            @Value("${zond.scan.threads:}") String threads,
+            Environment environment) {
         this.reportPath = reportPath;
         this.disabledRules = disabledRules;
         this.minLevel = minLevel;
         this.skipTests = skipTests;
         this.classpath = classpath;
         this.exclude = exclude;
+        this.threads = threads;
+        this.environment = environment;
     }
 
     /**
@@ -79,6 +87,20 @@ public class ZondSettings {
      */
     public String exclude() {
         return exclude;
+    }
+
+    /**
+     * @return число потоков сканирования как задано в настройках либо пустая строка
+     */
+    public String threads() {
+        return threads;
+    }
+
+    /**
+     * @return значение настройки zond.scan.&lt;вид файлов&gt; как задано либо пустая строка
+     */
+    public String scanEnabled(FileKind kind) {
+        return environment.getProperty(kind.property(), "");
     }
 
     public static List<Path> parseClasspath(String classpath) {

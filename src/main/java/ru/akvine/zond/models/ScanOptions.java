@@ -1,6 +1,7 @@
 package ru.akvine.zond.models;
 
 import ru.akvine.zond.enums.ErrorLevel;
+import ru.akvine.zond.enums.FileKind;
 
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -17,9 +18,18 @@ import java.util.stream.Collectors;
  * @param skipTests     не проверять файлы из каталогов test
  * @param classpath     jar-файлы и папки с библиотеками проекта: по ним разрешаются типы из зависимостей
  * @param exclusions    пути, которые сканировать не нужно
+ * @param threads       сколько потоков использовать при сканировании: 1 - один, 0 - по числу ядер
+ * @param skippedKinds  виды файлов помимо Java, которые проверять не нужно: SQL, файлы сборки и прочие
  */
 public record ScanOptions(
-        Set<String> disabledRules, ErrorLevel minLevel, boolean skipTests, List<Path> classpath, PathExclusions exclusions) {
+        Set<String> disabledRules,
+        ErrorLevel minLevel,
+        boolean skipTests,
+        List<Path> classpath,
+        PathExclusions exclusions,
+        int threads,
+        Set<FileKind> skippedKinds) {
+    private static final int SINGLE_THREAD = 1;
     private static final String SEPARATOR = "[,;\\s]+";
     private static final String TEST_DIRECTORY = "test";
 
@@ -27,19 +37,36 @@ public record ScanOptions(
      * @return настройки по умолчанию: все правила, все уровни, все файлы
      */
     public static ScanOptions defaults() {
-        return new ScanOptions(Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none());
+        return new ScanOptions(
+                Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of());
     }
 
     public ScanOptions withSkipTests(boolean skip) {
-        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions);
+        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions, threads, skippedKinds);
     }
 
     public ScanOptions withClasspath(List<Path> libraries) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions);
+        return new ScanOptions(
+                disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions, threads, skippedKinds);
     }
 
     public ScanOptions withExclusions(PathExclusions excluded) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded, threads, skippedKinds);
+    }
+
+    public ScanOptions withThreads(int count) {
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, count, skippedKinds);
+    }
+
+    public ScanOptions withSkippedKinds(Set<FileKind> kinds) {
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, Set.copyOf(kinds));
+    }
+
+    /**
+     * @return сколько потоков использовать: 1 - все по очереди, 0 - по числу ядер процессора
+     */
+    public int threadCount() {
+        return threads <= 0 ? Runtime.getRuntime().availableProcessors() : threads;
     }
 
     /**
@@ -48,6 +75,10 @@ public record ScanOptions(
      */
     public boolean includes(Path root, Path file) {
         if (exclusions.matches(root, file)) {
+            return false;
+        }
+        // Вид файла отключен настройкой: zond.scan.sql=false
+        if (FileKind.of(file.getFileName().toString()).filter(skippedKinds::contains).isPresent()) {
             return false;
         }
         if (!skipTests) {
@@ -73,7 +104,8 @@ public record ScanOptions(
                 .filter(rule -> !rule.isBlank())
                 .map(ScanOptions::normalize)
                 .collect(Collectors.toSet());
-        return new ScanOptions(disabled, parseLevel(minLevel), false, List.of(), PathExclusions.none());
+        return new ScanOptions(
+                disabled, parseLevel(minLevel), false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of());
     }
 
     /**

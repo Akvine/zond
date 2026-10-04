@@ -3,12 +3,14 @@ package ru.akvine.zond.cli;
 import lombok.Getter;
 import lombok.Setter;
 import ru.akvine.zond.enums.ErrorLevel;
+import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.enums.ReportFormat;
 import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.models.ScanOptions;
 
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -50,6 +52,16 @@ public class SessionSettings {
      * Пути, которые не нужно сканировать
      */
     private PathExclusions exclusions = PathExclusions.none();
+
+    /**
+     * Сколько потоков использовать при сканировании: 1 - один, 0 - по числу ядер процессора
+     */
+    private int threads = 1;
+
+    /**
+     * Виды файлов помимо Java, которые проверять не нужно
+     */
+    private final Set<FileKind> skippedKinds = EnumSet.noneOf(FileKind.class);
 
     /**
      * @param reportFile    файл отчета либо null для вывода в консоль
@@ -100,6 +112,18 @@ public class SessionSettings {
         reportFileName = (dot > 0 ? current.substring(0, dot) : current) + format.getExtension();
     }
 
+    public boolean isScanned(FileKind kind) {
+        return !skippedKinds.contains(kind);
+    }
+
+    public void setScanned(FileKind kind, boolean scanned) {
+        if (scanned) {
+            skippedKinds.remove(kind);
+        } else {
+            skippedKinds.add(kind);
+        }
+    }
+
     public String disabledRulesAsText() {
         return String.join(RULES_DELIMITER, disabledRules);
     }
@@ -108,6 +132,8 @@ public class SessionSettings {
         return ScanOptions.parse(disabledRulesAsText(), minLevel.name())
                 .withSkipTests(skipTests)
                 .withClasspath(classpath)
-                .withExclusions(exclusions);
+                .withExclusions(exclusions)
+                .withThreads(threads)
+                .withSkippedKinds(skippedKinds);
     }
 }

@@ -293,4 +293,21 @@ public class RuleCodes {
     public final static String CHECK_MUTABLE_PUBLIC_CONSTANT_RULE_CODE = "jr:287";
     public final static String CHECK_SIZE_COMPARED_TO_ZERO_RULE_CODE = "jr:288";
     public final static String CHECK_RAW_TYPE_RULE_CODE = "jr:289";
+    public final static String CHECK_SQL_DESTRUCTIVE_STATEMENT_RULE_CODE = "jr:290";
+    public final static String CHECK_SQL_NOT_NULL_WITHOUT_DEFAULT_RULE_CODE = "jr:291";
+    public final static String CHECK_SQL_FOREIGN_KEY_WITHOUT_INDEX_RULE_CODE = "jr:292";
+    public final static String CHECK_SQL_CHANGE_WITHOUT_WHERE_RULE_CODE = "jr:293";
+    public final static String CHECK_UNSTABLE_DEPENDENCY_VERSION_RULE_CODE = "jr:294";
+    public final static String CHECK_DUPLICATE_DEPENDENCY_RULE_CODE = "jr:295";
+    public final static String CHECK_TEST_DEPENDENCY_IN_MAIN_SCOPE_RULE_CODE = "jr:296";
+    public final static String CHECK_DOCKER_ROOT_USER_RULE_CODE = "jr:297";
+    public final static String CHECK_DOCKER_UNPINNED_IMAGE_RULE_CODE = "jr:298";
+    public final static String CHECK_DOCKER_ADD_INSTEAD_OF_COPY_RULE_CODE = "jr:299";
+    public final static String CHECK_DOCKER_SECRET_IN_IMAGE_RULE_CODE = "jr:300";
+    public final static String CHECK_MISSING_CONFIG_PROPERTY_RULE_CODE = "jr:301";
+    public final static String CHECK_UNUSED_CONFIG_PROPERTY_RULE_CODE = "jr:302";
+    public final static String CHECK_MESSAGE_BUNDLE_MISMATCH_RULE_CODE = "jr:303";
+    public final static String CHECK_DUPLICATE_PROPERTY_KEY_RULE_CODE = "jr:304";
+    public final static String CHECK_PROFILE_PROPERTY_MISSING_RULE_CODE = "jr:305";
+    public final static String CHECK_CONFLICTING_CONFIG_VALUES_RULE_CODE = "jr:306";
 }

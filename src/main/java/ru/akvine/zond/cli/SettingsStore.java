@@ -2,6 +2,7 @@ package ru.akvine.zond.cli;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.FileKind;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -48,6 +49,9 @@ public class SettingsStore {
         values.put(MIN_LEVEL, settings.getMinLevel().name());
         values.put(SKIP_TESTS, String.valueOf(settings.isSkipTests()));
         values.put(EXCLUDE, String.join(LIST_DELIMITER, settings.getExclusions().patterns()));
+        for (FileKind kind : FileKind.values()) {
+            values.put(kind.property(), String.valueOf(settings.isScanned(kind)));
+        }
 
         try {
             List<String> lines = Files.exists(configFile)

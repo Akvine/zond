@@ -1,6 +1,8 @@
 package ru.akvine.zond.rules;
 
+import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.DataKey;
+import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
@@ -12,10 +14,14 @@ import com.github.javaparser.ast.nodeTypes.NodeWithExtends;
 import com.github.javaparser.ast.nodeTypes.NodeWithImplements;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
+import com.github.javaparser.resolution.TypeSolver;
 import com.github.javaparser.resolution.declarations.ResolvedReferenceTypeDeclaration;
+import com.github.javaparser.resolution.model.SymbolReference;
+import com.github.javaparser.resolution.model.typesystem.ReferenceTypeImpl;
 import com.github.javaparser.resolution.types.ResolvedReferenceType;
 import com.github.javaparser.resolution.types.ResolvedType;
 import lombok.experimental.UtilityClass;
+import ru.akvine.zond.loaders.FileSystemSourceLoader;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -33,6 +39,9 @@ import java.util.stream.Stream;
  * (нет библиотеки, код сгенерирован при сборке), считается неизвестным - исключения наружу не выходят.
  * <p>
  * Проверки возвращают Optional: пусто значит "по типу сказать нельзя", и правило решает по именам, как раньше.
+ * <p>
+ * Методы выполняются по одному (synchronized): решатель типов и пометки на узлах дерева не рассчитаны
+ * на работу из нескольких потоков, а правила при параллельном сканировании обращаются сюда одновременно.
  */
 @UtilityClass
 class Types {
@@ -42,6 +51,7 @@ class Types {
     };
 
     private static final String JDK_PACKAGE = "java.";
+    private static final String JAVA_LANG = "java.lang.";
     private static final String ARRAY_SUFFIX = "[]";
     private static final char PACKAGE_SEPARATOR = '.';
 
@@ -64,7 +74,7 @@ class Types {
     /**
      * @return тип выражения либо пусто, если он неизвестен
      */
-    Optional<ResolvedType> resolve(Expression expression) {
+    synchronized Optional<ResolvedType> resolve(Expression expression) {
         // Одно и то же выражение спрашивают разные правила, а разрешение - дорогая операция
         if (expression.containsData(RESOLVED_TYPE)) {
             return expression.getData(RESOLVED_TYPE);
@@ -78,7 +88,7 @@ class Types {
     /**
      * @return тип, записанный в коде (у поля, параметра, в new или throws), либо пусто, если он неизвестен
      */
-    Optional<ResolvedType> resolve(Type type) {
+    synchronized Optional<ResolvedType> resolve(Type type) {
         if (type.containsData(RESOLVED_TYPE)) {
             return type.getData(RESOLVED_TYPE);
         }
@@ -99,44 +109,67 @@ class Types {
      * Тип по имени класса, которое стоит в коде как выражение: User в User.builder().
      * У такого имени нет значения, поэтому обычным путем его тип не узнать.
      */
-    Optional<ResolvedType> resolveTypeName(NameExpr name) {
+    synchronized Optional<ResolvedType> resolveTypeName(NameExpr name) {
         if (name.containsData(RESOLVED_TYPE_NAME)) {
             return name.getData(RESOLVED_TYPE_NAME);
         }
 
-        Optional<ResolvedType> resolved = Optional.empty();
-        if (hasSolver(name)) {
-            // Решателю нужен узел-тип, стоящий в дереве: по его месту определяются импорты и пакет.
-            // Временно подвешиваем такой узел к имени и сразу убираем
-            ClassOrInterfaceType type = new ClassOrInterfaceType(null, name.getNameAsString());
-            type.setParentNode(name);
-            try {
-                resolved = Optional.of(type.resolve());
-            } catch (RuntimeException | StackOverflowError exception) {
-                // Имя не обозначает класс либо класс не найден
-            } finally {
-                type.setParentNode(null);
-            }
-        }
+        Optional<ResolvedType> resolved = name.findCompilationUnit()
+                .filter(unit -> unit.containsData(FileSystemSourceLoader.TYPE_SOLVER))
+                .flatMap(unit -> solveTypeName(unit, name.getNameAsString()));
         name.setData(RESOLVED_TYPE_NAME, resolved);
         return resolved;
+    }
+
+    // Ищем класс так же, как компилятор: по импортам, в своем файле и пакете, затем в java.lang.
+    // Дерево при этом не меняется - его в это время могут читать другие потоки
+    private Optional<ResolvedType> solveTypeName(CompilationUnit unit, String name) {
+        TypeSolver solver = unit.getData(FileSystemSourceLoader.TYPE_SOLVER);
+        String packageName = unit.getPackageDeclaration().map(declaration -> declaration.getNameAsString() + ".").orElse("");
+
+        List<String> candidates = new ArrayList<>();
+        for (ImportDeclaration importDeclaration : unit.getImports()) {
+            if (!importDeclaration.isStatic() && !importDeclaration.isAsterisk()
+                    && importDeclaration.getName().getIdentifier().equals(name)) {
+                candidates.add(importDeclaration.getNameAsString());
+            }
+        }
+        candidates.add(packageName + name);
+        for (ImportDeclaration importDeclaration : unit.getImports()) {
+            if (!importDeclaration.isStatic() && importDeclaration.isAsterisk()) {
+                candidates.add(importDeclaration.getNameAsString() + "." + name);
+            }
+        }
+        candidates.add(JAVA_LANG + name);
+
+        for (String candidate : candidates) {
+            try {
+                SymbolReference<ResolvedReferenceTypeDeclaration> found = solver.tryToSolveType(candidate);
+                if (found.isSolved()) {
+                    return Optional.of(new ReferenceTypeImpl(found.getCorrespondingDeclaration()));
+                }
+            } catch (RuntimeException | StackOverflowError exception) {
+                // Этот вариант имени не подошел - пробуем следующий
+            }
+        }
+        return Optional.empty();
     }
 
     /**
      * @return объявление типа выражения в исходниках проекта; пусто для типов из JDK и библиотек
      */
-    Optional<TypeDeclaration<?>> projectType(Expression expression) {
+    synchronized Optional<TypeDeclaration<?>> projectType(Expression expression) {
         return resolve(expression).flatMap(Types::projectType);
     }
 
-    Optional<TypeDeclaration<?>> projectType(ResolvedType type) {
+    synchronized Optional<TypeDeclaration<?>> projectType(ResolvedType type) {
         return declaration(type).flatMap(Types::sourceOf);
     }
 
     /**
      * @return простое имя типа выражения в том же виде, что и в коде: String, int, byte[], BigDecimal
      */
-    Optional<String> simpleName(Expression expression) {
+    synchronized Optional<String> simpleName(Expression expression) {
         return resolve(expression).flatMap(Types::simpleName);
     }
 
@@ -144,21 +177,21 @@ class Types {
      * @return простые имена типа выражения и всех его известных предков. Предок, которого нет
      * ни в исходниках, ни в библиотеках, попадает сюда по имени из extends / implements
      */
-    Set<String> hierarchy(Expression expression) {
+    synchronized Set<String> hierarchy(Expression expression) {
         return resolve(expression).map(type -> hierarchy(type).names).orElse(Set.of());
     }
 
     /**
      * @return простые имена аннотаций на типе выражения; пусто, если тип объявлен не в исходниках проекта
      */
-    Set<String> annotations(Expression expression) {
+    synchronized Set<String> annotations(Expression expression) {
         return resolve(expression).flatMap(Types::projectAnnotations).orElse(Set.of());
     }
 
     /**
      * @return простые имена аннотаций на классе, если он объявлен в исходниках проекта; иначе пусто
      */
-    Optional<Set<String>> projectTypeAnnotations(Type type) {
+    synchronized Optional<Set<String>> projectTypeAnnotations(Type type) {
         return resolve(type).flatMap(Types::projectAnnotations);
     }
 
@@ -168,11 +201,11 @@ class Types {
      *
      * @return true - подходит; false - тип из JDK и ни одно имя не подошло; пусто - судить нужно по другим признакам
      */
-    Optional<Boolean> matches(Expression expression, Predicate<String> typeName) {
+    synchronized Optional<Boolean> matches(Expression expression, Predicate<String> typeName) {
         return resolve(expression).flatMap(type -> matches(type, typeName));
     }
 
-    Optional<Boolean> matches(Type type, Predicate<String> typeName) {
+    synchronized Optional<Boolean> matches(Type type, Predicate<String> typeName) {
         return resolve(type).flatMap(resolved -> matches(resolved, typeName));
     }
 
@@ -183,29 +216,29 @@ class Types {
      * @return true - является; false - все предки известны и среди них таких нет; пусто - тип неизвестен
      * либо известен не полностью
      */
-    Optional<Boolean> isKindOf(Expression expression, Set<String> libraryTypes) {
+    synchronized Optional<Boolean> isKindOf(Expression expression, Set<String> libraryTypes) {
         return resolve(expression).flatMap(type -> isKindOf(type, libraryTypes));
     }
 
-    Optional<Boolean> isKindOf(Type type, Set<String> libraryTypes) {
+    synchronized Optional<Boolean> isKindOf(Type type, Set<String> libraryTypes) {
         return resolve(type).flatMap(resolved -> isKindOf(resolved, libraryTypes));
     }
 
     /**
      * @return true, если тип выражения известен и это тип из JDK, примитив или массив
      */
-    boolean isJdkType(Expression expression) {
+    synchronized boolean isJdkType(Expression expression) {
         return resolve(expression).filter(Types::isJdkType).isPresent();
     }
 
-    boolean isJdkType(Type type) {
+    synchronized boolean isJdkType(Type type) {
         return resolve(type).filter(Types::isJdkType).isPresent();
     }
 
     /**
      * @return true, если вызванный метод объявлен в исходниках проверяемого проекта, а не в JDK или библиотеке
      */
-    boolean isDeclaredInProject(MethodCallExpr call) {
+    synchronized boolean isDeclaredInProject(MethodCallExpr call) {
         return declarationLine(call).isPresent();
     }
 
@@ -213,7 +246,7 @@ class Types {
      * @return строка, на которой объявлен вызванный метод, если он найден в исходниках проекта.
      * По ней вызов сопоставляется с нужной из перегрузок
      */
-    Optional<Integer> declarationLine(MethodCallExpr call) {
+    synchronized Optional<Integer> declarationLine(MethodCallExpr call) {
         return declaration(call).flatMap(Node::getBegin).map(position -> position.line);
     }
 
@@ -221,7 +254,7 @@ class Types {
      * @return объявление вызванного метода, если оно найдено в исходниках проекта. Узел может принадлежать
      * не тому дереву, что проверяют правила: решатель разбирает файлы сам. Сопоставлять нужно по файлу и строке
      */
-    Optional<MethodDeclaration> declaration(MethodCallExpr call) {
+    synchronized Optional<MethodDeclaration> declaration(MethodCallExpr call) {
         if (!hasSolver(call)) {
             return Optional.empty();
         }
@@ -237,7 +270,7 @@ class Types {
     /**
      * @return true, если вызов разрешен и ведет в JDK или библиотеку, а не в исходники проекта
      */
-    boolean isLibraryCall(MethodCallExpr call) {
+    synchronized boolean isLibraryCall(MethodCallExpr call) {
         if (!hasSolver(call)) {
             return false;
         }

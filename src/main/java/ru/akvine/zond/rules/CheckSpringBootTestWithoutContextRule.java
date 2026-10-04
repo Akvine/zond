@@ -8,7 +8,6 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
 import java.util.List;
-import java.util.Set;
 
 @Component
 public class CheckSpringBootTestWithoutContextRule extends AbstractRule {

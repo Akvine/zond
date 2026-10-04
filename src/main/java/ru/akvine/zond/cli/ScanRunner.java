@@ -6,6 +6,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.config.ZondSettings;
+import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.services.RuleCatalog;
 
@@ -22,7 +23,10 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String SKIP_TESTS_OPTION = "skip-tests";
     private static final String CLASSPATH_OPTION = "classpath";
     private static final String EXCLUDE_OPTION = "exclude";
+    private static final String THREADS_OPTION = "threads";
     private static final String RULES_SEPARATOR = ",";
+    private static final String TRUE = "true";
+    private static final String FALSE = "false";
 
     private final ScanExecutor scanExecutor;
     private final MainMenu mainMenu;
@@ -92,7 +96,46 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         String excluded = optionValue(args, EXCLUDE_OPTION);
         session.setExclusions(PathExclusions.parse(
                 excluded == null ? settings.exclude() : settings.exclude() + RULES_SEPARATOR + excluded));
+
+        String threads = optionValue(args, THREADS_OPTION);
+        session.setThreads(parseThreads(threads == null ? settings.threads() : threads));
+
+        for (FileKind kind : FileKind.values()) {
+            session.setScanned(kind, resolveScanned(args, kind));
+        }
         return session;
+    }
+
+    // Пустое значение - один поток; 0 - по числу ядер процессора
+    private int parseThreads(String value) {
+        if (value.isBlank()) {
+            return 1;
+        }
+        try {
+            int threads = Integer.parseInt(value.trim());
+            if (threads >= 0) {
+                return threads;
+            }
+        } catch (NumberFormatException exception) {
+            // Сообщение ниже общее для "не число" и "отрицательное число"
+        }
+        throw new IllegalArgumentException("Число потоков должно быть целым неотрицательным числом, а задано '"
+                + value.trim() + "'");
+    }
+
+    // --scan-sql и --scan-sql=true включают проверку, --scan-sql=false отключает; без аргумента решает zond.scan.sql.
+    // Вид файлов, о котором ничего не сказано, проверяется
+    private boolean resolveScanned(ApplicationArguments args, FileKind kind) {
+        String value = args.containsOption(kind.option()) ? optionValue(args, kind.option()) : settings.scanEnabled(kind);
+        if (value == null || value.isBlank()) {
+            return true;
+        }
+        String flag = value.trim();
+        if (!TRUE.equalsIgnoreCase(flag) && !FALSE.equalsIgnoreCase(flag)) {
+            throw new IllegalArgumentException("Настройка '" + kind.property() + "' принимает true или false, а задано '"
+                    + flag + "'");
+        }
+        return Boolean.parseBoolean(flag);
     }
 
     // --skip-tests и --skip-tests=true включают пропуск, --skip-tests=false отменяет заданный в app.properties

@@ -27,13 +27,13 @@ import java.util.regex.Pattern;
 class Suppressions {
     // Директива должна стоять в комментарии: то же слово внутри строкового литерала подавлением не считается
     private static final Pattern DIRECTIVE =
-            Pattern.compile("(?://|/\\*|^\\s*\\*|#).*?zond:ignore(-file)?\\b(.*)$");
+            Pattern.compile("(?://|/\\*|^\\s*\\*|#|--|<!--).*?zond:ignore(-file)?\\b(.*)$");
 
     // jr:40 либо имя правила: CheckMagicNumberRule
     private static final Pattern RULE_ID = Pattern.compile("[A-Za-z]+:\\d+|Check\\w+Rule");
 
     // Строка, на которой нет ничего, кроме комментария
-    private static final Pattern COMMENT_ONLY_LINE = Pattern.compile("^\\s*(//|/\\*|\\*|#).*");
+    private static final Pattern COMMENT_ONLY_LINE = Pattern.compile("^\\s*(//|/\\*|\\*|#|--|<!--).*");
 
     // Директива без списка правил относится ко всем правилам
     private static final String ALL_RULES = "*";

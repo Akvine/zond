@@ -7,14 +7,17 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.DefaultApplicationArguments;
+import org.springframework.mock.env.MockEnvironment;
 import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.config.ZondSettings;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
+import ru.akvine.zond.loaders.FileSystemTextFileLoader;
 import ru.akvine.zond.printers.PrinterFactory;
 import ru.akvine.zond.printers.ReportFormatter;
 import ru.akvine.zond.printers.RuleListFormatter;
 import ru.akvine.zond.printers.RuleListWriter;
+import ru.akvine.zond.rules.CheckSqlDestructiveStatementRule;
 import ru.akvine.zond.rules.CheckTransactionOnPrivateMethodRule;
 import ru.akvine.zond.rules.Rule;
 import ru.akvine.zond.services.RuleCatalog;
@@ -49,6 +52,11 @@ class ScanRunnerTest {
 
     // Настройки правил (zond.rule.*), с которыми создается приложение
     private RuleSettings ruleSettings = RuleSettings.empty();
+
+    // Настройки zond.scan.<вид файлов> из app.properties
+    private final MockEnvironment environment = new MockEnvironment();
+
+    private List<Rule> rules = List.of(new CheckTransactionOnPrivateMethodRule());
 
     @BeforeEach
     void setUp() throws IOException {
@@ -131,7 +139,8 @@ class ScanRunnerTest {
                 "4", "2",                      // минимальный уровень: CRITICAL
                 "5", "1", "jr:1, jr:999", "4", // отключить правило, неизвестное пропускается
                 "6", "generated, *Dto.java",   // исключенные пути
-                "7",
+                "7", "1", "6",                 // SQL-файлы: не проверять
+                "8",
                 SCAN, EXIT);
 
         runner.run(new DefaultApplicationArguments());
@@ -143,7 +152,12 @@ class ScanRunnerTest {
                 "zond.rules.disabled=jr:1",
                 "zond.rules.min-level=CRITICAL",
                 "zond.scan.skip-tests=true",
-                "zond.scan.exclude=generated, *Dto.java");
+                "zond.scan.exclude=generated, *Dto.java",
+                "zond.scan.sql=false",
+                "zond.scan.build-files=true",
+                "zond.scan.docker=true",
+                "zond.scan.config=true",
+                "zond.scan.messages=true");
         // Единственное правило отключено - проблем нет, отчет лежит в новой папке
         assertThat(reports.resolve("old.xlsx")).exists();
         assertThat(runner.getExitCode()).isZero();
@@ -155,7 +169,7 @@ class ScanRunnerTest {
                 CANCEL,
                 SETTINGS,
                 "5", "1", "CheckTransactionOnPrivateMethodRule", "2", "jr:1", "4",
-                "7",
+                "8",
                 EXIT);
 
         runner.run(new DefaultApplicationArguments());
@@ -232,6 +246,65 @@ class ScanRunnerTest {
     }
 
     @Test
+    void threadsArgumentRunsScanInParallel() {
+        ScanRunner parallel = runner("");
+        parallel.run(new DefaultApplicationArguments("--path=" + dir, "--threads=4"));
+        assertThat(parallel.getExitCode()).isEqualTo(1);
+
+        // 0 - по числу ядер процессора
+        ScanRunner allCores = runner("");
+        allCores.run(new DefaultApplicationArguments("--path=" + dir, "--threads=0"));
+        assertThat(allCores.getExitCode()).isEqualTo(1);
+    }
+
+    @Test
+    void wrongThreadsArgumentIsAnError() {
+        ScanRunner notNumber = runner("");
+        notNumber.run(new DefaultApplicationArguments("--path=" + dir, "--threads=many"));
+        assertThat(notNumber.getExitCode()).isEqualTo(2);
+
+        ScanRunner negative = runner("");
+        negative.run(new DefaultApplicationArguments("--path=" + dir, "--threads=-1"));
+        assertThat(negative.getExitCode()).isEqualTo(2);
+    }
+
+    @Test
+    void fileKindsAreSwitchedOffBySettingsAndArguments() throws IOException {
+        // Правило для Java находок не даст: нарушение остается только в SQL-файле
+        Files.delete(dir.resolve("Bad.java"));
+        Files.writeString(dir.resolve("V1__init.sql"), "drop table old_table;\n");
+        rules = List.of(new CheckSqlDestructiveStatementRule());
+
+        ScanRunner everything = runner("");
+        everything.run(new DefaultApplicationArguments("--path=" + dir));
+        assertThat(everything.getExitCode()).isEqualTo(1);
+
+        ScanRunner byArgument = runner("");
+        byArgument.run(new DefaultApplicationArguments("--path=" + dir, "--scan-sql=false"));
+        assertThat(byArgument.getExitCode()).isZero();
+
+        // Другой вид файлов на SQL не влияет
+        ScanRunner otherKind = runner("");
+        otherKind.run(new DefaultApplicationArguments("--path=" + dir, "--scan-docker=false"));
+        assertThat(otherKind.getExitCode()).isEqualTo(1);
+
+        environment.setProperty("zond.scan.sql", "false");
+        ScanRunner bySetting = runner("");
+        bySetting.run(new DefaultApplicationArguments("--path=" + dir));
+        assertThat(bySetting.getExitCode()).isZero();
+
+        // Аргумент важнее настройки
+        ScanRunner argumentWins = runner("");
+        argumentWins.run(new DefaultApplicationArguments("--path=" + dir, "--scan-sql"));
+        assertThat(argumentWins.getExitCode()).isEqualTo(1);
+
+        environment.setProperty("zond.scan.sql", "нет");
+        ScanRunner wrong = runner("");
+        wrong.run(new DefaultApplicationArguments("--path=" + dir));
+        assertThat(wrong.getExitCode()).isEqualTo(2);
+    }
+
+    @Test
     void unknownMinLevelIsAnError() {
         ScanRunner runner = runner("");
 
@@ -273,7 +346,6 @@ class ScanRunnerTest {
             }
         };
 
-        List<Rule> rules = List.of(new CheckTransactionOnPrivateMethodRule());
         RuleCatalog catalog = new RuleCatalog(rules, ruleSettings);
         ConsoleMenu menu = new ConsoleMenu(consoleInput);
         FolderPicker folderPicker = new FolderPicker(consoleInput);
@@ -282,6 +354,7 @@ class ScanRunnerTest {
                 new Scanner(
                         new FileSystemSourceLoader(),
                         new FileSystemConfigLoader(),
+                        new FileSystemTextFileLoader(),
                         rules,
                         (number, total, rule) -> {},
                         ruleSettings),
@@ -293,6 +366,6 @@ class ScanRunnerTest {
                         new SettingsStore(configDir.resolve("app.properties").toString())),
                 new RulesMenu(menu, catalog, ruleListFormatter, new RuleListWriter(ruleListFormatter)),
                 executor);
-        return new ScanRunner(executor, mainMenu, new ZondSettings(reportPath, "", "", "", "", ""), catalog);
+        return new ScanRunner(executor, mainMenu, new ZondSettings(reportPath, "", "", "", "", "", "", environment), catalog);
     }
 }

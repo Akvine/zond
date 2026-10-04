@@ -3,12 +3,14 @@ package ru.akvine.zond.cli;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
+import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.enums.ReportFormat;
 import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.services.RuleCatalog;
 
 import java.io.UncheckedIOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -24,6 +26,8 @@ public class SettingsMenu {
     private static final String CURRENT_DIRECTORY = "текущая папка";
     private static final String BACK = "Назад";
     private static final String CLEAR = "-";
+    private static final String ENABLED = "проверяются";
+    private static final String DISABLED = "не проверяются";
 
     private final ConsoleMenu menu;
     private final ConsoleInput input;
@@ -43,6 +47,7 @@ public class SettingsMenu {
                     "Минимальный уровень: " + settings.getMinLevel(),
                     "Отключенные правила: " + describeDisabled(settings),
                     "Исключенные пути: " + describeExclusions(settings),
+                    "Файлы помимо Java: " + describeKinds(settings),
                     BACK));
             switch (choice) {
                 case 1 -> chooseReportDirectory(settings);
@@ -51,6 +56,7 @@ public class SettingsMenu {
                 case 4 -> chooseMinLevel(settings);
                 case 5 -> editDisabledRules(settings);
                 case 6 -> editExclusions(settings);
+                case 7 -> editKinds(settings);
                 default -> {
                     return;
                 }
@@ -128,6 +134,33 @@ public class SettingsMenu {
         }
         settings.setExclusions(CLEAR.equals(answer) ? PathExclusions.none() : PathExclusions.parse(answer));
         save(settings);
+    }
+
+    // Выбор вида файлов переключает его проверку
+    private void editKinds(SessionSettings settings) {
+        List<FileKind> kinds = List.of(FileKind.values());
+        while (true) {
+            List<String> items = new ArrayList<>();
+            for (FileKind kind : kinds) {
+                items.add(kind.getDescription() + ": " + (settings.isScanned(kind) ? ENABLED : DISABLED));
+            }
+            items.add(BACK);
+            int choice = menu.choose("Файлы помимо Java: выберите вид, чтобы включить или отключить его проверку", items);
+            if (choice > kinds.size()) {
+                return;
+            }
+            FileKind kind = kinds.get(choice - 1);
+            settings.setScanned(kind, !settings.isScanned(kind));
+            save(settings);
+        }
+    }
+
+    private String describeKinds(SessionSettings settings) {
+        List<String> skipped = Arrays.stream(FileKind.values())
+                .filter(kind -> !settings.isScanned(kind))
+                .map(FileKind::getKey)
+                .toList();
+        return skipped.isEmpty() ? "проверяются все" : "не проверяются " + String.join(", ", skipped);
     }
 
     private String describeExclusions(SessionSettings settings) {
