@@ -326,4 +326,11 @@ public class RuleCodes {
     public final static String CHECK_CI_SECRET_IN_VARIABLES_RULE_CODE = "jr:320";
     public final static String CHECK_CI_UNPINNED_REFERENCE_RULE_CODE = "jr:321";
     public final static String CHECK_CI_TESTS_SKIPPED_RULE_CODE = "jr:322";
+    public final static String CHECK_ALWAYS_NULL_DEREFERENCE_RULE_CODE = "jr:323";
+    public final static String CHECK_POSSIBLE_NULL_DEREFERENCE_RULE_CODE = "jr:324";
+    public final static String CHECK_NULL_ARGUMENT_RULE_CODE = "jr:325";
+    public final static String CHECK_CONSTANT_CONDITION_RULE_CODE = "jr:326";
+    public final static String CHECK_UNREACHABLE_CODE_RULE_CODE = "jr:327";
+    public final static String CHECK_DIVISION_BY_ZERO_RULE_CODE = "jr:328";
+    public final static String CHECK_INDEX_OUT_OF_BOUNDS_RULE_CODE = "jr:329";
 }
