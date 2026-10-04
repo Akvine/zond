@@ -23,6 +23,7 @@ import lombok.experimental.UtilityClass;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Predicate;
 
 /**
@@ -35,6 +36,10 @@ import java.util.function.Predicate;
  */
 @UtilityClass
 class Guards {
+    // Objects.nonNull(x), Objects.requireNonNull(x), StringUtils.hasText(x), Assert.notNull(x, ...)
+    private static final Set<String> NULL_CHECK_METHODS = Set.of(
+            "nonNull", "isNull", "requireNonNull", "notNull", "hasText", "hasLength", "isEmpty", "isNotEmpty",
+            "isBlank", "isNotBlank", "ofNullable");
 
     /**
      * @param usage   место, где значение используется без права на ошибку: list.get(0), optional.get()
@@ -52,6 +57,28 @@ class Guards {
             parent = parent.getParentNode().orElse(null);
         }
         return false;
+    }
+
+    /**
+     * @return true, если выражение проверяет переменную на null: x == null, x != null, Objects.nonNull(x),
+     * StringUtils.hasText(x) и подобные
+     */
+    boolean isNullCheck(Expression expression, String variable) {
+        if (expression.isBinaryExpr()) {
+            BinaryExpr comparison = expression.asBinaryExpr();
+            boolean isEquality = comparison.getOperator() == BinaryExpr.Operator.EQUALS
+                    || comparison.getOperator() == BinaryExpr.Operator.NOT_EQUALS;
+            return isEquality && (isVariableAndNull(comparison.getLeft(), comparison.getRight(), variable)
+                    || isVariableAndNull(comparison.getRight(), comparison.getLeft(), variable));
+        }
+        return expression.isMethodCallExpr()
+                && NULL_CHECK_METHODS.contains(expression.asMethodCallExpr().getNameAsString())
+                && expression.asMethodCallExpr().getArguments().stream()
+                .anyMatch(argument -> argument.toString().equals(variable));
+    }
+
+    private boolean isVariableAndNull(Expression first, Expression second, String variable) {
+        return first.toString().equals(variable) && second.isNullLiteralExpr();
     }
 
     // child - часть parent, через которую мы поднялись от использования

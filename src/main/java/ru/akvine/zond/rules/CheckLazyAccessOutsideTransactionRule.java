@@ -16,11 +16,12 @@ import ru.akvine.zond.models.Violation;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
 @Component
-public class CheckLazyAccessOutsideTransactionRule extends AbstractRule {
+public class CheckLazyAccessOutsideTransactionRule extends AbstractRule implements ProjectRule {
     // getOrders(), getItems()
     private static final Pattern GETTER = Pattern.compile("^get[A-Z].*");
 
@@ -39,7 +40,18 @@ public class CheckLazyAccessOutsideTransactionRule extends AbstractRule {
     }
 
     @Override
-    public List<Violation> check(SourceFile sourceFile) {
+    public List<Violation> checkProject(List<SourceFile> sourceFiles) {
+        CallGraph graph = CallGraph.of(sourceFiles);
+        List<Violation> violations = new ArrayList<>();
+        for (SourceFile sourceFile : sourceFiles) {
+            List<Violation> found = check(sourceFile, graph);
+            found.sort(Comparator.comparingInt(Violation::line));
+            violations.addAll(found);
+        }
+        return violations;
+    }
+
+    private List<Violation> check(SourceFile sourceFile, CallGraph graph) {
         List<Violation> violations = new ArrayList<>();
         for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
             if (method.getBody().isEmpty() || isTransactional(method) || TestClasses.isInside(method)) {
@@ -51,26 +63,68 @@ public class CheckLazyAccessOutsideTransactionRule extends AbstractRule {
                     continue;
                 }
                 String entity = variable.getNameAsString();
-
-                // order.getItems().size()
-                for (MethodCallExpr call : method.findAll(MethodCallExpr.class)) {
-                    if (COLLECTION_METHODS.contains(call.getNameAsString())
-                            && call.getScope().filter(scope -> isRelationGetter(scope, entity)).isPresent()) {
-                        violations.add(report(sourceFile, call, call.getScope().get().toString(), entity));
-                    }
+                for (Node access : findRelationAccesses(method, entity)) {
+                    violations.add(report(sourceFile, access, describe(access), entity));
                 }
 
-                // for (Item item : order.getItems())
-                for (ForEachStmt loop : method.findAll(ForEachStmt.class)) {
-                    if (isRelationGetter(loop.getIterable(), entity)) {
-                        violations.add(report(sourceFile, loop, loop.getIterable().toString(), entity));
-                    }
+                // Сущность отдана другому методу, и к связи обращается уже он - тоже без транзакции
+                for (MethodCallExpr call : method.findAll(MethodCallExpr.class)) {
+                    findAccessInCallee(call, entity, graph).ifPresent(access -> violations.add(report(
+                            sourceFile, call, access + " в методе '" + call.getNameAsString() + "'", entity)));
                 }
             }
         }
-
-        violations.sort(Comparator.comparingInt(Violation::line));
         return violations;
+    }
+
+    // order.getItems().size() и for (Item item : order.getItems())
+    private List<Node> findRelationAccesses(Node body, String entity) {
+        List<Node> accesses = new ArrayList<>();
+        for (MethodCallExpr call : body.findAll(MethodCallExpr.class)) {
+            if (COLLECTION_METHODS.contains(call.getNameAsString())
+                    && call.getScope().filter(scope -> isRelationGetter(scope, entity)).isPresent()) {
+                accesses.add(call);
+            }
+        }
+        for (ForEachStmt loop : body.findAll(ForEachStmt.class)) {
+            if (isRelationGetter(loop.getIterable(), entity)) {
+                accesses.add(loop);
+            }
+        }
+        return accesses;
+    }
+
+    private String describe(Node access) {
+        return access instanceof ForEachStmt loop
+                ? loop.getIterable().toString()
+                : ((MethodCallExpr) access).getScope().get().toString();
+    }
+
+    /**
+     * @return обращение к связи в методе проекта, которому сущность передана аргументом
+     */
+    private Optional<String> findAccessInCallee(MethodCallExpr call, String entity, CallGraph graph) {
+        int index = -1;
+        for (int position = 0; position < call.getArguments().size(); position++) {
+            if (call.getArgument(position).toString().equals(entity)) {
+                index = position;
+            }
+        }
+        if (index < 0) {
+            return Optional.empty();
+        }
+        for (MethodDeclaration target : graph.targetsOf(call)) {
+            // В транзакционном методе сущность можно присоединить к сессии заново - о нем не судим
+            if (index >= target.getParameters().size() || isTransactional(target)) {
+                continue;
+            }
+            String parameter = target.getParameter(index).getNameAsString();
+            Optional<String> access = findRelationAccesses(target, parameter).stream().map(this::describe).findFirst();
+            if (access.isPresent()) {
+                return access;
+            }
+        }
+        return Optional.empty();
     }
 
     @Override
