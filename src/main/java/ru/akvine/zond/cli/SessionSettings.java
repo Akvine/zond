@@ -4,13 +4,13 @@ import lombok.Getter;
 import lombok.Setter;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ReportFormat;
+import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.models.ScanOptions;
 
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -47,6 +47,11 @@ public class SessionSettings {
     private List<Path> classpath = List.of();
 
     /**
+     * Пути, которые не нужно сканировать
+     */
+    private PathExclusions exclusions = PathExclusions.none();
+
+    /**
      * @param reportFile    файл отчета либо null для вывода в консоль
      * @param disabledRules правила через запятую
      * @param minLevel      имя уровня либо пустая строка
@@ -81,9 +86,7 @@ public class SessionSettings {
         if (reportFileName == null) {
             return ReportFormat.CONSOLE;
         }
-        return reportFileName.toLowerCase(Locale.ROOT).endsWith(ReportFormat.XLSX.getExtension())
-                ? ReportFormat.XLSX
-                : ReportFormat.TXT;
+        return ReportFormat.of(reportFileName);
     }
 
     // Имя файла сохраняется, меняется только расширение
@@ -104,6 +107,7 @@ public class SessionSettings {
     public ScanOptions toScanOptions() {
         return ScanOptions.parse(disabledRulesAsText(), minLevel.name())
                 .withSkipTests(skipTests)
-                .withClasspath(classpath);
+                .withClasspath(classpath)
+                .withExclusions(exclusions);
     }
 }

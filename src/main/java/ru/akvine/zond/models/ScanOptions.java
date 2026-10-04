@@ -16,8 +16,10 @@ import java.util.stream.Collectors;
  * @param minLevel      наименее строгий уровень, который еще попадает в отчет
  * @param skipTests     не проверять файлы из каталогов test
  * @param classpath     jar-файлы и папки с библиотеками проекта: по ним разрешаются типы из зависимостей
+ * @param exclusions    пути, которые сканировать не нужно
  */
-public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel, boolean skipTests, List<Path> classpath) {
+public record ScanOptions(
+        Set<String> disabledRules, ErrorLevel minLevel, boolean skipTests, List<Path> classpath, PathExclusions exclusions) {
     private static final String SEPARATOR = "[,;\\s]+";
     private static final String TEST_DIRECTORY = "test";
 
@@ -25,15 +27,19 @@ public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel, boolea
      * @return настройки по умолчанию: все правила, все уровни, все файлы
      */
     public static ScanOptions defaults() {
-        return new ScanOptions(Set.of(), ErrorLevel.INFO, false, List.of());
+        return new ScanOptions(Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none());
     }
 
     public ScanOptions withSkipTests(boolean skip) {
-        return new ScanOptions(disabledRules, minLevel, skip, classpath);
+        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions);
     }
 
     public ScanOptions withClasspath(List<Path> libraries) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, List.copyOf(libraries));
+        return new ScanOptions(disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions);
+    }
+
+    public ScanOptions withExclusions(PathExclusions excluded) {
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded);
     }
 
     /**
@@ -41,6 +47,9 @@ public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel, boolea
      * @return true, если файл нужно проверять
      */
     public boolean includes(Path root, Path file) {
+        if (exclusions.matches(root, file)) {
+            return false;
+        }
         if (!skipTests) {
             return true;
         }
@@ -64,7 +73,7 @@ public record ScanOptions(Set<String> disabledRules, ErrorLevel minLevel, boolea
                 .filter(rule -> !rule.isBlank())
                 .map(ScanOptions::normalize)
                 .collect(Collectors.toSet());
-        return new ScanOptions(disabled, parseLevel(minLevel), false, List.of());
+        return new ScanOptions(disabled, parseLevel(minLevel), false, List.of(), PathExclusions.none());
     }
 
     /**

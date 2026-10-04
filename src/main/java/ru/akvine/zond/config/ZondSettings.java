@@ -22,18 +22,21 @@ public class ZondSettings {
     private final String minLevel;
     private final String skipTests;
     private final String classpath;
+    private final String exclude;
 
     public ZondSettings(
             @Value("${zond.report.path:}") String reportPath,
             @Value("${zond.rules.disabled:}") String disabledRules,
             @Value("${zond.rules.min-level:}") String minLevel,
             @Value("${zond.scan.skip-tests:}") String skipTests,
-            @Value("${zond.scan.classpath:}") String classpath) {
+            @Value("${zond.scan.classpath:}") String classpath,
+            @Value("${zond.scan.exclude:}") String exclude) {
         this.reportPath = reportPath;
         this.disabledRules = disabledRules;
         this.minLevel = minLevel;
         this.skipTests = skipTests;
         this.classpath = classpath;
+        this.exclude = exclude;
     }
 
     /**
@@ -69,6 +72,13 @@ public class ZondSettings {
      */
     public List<Path> classpath() {
         return parseClasspath(classpath);
+    }
+
+    /**
+     * @return пути, которые не нужно сканировать: шаблоны через запятую либо пустая строка
+     */
+    public String exclude() {
+        return exclude;
     }
 
     public static List<Path> parseClasspath(String classpath) {

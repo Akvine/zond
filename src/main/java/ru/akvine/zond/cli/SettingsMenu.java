@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ReportFormat;
+import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.services.RuleCatalog;
 
 import java.io.UncheckedIOException;
@@ -22,6 +23,7 @@ public class SettingsMenu {
     private static final String RULES_SEPARATOR = "[,;\\s]+";
     private static final String CURRENT_DIRECTORY = "текущая папка";
     private static final String BACK = "Назад";
+    private static final String CLEAR = "-";
 
     private final ConsoleMenu menu;
     private final ConsoleInput input;
@@ -40,6 +42,7 @@ public class SettingsMenu {
                     "Сканирование тестов: " + (settings.isSkipTests() ? "отключено" : "включено"),
                     "Минимальный уровень: " + settings.getMinLevel(),
                     "Отключенные правила: " + describeDisabled(settings),
+                    "Исключенные пути: " + describeExclusions(settings),
                     BACK));
             switch (choice) {
                 case 1 -> chooseReportDirectory(settings);
@@ -47,6 +50,7 @@ public class SettingsMenu {
                 case 3 -> toggleTests(settings);
                 case 4 -> chooseMinLevel(settings);
                 case 5 -> editDisabledRules(settings);
+                case 6 -> editExclusions(settings);
                 default -> {
                     return;
                 }
@@ -113,6 +117,22 @@ public class SettingsMenu {
                 }
             }
         }
+    }
+
+    private void editExclusions(SessionSettings settings) {
+        System.out.println("Шаблоны через запятую: имя каталога (generated), путь от корня сканирования"
+                + " (src/main/java/legacy) либо шаблон (*Dto.java, **/generated/**)");
+        String answer = input.ask("Исключенные пути (пустая строка - отмена, '-' - очистить): ");
+        if (answer.isEmpty()) {
+            return;
+        }
+        settings.setExclusions(CLEAR.equals(answer) ? PathExclusions.none() : PathExclusions.parse(answer));
+        save(settings);
+    }
+
+    private String describeExclusions(SessionSettings settings) {
+        List<String> patterns = settings.getExclusions().patterns();
+        return patterns.isEmpty() ? "нет" : String.join(", ", patterns);
     }
 
     private void disableRules(SessionSettings settings) {

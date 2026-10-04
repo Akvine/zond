@@ -6,6 +6,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.config.ZondSettings;
+import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.services.RuleCatalog;
 
 import java.nio.file.Path;
@@ -20,6 +21,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String MIN_LEVEL_OPTION = "min-level";
     private static final String SKIP_TESTS_OPTION = "skip-tests";
     private static final String CLASSPATH_OPTION = "classpath";
+    private static final String EXCLUDE_OPTION = "exclude";
     private static final String RULES_SEPARATOR = ",";
 
     private final ScanExecutor scanExecutor;
@@ -85,6 +87,11 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         // --classpath=... заменяет библиотеки из zond.scan.classpath
         String classpath = optionValue(args, CLASSPATH_OPTION);
         session.setClasspath(classpath == null ? settings.classpath() : ZondSettings.parseClasspath(classpath));
+
+        // Шаблоны из --exclude=... добавляются к заданным в zond.scan.exclude
+        String excluded = optionValue(args, EXCLUDE_OPTION);
+        session.setExclusions(PathExclusions.parse(
+                excluded == null ? settings.exclude() : settings.exclude() + RULES_SEPARATOR + excluded));
         return session;
     }
 

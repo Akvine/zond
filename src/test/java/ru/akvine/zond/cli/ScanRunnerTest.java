@@ -130,7 +130,8 @@ class ScanRunnerTest {
                 "3",                           // тесты: не сканировать
                 "4", "2",                      // минимальный уровень: CRITICAL
                 "5", "1", "jr:1, jr:999", "4", // отключить правило, неизвестное пропускается
-                "6",
+                "6", "generated, *Dto.java",   // исключенные пути
+                "7",
                 SCAN, EXIT);
 
         runner.run(new DefaultApplicationArguments());
@@ -141,7 +142,8 @@ class ScanRunnerTest {
                 "other.property=1",
                 "zond.rules.disabled=jr:1",
                 "zond.rules.min-level=CRITICAL",
-                "zond.scan.skip-tests=true");
+                "zond.scan.skip-tests=true",
+                "zond.scan.exclude=generated, *Dto.java");
         // Единственное правило отключено - проблем нет, отчет лежит в новой папке
         assertThat(reports.resolve("old.xlsx")).exists();
         assertThat(runner.getExitCode()).isZero();
@@ -153,7 +155,7 @@ class ScanRunnerTest {
                 CANCEL,
                 SETTINGS,
                 "5", "1", "CheckTransactionOnPrivateMethodRule", "2", "jr:1", "4",
-                "6",
+                "7",
                 EXIT);
 
         runner.run(new DefaultApplicationArguments());
@@ -197,6 +199,21 @@ class ScanRunnerTest {
         runner.run(new DefaultApplicationArguments("--path=" + dir, "--disable=jr:1"));
 
         assertThat(runner.getExitCode()).isZero();
+    }
+
+    @Test
+    void excludeArgumentSkipsMatchingPaths() throws IOException {
+        // Единственный файл с нарушением переносим в каталог, который исключаем
+        Path generated = Files.createDirectories(dir.resolve("src/generated"));
+        Files.move(dir.resolve("Bad.java"), generated.resolve("Bad.java"));
+
+        ScanRunner everything = runner("");
+        everything.run(new DefaultApplicationArguments("--path=" + dir));
+        assertThat(everything.getExitCode()).isEqualTo(1);
+
+        ScanRunner withoutGenerated = runner("");
+        withoutGenerated.run(new DefaultApplicationArguments("--path=" + dir, "--exclude=generated"));
+        assertThat(withoutGenerated.getExitCode()).isZero();
     }
 
     @Test
@@ -276,6 +293,6 @@ class ScanRunnerTest {
                         new SettingsStore(configDir.resolve("app.properties").toString())),
                 new RulesMenu(menu, catalog, ruleListFormatter, new RuleListWriter(ruleListFormatter)),
                 executor);
-        return new ScanRunner(executor, mainMenu, new ZondSettings(reportPath, "", "", "", ""), catalog);
+        return new ScanRunner(executor, mainMenu, new ZondSettings(reportPath, "", "", "", "", ""), catalog);
     }
 }

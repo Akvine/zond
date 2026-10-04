@@ -23,6 +23,8 @@ public class SettingsStore {
     private static final String DISABLED_RULES = "zond.rules.disabled";
     private static final String MIN_LEVEL = "zond.rules.min-level";
     private static final String SKIP_TESTS = "zond.scan.skip-tests";
+    private static final String EXCLUDE = "zond.scan.exclude";
+    private static final String LIST_DELIMITER = ", ";
 
     private final Path configFile;
 
@@ -45,6 +47,7 @@ public class SettingsStore {
         values.put(DISABLED_RULES, settings.disabledRulesAsText());
         values.put(MIN_LEVEL, settings.getMinLevel().name());
         values.put(SKIP_TESTS, String.valueOf(settings.isSkipTests()));
+        values.put(EXCLUDE, String.join(LIST_DELIMITER, settings.getExclusions().patterns()));
 
         try {
             List<String> lines = Files.exists(configFile)
