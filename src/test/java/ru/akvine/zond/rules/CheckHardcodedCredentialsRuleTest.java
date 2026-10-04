@@ -2,6 +2,7 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.security.CheckHardcodedCredentialsRule;
 
 import java.util.List;
 

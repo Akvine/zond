@@ -1,6 +1,10 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.performance.CheckStreamInLoopRule;
+import ru.akvine.zond.rules.streams.CheckFindFirstIsPresentRule;
+import ru.akvine.zond.rules.streams.CheckSortedFindFirstRule;
+import ru.akvine.zond.rules.streams.CheckStreamCountForExistenceRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

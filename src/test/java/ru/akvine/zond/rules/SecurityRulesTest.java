@@ -2,6 +2,17 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.performance.CheckInMemoryWorkbookRule;
+import ru.akvine.zond.rules.security.CheckCommandInjectionRule;
+import ru.akvine.zond.rules.security.CheckDisabledSecurityRule;
+import ru.akvine.zond.rules.security.CheckHeaderInjectionRule;
+import ru.akvine.zond.rules.security.CheckInsecureRandomRule;
+import ru.akvine.zond.rules.security.CheckRequestBodyWithoutValidRule;
+import ru.akvine.zond.rules.security.CheckSeededSecureRandomRule;
+import ru.akvine.zond.rules.security.CheckTrustAllSslRule;
+import ru.akvine.zond.rules.security.CheckUnboundedRequestCollectionRule;
+import ru.akvine.zond.rules.security.CheckUnsafeDeserializationRule;
+import ru.akvine.zond.rules.security.CheckWeakHashRule;
 
 import java.util.List;
 

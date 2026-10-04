@@ -8,6 +8,7 @@ import com.github.javaparser.ast.expr.MemberValuePair;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.support.StringLiterals;
 
 import java.util.List;
 import java.util.Set;

@@ -2,6 +2,18 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.codesmell.CheckBooleanFlagParameterRule;
+import ru.akvine.zond.rules.codesmell.CheckDeepNestingRule;
+import ru.akvine.zond.rules.codesmell.CheckDisabledTestWithoutReasonRule;
+import ru.akvine.zond.rules.codesmell.CheckLargeClassRule;
+import ru.akvine.zond.rules.codesmell.CheckLongMethodRule;
+import ru.akvine.zond.rules.codesmell.CheckSleepInTestRule;
+import ru.akvine.zond.rules.codesmell.CheckTestWithoutAssertionRule;
+import ru.akvine.zond.rules.codesmell.CheckTooManyDependenciesRule;
+import ru.akvine.zond.rules.codesmell.CheckValueWithoutDefaultRule;
+import ru.akvine.zond.rules.concurrency.CheckAsyncReturnTypeRule;
+import ru.akvine.zond.rules.logical.CheckProxyAnnotationOnPrivateMethodRule;
+import ru.akvine.zond.rules.logical.CheckScheduledWithParametersRule;
 
 import java.util.List;
 

@@ -2,6 +2,9 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.codesmell.CheckTooManyParametersRule;
+import ru.akvine.zond.rules.concurrency.CheckTransactionalWithAsyncRule;
+import ru.akvine.zond.rules.exceptions.CheckLostExceptionCauseRule;
 
 import java.util.List;
 

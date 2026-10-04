@@ -2,6 +2,7 @@ package ru.akvine.zond.rules;
 
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.support.Taint;
 
 import java.util.List;
 

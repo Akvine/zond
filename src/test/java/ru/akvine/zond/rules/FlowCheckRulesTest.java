@@ -1,6 +1,11 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.logical.CheckCastWithoutInstanceofRule;
+import ru.akvine.zond.rules.logical.CheckDivisionBySizeRule;
+import ru.akvine.zond.rules.logical.CheckIndexWithoutLengthCheckRule;
+import ru.akvine.zond.rules.logical.CheckNullUnboxingRule;
+import ru.akvine.zond.rules.logical.CheckNullableDereferenceRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

@@ -5,6 +5,7 @@ import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.models.RuleInfo;
 import ru.akvine.zond.models.ScanOptions;
+import ru.akvine.zond.rules.codesmell.CheckTooManyParametersRule;
 import ru.akvine.zond.services.RuleCatalog;
 
 import java.util.List;

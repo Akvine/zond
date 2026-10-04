@@ -9,6 +9,8 @@ import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.JpaEntities;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -8,6 +8,8 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.MethodCalls;
 
 import java.util.ArrayList;
 import java.util.List;

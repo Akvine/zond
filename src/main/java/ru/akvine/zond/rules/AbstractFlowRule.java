@@ -2,6 +2,7 @@ package ru.akvine.zond.rules;
 
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.flow.FlowAnalysis;
 
 import java.util.List;
 import java.util.Set;
@@ -15,7 +16,7 @@ public abstract class AbstractFlowRule extends AbstractRule implements ProjectRu
     /**
      * @return виды находок анализа, о которых сообщает правило
      */
-    abstract Set<FlowAnalysis.Kind> kinds();
+    protected abstract Set<FlowAnalysis.Kind> kinds();
 
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {

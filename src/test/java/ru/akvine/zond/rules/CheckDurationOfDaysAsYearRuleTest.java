@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.datetime.CheckDurationOfDaysAsYearRule;
 
 import java.nio.file.Path;
 import java.util.List;

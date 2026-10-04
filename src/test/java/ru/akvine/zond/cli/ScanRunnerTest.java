@@ -17,9 +17,9 @@ import ru.akvine.zond.printers.PrinterFactory;
 import ru.akvine.zond.printers.ReportFormatter;
 import ru.akvine.zond.printers.RuleListFormatter;
 import ru.akvine.zond.printers.RuleListWriter;
-import ru.akvine.zond.rules.CheckSqlDestructiveStatementRule;
-import ru.akvine.zond.rules.CheckTransactionOnPrivateMethodRule;
 import ru.akvine.zond.rules.Rule;
+import ru.akvine.zond.rules.logical.CheckSqlDestructiveStatementRule;
+import ru.akvine.zond.rules.logical.CheckTransactionOnPrivateMethodRule;
 import ru.akvine.zond.services.RuleCatalog;
 import ru.akvine.zond.services.Scanner;
 

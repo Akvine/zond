@@ -7,6 +7,10 @@ import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.concurrency.CheckMutableStateInSingletonBeanRule;
+import ru.akvine.zond.rules.logical.CheckIgnoredResultRule;
+import ru.akvine.zond.rules.resources.CheckUnclosedResourceRule;
+import ru.akvine.zond.rules.support.LocalTypes;
 
 import java.io.IOException;
 import java.nio.file.Files;

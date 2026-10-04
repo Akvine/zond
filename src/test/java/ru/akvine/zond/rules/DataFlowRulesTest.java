@@ -6,6 +6,13 @@ import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.codesmell.CheckUnreachableCodeRule;
+import ru.akvine.zond.rules.logical.CheckAlwaysNullDereferenceRule;
+import ru.akvine.zond.rules.logical.CheckConstantConditionRule;
+import ru.akvine.zond.rules.logical.CheckDivisionByZeroRule;
+import ru.akvine.zond.rules.logical.CheckIndexOutOfBoundsRule;
+import ru.akvine.zond.rules.logical.CheckNullArgumentRule;
+import ru.akvine.zond.rules.logical.CheckPossibleNullDereferenceRule;
 
 import java.io.IOException;
 import java.nio.file.Files;

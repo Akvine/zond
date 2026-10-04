@@ -1,6 +1,11 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.codesmell.CheckExecutorWithoutMdcRule;
+import ru.akvine.zond.rules.concurrency.CheckFutureGetInLoopRule;
+import ru.akvine.zond.rules.resources.CheckExecutorNotShutdownRule;
+import ru.akvine.zond.rules.resources.CheckThreadLocalNotRemovedRule;
+import ru.akvine.zond.rules.resources.CheckUnboundedExecutorRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

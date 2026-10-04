@@ -2,6 +2,20 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.codesmell.CheckManyToManyRule;
+import ru.akvine.zond.rules.concurrency.CheckEntityWithoutVersionRule;
+import ru.akvine.zond.rules.logical.CheckEntityEqualsWithRelationsRule;
+import ru.akvine.zond.rules.logical.CheckEntityFinalMethodRule;
+import ru.akvine.zond.rules.logical.CheckEntityToStringWithRelationsRule;
+import ru.akvine.zond.rules.logical.CheckEntityWithDataRule;
+import ru.akvine.zond.rules.logical.CheckEntityWithoutIdRule;
+import ru.akvine.zond.rules.logical.CheckEntityWithoutNoArgsConstructorRule;
+import ru.akvine.zond.rules.logical.CheckEnumeratedOrdinalRule;
+import ru.akvine.zond.rules.logical.CheckLazyAccessOutsideTransactionRule;
+import ru.akvine.zond.rules.performance.CheckEagerFetchRule;
+import ru.akvine.zond.rules.performance.CheckFindAllWithoutPagingRule;
+import ru.akvine.zond.rules.performance.CheckRelationContainsInLoopRule;
+import ru.akvine.zond.rules.performance.CheckRelationSizeInLoopRule;
 
 import java.util.List;
 

@@ -1,6 +1,14 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.security.CheckExceptionMessageToClientRule;
+import ru.akvine.zond.rules.security.CheckOpenRedirectRule;
+import ru.akvine.zond.rules.security.CheckPathTraversalRule;
+import ru.akvine.zond.rules.security.CheckSecretInToStringRule;
+import ru.akvine.zond.rules.security.CheckSensitiveDataLoggingRule;
+import ru.akvine.zond.rules.security.CheckWeakCipherRule;
+import ru.akvine.zond.rules.security.CheckXxeRule;
+import ru.akvine.zond.rules.security.CheckZipSlipRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

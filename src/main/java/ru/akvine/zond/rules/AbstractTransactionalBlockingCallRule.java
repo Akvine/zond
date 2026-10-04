@@ -5,6 +5,10 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import ru.akvine.zond.models.RuleParameter;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.CallChains;
+import ru.akvine.zond.rules.support.CallGraph;
+import ru.akvine.zond.rules.support.TransactionalAnnotations;
 
 import java.util.ArrayList;
 import java.util.HashSet;

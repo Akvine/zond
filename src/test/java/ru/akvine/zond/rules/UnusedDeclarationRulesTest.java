@@ -5,6 +5,8 @@ import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.codesmell.CheckUnusedClassRule;
+import ru.akvine.zond.rules.codesmell.CheckUnusedMethodRule;
 
 import java.io.IOException;
 import java.nio.file.Files;

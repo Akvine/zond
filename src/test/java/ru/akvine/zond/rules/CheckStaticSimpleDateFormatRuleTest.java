@@ -6,6 +6,7 @@ import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.datetime.CheckStaticSimpleDateFormatRule;
 
 import java.nio.file.Path;
 import java.util.List;

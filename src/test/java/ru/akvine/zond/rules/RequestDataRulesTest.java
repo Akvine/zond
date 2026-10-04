@@ -1,6 +1,12 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.security.CheckExpressionInjectionRule;
+import ru.akvine.zond.rules.security.CheckLogInjectionRule;
+import ru.akvine.zond.rules.security.CheckReflectionFromRequestRule;
+import ru.akvine.zond.rules.security.CheckRegexFromRequestRule;
+import ru.akvine.zond.rules.security.CheckResponseWriteWithoutEscapingRule;
+import ru.akvine.zond.rules.security.CheckSsrfRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

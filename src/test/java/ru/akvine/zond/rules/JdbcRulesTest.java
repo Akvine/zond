@@ -1,6 +1,11 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.logical.CheckDeleteWithoutWhereRule;
+import ru.akvine.zond.rules.logical.CheckUpdateWithoutWhereRule;
+import ru.akvine.zond.rules.performance.CheckMissingBatchProcessingRule;
+import ru.akvine.zond.rules.resources.CheckManualResourceCloseRule;
+import ru.akvine.zond.rules.security.CheckStatementInsteadOfPreparedRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

@@ -1,6 +1,9 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.performance.CheckLogConcatenationRule;
+import ru.akvine.zond.rules.performance.CheckLoggingInLoopRule;
+import ru.akvine.zond.rules.security.CheckAuthorizationHeaderLoggingRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

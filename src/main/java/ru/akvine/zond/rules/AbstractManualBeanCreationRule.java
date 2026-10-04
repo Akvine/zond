@@ -6,6 +6,9 @@ import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.TestClasses;
+import ru.akvine.zond.rules.support.Types;
 
 import java.util.List;
 import java.util.Set;

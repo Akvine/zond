@@ -2,6 +2,19 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.codesmell.CheckAssertTrueEqualsRule;
+import ru.akvine.zond.rules.codesmell.CheckCommentedOutCodeRule;
+import ru.akvine.zond.rules.codesmell.CheckCyclomaticComplexityRule;
+import ru.akvine.zond.rules.codesmell.CheckDuplicateStringLiteralRule;
+import ru.akvine.zond.rules.codesmell.CheckLoggerWrongClassRule;
+import ru.akvine.zond.rules.codesmell.CheckRedundantBooleanReturnRule;
+import ru.akvine.zond.rules.codesmell.CheckTryFailRule;
+import ru.akvine.zond.rules.codesmell.CheckUnusedLocalVariableRule;
+import ru.akvine.zond.rules.exceptions.CheckGenericExceptionRule;
+import ru.akvine.zond.rules.exceptions.CheckLogAndRethrowRule;
+import ru.akvine.zond.rules.exceptions.CheckLostStackTraceInLogRule;
+import ru.akvine.zond.rules.logical.CheckIncompleteAssertionRule;
+import ru.akvine.zond.rules.logical.CheckLogPlaceholderMismatchRule;
 
 import java.util.List;
 

@@ -1,6 +1,12 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.logical.CheckFixedSizeListModificationRule;
+import ru.akvine.zond.rules.logical.CheckImmutableCollectionModificationRule;
+import ru.akvine.zond.rules.logical.CheckIteratorNextWithoutHasNextRule;
+import ru.akvine.zond.rules.logical.CheckListGetFirstWithoutCheckRule;
+import ru.akvine.zond.rules.performance.CheckLinkedListGetInLoopRule;
+import ru.akvine.zond.rules.performance.CheckListContainsInLoopRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

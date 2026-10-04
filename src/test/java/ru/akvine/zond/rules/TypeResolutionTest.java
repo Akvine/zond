@@ -8,6 +8,11 @@ import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.logical.CheckIgnoredResultRule;
+import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.Loggers;
+import ru.akvine.zond.rules.support.MethodCalls;
+import ru.akvine.zond.rules.support.Repositories;
 
 import java.io.IOException;
 import java.net.URISyntaxException;

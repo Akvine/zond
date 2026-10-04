@@ -4,6 +4,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
+import ru.akvine.zond.rules.codesmell.CheckManualServiceCreationRule;
+import ru.akvine.zond.rules.codesmell.CheckRepositoryInControllerRule;
+import ru.akvine.zond.rules.concurrency.CheckLockWithoutFinallyRule;
+import ru.akvine.zond.rules.logical.CheckLogPlaceholderMismatchRule;
+import ru.akvine.zond.rules.logical.CheckTransactionalRollbackForCheckedExceptionRule;
+import ru.akvine.zond.rules.logical.CheckTransactionalSelfInvocationRule;
+import ru.akvine.zond.rules.performance.CheckMissingBatchProcessingRule;
+import ru.akvine.zond.rules.resources.CheckTransactionalFileIoRule;
+import ru.akvine.zond.rules.resources.CheckTransactionalHttpCallRule;
+import ru.akvine.zond.rules.resources.CheckUnclosedResourceRule;
 
 import java.io.IOException;
 import java.nio.file.Files;

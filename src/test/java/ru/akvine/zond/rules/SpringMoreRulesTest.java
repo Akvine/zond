@@ -1,6 +1,20 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.codesmell.CheckManualBeanLookupRule;
+import ru.akvine.zond.rules.codesmell.CheckRepositoryInControllerRule;
+import ru.akvine.zond.rules.concurrency.CheckAsyncOnCommonPoolRule;
+import ru.akvine.zond.rules.concurrency.CheckAsyncSelfInvocationRule;
+import ru.akvine.zond.rules.logical.CheckCascadeToParentRule;
+import ru.akvine.zond.rules.logical.CheckEntityCollectionReplacementRule;
+import ru.akvine.zond.rules.logical.CheckEventListenerInTransactionRule;
+import ru.akvine.zond.rules.logical.CheckModifyingWithoutTransactionalRule;
+import ru.akvine.zond.rules.logical.CheckMoneyInFloatingPointRule;
+import ru.akvine.zond.rules.performance.CheckFindByIdIsPresentRule;
+import ru.akvine.zond.rules.performance.CheckIdentityGenerationRule;
+import ru.akvine.zond.rules.performance.CheckListInManyToManyRule;
+import ru.akvine.zond.rules.performance.CheckOneToManyWithoutMappedByRule;
+import ru.akvine.zond.rules.resources.CheckHttpClientWithoutTimeoutRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

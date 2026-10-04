@@ -1,6 +1,20 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.concurrency.CheckAtomicGetThenSetRule;
+import ru.akvine.zond.rules.concurrency.CheckSleepInLoopRule;
+import ru.akvine.zond.rules.concurrency.CheckSynchronizedCollectionIterationRule;
+import ru.akvine.zond.rules.concurrency.CheckSynchronizedMethodWithIoRule;
+import ru.akvine.zond.rules.exceptions.CheckFutureWithoutErrorHandlingRule;
+import ru.akvine.zond.rules.performance.CheckBoxingInLoopRule;
+import ru.akvine.zond.rules.performance.CheckKeySetWithGetRule;
+import ru.akvine.zond.rules.performance.CheckMapperPerCallRule;
+import ru.akvine.zond.rules.performance.CheckRegexInLoopRule;
+import ru.akvine.zond.rules.performance.CheckWholeUploadInMemoryRule;
+import ru.akvine.zond.rules.security.CheckInsecureCookieRule;
+import ru.akvine.zond.rules.security.CheckInsecureTempFileRule;
+import ru.akvine.zond.rules.security.CheckJwtWithoutSignatureCheckRule;
+import ru.akvine.zond.rules.security.CheckSecretComparisonRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

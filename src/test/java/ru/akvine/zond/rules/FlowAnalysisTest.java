@@ -6,6 +6,16 @@ import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.logical.CheckIteratorNextWithoutHasNextRule;
+import ru.akvine.zond.rules.logical.CheckListGetFirstWithoutCheckRule;
+import ru.akvine.zond.rules.logical.CheckOptionalMisuseRule;
+import ru.akvine.zond.rules.logical.CheckWriteInReadOnlyTransactionRule;
+import ru.akvine.zond.rules.performance.CheckRepositoryCallInLoopRule;
+import ru.akvine.zond.rules.resources.CheckTransactionalHttpCallRule;
+import ru.akvine.zond.rules.resources.CheckUnclosedResourceRule;
+import ru.akvine.zond.rules.security.CheckOpenRedirectRule;
+import ru.akvine.zond.rules.security.CheckPathTraversalRule;
+import ru.akvine.zond.rules.security.CheckSqlConcatenationRule;
 
 import java.io.IOException;
 import java.nio.file.Files;

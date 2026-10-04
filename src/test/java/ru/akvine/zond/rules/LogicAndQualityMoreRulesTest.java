@@ -2,6 +2,17 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.codesmell.CheckMutablePublicConstantRule;
+import ru.akvine.zond.rules.codesmell.CheckRawTypeRule;
+import ru.akvine.zond.rules.codesmell.CheckSizeComparedToZeroRule;
+import ru.akvine.zond.rules.logical.CheckDuplicateConditionRule;
+import ru.akvine.zond.rules.logical.CheckExceptionNotThrownRule;
+import ru.akvine.zond.rules.logical.CheckFormatArgumentsMismatchRule;
+import ru.akvine.zond.rules.logical.CheckIncompatibleTypesRule;
+import ru.akvine.zond.rules.logical.CheckIndexOfPositiveRule;
+import ru.akvine.zond.rules.logical.CheckNarrowingCastRule;
+import ru.akvine.zond.rules.logical.CheckNonShortCircuitLogicRule;
+import ru.akvine.zond.rules.logical.CheckNullCheckWrongOperatorRule;
 
 import java.util.List;
 

@@ -1,6 +1,18 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.logical.CheckBeanMethodCallOutsideConfigurationRule;
+import ru.akvine.zond.rules.logical.CheckModifyingWithoutClearRule;
+import ru.akvine.zond.rules.logical.CheckPathVariableMismatchRule;
+import ru.akvine.zond.rules.logical.CheckReferenceOutsideTransactionRule;
+import ru.akvine.zond.rules.logical.CheckRetryableWithoutRecoverRule;
+import ru.akvine.zond.rules.logical.CheckValueOnStaticFieldRule;
+import ru.akvine.zond.rules.performance.CheckFlushInLoopRule;
+import ru.akvine.zond.rules.performance.CheckInMemoryFilteringRule;
+import ru.akvine.zond.rules.performance.CheckLikeWithLeadingWildcardRule;
+import ru.akvine.zond.rules.security.CheckCorsAllowAllRule;
+import ru.akvine.zond.rules.security.CheckEndpointWithoutAuthorizationRule;
+import ru.akvine.zond.rules.security.CheckRequestMappingWithoutMethodRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

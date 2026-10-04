@@ -2,6 +2,7 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import ru.akvine.zond.rules.support.Secrets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

@@ -1,6 +1,16 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.codesmell.CheckOptionalAsFieldOrParameterRule;
+import ru.akvine.zond.rules.concurrency.CheckSwallowedInterruptRule;
+import ru.akvine.zond.rules.concurrency.CheckSynchronizedOnBadLockRule;
+import ru.akvine.zond.rules.concurrency.CheckVolatileNonAtomicRule;
+import ru.akvine.zond.rules.datetime.CheckDatePatternRule;
+import ru.akvine.zond.rules.exceptions.CheckUnhandledNumberFormatRule;
+import ru.akvine.zond.rules.logical.CheckArrayMethodsRule;
+import ru.akvine.zond.rules.logical.CheckArraysAsListPrimitiveRule;
+import ru.akvine.zond.rules.logical.CheckOptionalOfNullableRule;
+import ru.akvine.zond.rules.performance.CheckOptionalOrElseCallRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

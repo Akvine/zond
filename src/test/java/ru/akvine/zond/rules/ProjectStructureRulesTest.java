@@ -3,6 +3,16 @@ package ru.akvine.zond.rules;
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.codesmell.CheckDuplicateCodeRule;
+import ru.akvine.zond.rules.codesmell.CheckLayerViolationRule;
+import ru.akvine.zond.rules.codesmell.CheckPackageCycleRule;
+import ru.akvine.zond.rules.logical.CheckDuplicateEndpointRule;
+import ru.akvine.zond.rules.logical.CheckLazyAccessOutsideTransactionRule;
+import ru.akvine.zond.rules.logical.CheckMissingEnableAnnotationRule;
+import ru.akvine.zond.rules.logical.CheckMultipleWritesWithoutTransactionRule;
+import ru.akvine.zond.rules.logical.CheckPrototypeInSingletonRule;
+import ru.akvine.zond.rules.performance.CheckRequiresNewInLoopRule;
+import ru.akvine.zond.rules.security.CheckEntityAsRequestBodyRule;
 
 import java.util.List;
 import java.util.Map;

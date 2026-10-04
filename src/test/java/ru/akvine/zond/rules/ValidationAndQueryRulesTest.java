@@ -2,6 +2,17 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.codesmell.CheckRepositoryCollectionParameterRule;
+import ru.akvine.zond.rules.exceptions.CheckSingleResultWithoutHandlingRule;
+import ru.akvine.zond.rules.logical.CheckConstraintOnWrongTypeRule;
+import ru.akvine.zond.rules.logical.CheckConstraintWithoutValidatedRule;
+import ru.akvine.zond.rules.logical.CheckJdbcTransactionWithoutRollbackRule;
+import ru.akvine.zond.rules.logical.CheckModifyingQueryMisuseRule;
+import ru.akvine.zond.rules.logical.CheckNativePagingWithoutCountQueryRule;
+import ru.akvine.zond.rules.logical.CheckNestedDtoWithoutValidRule;
+import ru.akvine.zond.rules.logical.CheckQueryParameterMismatchRule;
+import ru.akvine.zond.rules.performance.CheckFetchJoinWithPaginationRule;
+import ru.akvine.zond.rules.performance.CheckSelectStarRule;
 
 import java.util.List;
 import java.util.Map;

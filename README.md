@@ -482,7 +482,9 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
 public final static String CHECK_THREAD_STOP_RULE_CODE = "jr:330";
 ```
 
-**2. Напишите класс** в пакете `ru.akvine.zond.rules`. Проще всего унаследоваться от `AbstractRule`:
+**2. Напишите класс** в подпакете `ru.akvine.zond.rules`, который отвечает типу проблемы: правило с
+`ErrorType.CONCURRENCY` кладется в `rules.concurrency`, с `ErrorType.SECURITY` — в `rules.security` и так далее
+(см. [Устройство проекта](#устройство-проекта)). Проще всего унаследоваться от `AbstractRule`:
 он дает имя правила, сборку находки (`violation(...)`) и чтение порогов.
 
 ```java
@@ -539,7 +541,7 @@ public class CheckThreadStopRule extends AbstractRule {
 | Файл настроек `application.properties` / `.yml` | `ConfigRule` (через `AbstractConfigRule`), метод `checkConfig(ConfigFile)` |
 | Миграции, файлы сборки, Docker, Kubernetes, CI, настройки логирования, `messages*.properties` либо все сразу: код, настройки и эти файлы | `ContextRule` (через `AbstractContextRule`), метод `checkContext(ScanContext)` |
 
-**4. Пользуйтесь готовыми помощниками** из того же пакета вместо разбора дерева вручную:
+**4. Пользуйтесь готовыми помощниками** из пакета `rules.support` вместо разбора дерева вручную:
 
 | Помощник | Для чего |
 |---|---|
@@ -611,6 +613,19 @@ src/main/java/ru/akvine/zond
 ├── parsers     разбор YAML и XML с номерами строк
 ├── models      находка, результат сканирования, параметры запуска
 ├── printers    отчеты: консоль, текст, Excel; список правил
-├── rules       правила и общие помощники
+├── rules       интерфейсы правил, базовые классы, коды правил
+│   ├── codesmell     правила с типом «качество кода»
+│   ├── concurrency   ... «ошибки параллелизма»
+│   ├── datetime      ... «дата и время»
+│   ├── exceptions    ... «исключения»
+│   ├── logical       ... «логические ошибки»
+│   ├── performance   ... «производительность»
+│   ├── resources     ... «ресурсы»
+│   ├── security      ... «безопасность»
+│   ├── streams       ... «стримы»
+│   ├── files         разбор файлов помимо Java: SQL и Liquibase, pom.xml и build.gradle, Dockerfile,
+│   │                 docker-compose, Kubernetes, CI, настройки логирования
+│   ├── flow          анализ потока данных: интерпретатор, состояние, сводки методов
+│   └── support       помощники правил: типы, граф вызовов, аннотации, Lombok, бины Spring, сущности JPA
 └── services    сканер, справочник правил, подавление находок комментариями
 ```

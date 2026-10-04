@@ -1,6 +1,12 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.concurrency.CheckCheckThenActRule;
+import ru.akvine.zond.rules.concurrency.CheckLockWithoutFinallyRule;
+import ru.akvine.zond.rules.concurrency.CheckManualThreadInBeanRule;
+import ru.akvine.zond.rules.concurrency.CheckNonThreadSafeCollectionInBeanRule;
+import ru.akvine.zond.rules.concurrency.CheckParallelStreamSideEffectRule;
+import ru.akvine.zond.rules.concurrency.CheckUnsynchronizedLazyInitRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

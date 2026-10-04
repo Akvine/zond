@@ -4,6 +4,7 @@ import com.github.javaparser.StaticJavaParser;
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.logical.CheckTransactionOnPrivateMethodRule;
 
 import java.nio.file.Path;
 import java.util.List;

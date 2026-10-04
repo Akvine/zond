@@ -5,6 +5,10 @@ import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.support.JpaEntities;
+import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.Loops;
+import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
 import java.util.List;

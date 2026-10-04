@@ -1,6 +1,16 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.codesmell.CheckInternalCollectionExposureRule;
+import ru.akvine.zond.rules.datetime.CheckInstantUnsupportedUnitRule;
+import ru.akvine.zond.rules.logical.CheckAbsOfHashCodeRule;
+import ru.akvine.zond.rules.logical.CheckBigDecimalDivideRule;
+import ru.akvine.zond.rules.logical.CheckBuilderDefaultRule;
+import ru.akvine.zond.rules.logical.CheckCaseWithoutLocaleRule;
+import ru.akvine.zond.rules.logical.CheckDefaultCharsetRule;
+import ru.akvine.zond.rules.logical.CheckEqualsWrongSignatureRule;
+import ru.akvine.zond.rules.logical.CheckIgnoredBooleanResultRule;
+import ru.akvine.zond.rules.streams.CheckStreamReuseRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

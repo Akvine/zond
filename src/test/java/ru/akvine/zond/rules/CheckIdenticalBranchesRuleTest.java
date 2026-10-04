@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.logical.CheckIdenticalBranchesRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

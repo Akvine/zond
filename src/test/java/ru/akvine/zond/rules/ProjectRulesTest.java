@@ -2,6 +2,8 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.logical.CheckCircularDependencyRule;
+import ru.akvine.zond.rules.security.CheckEntityInControllerRule;
 
 import java.util.LinkedHashMap;
 import java.util.List;

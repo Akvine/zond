@@ -2,6 +2,18 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.codesmell.CheckLazyInjectionRule;
+import ru.akvine.zond.rules.codesmell.CheckManualRepositoryCreationRule;
+import ru.akvine.zond.rules.codesmell.CheckManualServiceCreationRule;
+import ru.akvine.zond.rules.concurrency.CheckAsyncVoidRule;
+import ru.akvine.zond.rules.concurrency.CheckAsyncWithoutExecutorRule;
+import ru.akvine.zond.rules.concurrency.CheckScheduledWithoutLockRule;
+import ru.akvine.zond.rules.logical.CheckCacheableSelfInvocationRule;
+import ru.akvine.zond.rules.logical.CheckRetryableSelfInvocationRule;
+import ru.akvine.zond.rules.logical.CheckTransactionalOnFinalRule;
+import ru.akvine.zond.rules.performance.CheckRepositoryCallInLoopRule;
+import ru.akvine.zond.rules.resources.CheckTransactionalFileIoRule;
+import ru.akvine.zond.rules.resources.CheckTransactionalHttpCallRule;
 
 import java.util.List;
 

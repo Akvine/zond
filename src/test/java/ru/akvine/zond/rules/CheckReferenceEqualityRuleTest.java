@@ -2,6 +2,7 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.logical.CheckReferenceEqualityRule;
 
 import java.util.List;
 

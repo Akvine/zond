@@ -5,6 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.models.ConfigFile;
+import ru.akvine.zond.rules.logical.CheckDdlAutoRule;
+import ru.akvine.zond.rules.performance.CheckOpenInViewRule;
+import ru.akvine.zond.rules.security.CheckActuatorExposureRule;
+import ru.akvine.zond.rules.security.CheckSecretInConfigRule;
+import ru.akvine.zond.rules.security.CheckStacktraceExposureRule;
 
 import java.io.IOException;
 import java.nio.file.Files;

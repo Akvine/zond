@@ -3,6 +3,7 @@ package ru.akvine.zond.rules;
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.rules.concurrency.CheckEarlySemaphoreReleaseRule;
 
 import java.util.List;
 

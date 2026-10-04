@@ -1,6 +1,14 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.rules.logical.CheckAssignmentInConditionRule;
+import ru.akvine.zond.rules.logical.CheckDeadCodeRule;
+import ru.akvine.zond.rules.logical.CheckEmptyStatementRule;
+import ru.akvine.zond.rules.logical.CheckFileNameMismatchRule;
+import ru.akvine.zond.rules.logical.CheckMisleadingIndentationRule;
+import ru.akvine.zond.rules.logical.CheckPackageMismatchRule;
+import ru.akvine.zond.rules.logical.CheckSwitchFallThroughRule;
+import ru.akvine.zond.rules.logical.CheckSwitchWithoutDefaultRule;
 
 import java.nio.file.Path;
 
