@@ -26,6 +26,7 @@ public class SettingsStore {
     private static final String SKIP_TESTS = "zond.scan.skip-tests";
     private static final String EXCLUDE = "zond.scan.exclude";
     private static final String MIN_CONFIDENCE = "zond.rules.min-confidence";
+    private static final String TIME_UNIT = "zond.progress.time-unit";
     private static final String LIST_DELIMITER = ", ";
 
     private final Path configFile;
@@ -49,6 +50,7 @@ public class SettingsStore {
         values.put(DISABLED_RULES, settings.disabledRulesAsText());
         values.put(MIN_LEVEL, settings.getMinLevel().name());
         values.put(MIN_CONFIDENCE, settings.getMinConfidence().name());
+        values.put(TIME_UNIT, settings.getTimeUnit().getCode());
         values.put(SKIP_TESTS, String.valueOf(settings.isSkipTests()));
         values.put(EXCLUDE, String.join(LIST_DELIMITER, settings.getExclusions().patterns()));
         for (FileKind kind : FileKind.values()) {

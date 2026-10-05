@@ -7,6 +7,7 @@ import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.config.ZondSettings;
 import ru.akvine.zond.enums.Confidence;
+import ru.akvine.zond.enums.DurationUnit;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.services.RuleCatalog;
@@ -27,6 +28,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String THREADS_OPTION = "threads";
     private static final String AUTO_CLASSPATH_OPTION = "auto-classpath";
     private static final String MIN_CONFIDENCE_OPTION = "min-confidence";
+    private static final String TIME_UNIT_OPTION = "time-unit";
     private static final String RULES_SEPARATOR = ",";
     private static final String TRUE = "true";
     private static final String FALSE = "false";
@@ -117,6 +119,9 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
 
         String minConfidence = optionValue(args, MIN_CONFIDENCE_OPTION);
         session.setMinConfidence(Confidence.parse(minConfidence == null ? settings.minConfidence() : minConfidence));
+
+        String timeUnit = optionValue(args, TIME_UNIT_OPTION);
+        session.setTimeUnit(DurationUnit.parse(timeUnit == null ? settings.timeUnit() : timeUnit));
         return session;
     }
 

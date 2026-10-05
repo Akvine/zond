@@ -65,6 +65,7 @@ public class Scanner {
                 .sorted(RuleCatalog.BY_CODE)
                 .toList();
 
+        progressListener.onScanStarted(activeRules, options);
         List<Violation> violations = new ArrayList<>();
         for (List<Violation> found : run(activeRules, context, options.threadCount())) {
             violations.addAll(found);
@@ -121,8 +122,15 @@ public class Scanner {
     }
 
     private List<Violation> run(Rule rule, ScanContext context, AtomicInteger started, int total) {
-        progressListener.onRuleStarted(started.incrementAndGet(), total, rule);
-        return withLevel(levelOf(rule), rule.confidence(), apply(rule, context));
+        int number = started.incrementAndGet();
+        progressListener.onRuleStarted(number, total, rule);
+        // Время считается в том же потоке, где работает правило: ожидание в очереди в него не входит
+        long startedAt = System.nanoTime();
+        try {
+            return withLevel(levelOf(rule), rule.confidence(), apply(rule, context));
+        } finally {
+            progressListener.onRuleFinished(number, total, rule, System.nanoTime() - startedAt);
+        }
     }
 
     // Ошибку правила отдаем наружу такой же, какой она была бы при работе в один поток

@@ -22,6 +22,7 @@ public class ScanExecutor {
     public static final int EXIT_VIOLATIONS_FOUND = 1;
     public static final int EXIT_ERROR = 2;
     private static final int SHOWN_MISSING = 5;
+    private static final String TOTAL_TIME = "Затраченное время: ";
 
     private final Scanner scanner;
     private final PrinterFactory printerFactory;
@@ -31,9 +32,12 @@ public class ScanExecutor {
      * @return код завершения: 0 - проблем нет, 1 - проблемы найдены, 2 - сканирование не удалось
      */
     public int scan(Path target, SessionSettings settings) {
+        // В общее время входит все, чего ждет пользователь: поиск библиотек, разбор файлов, правила и запись отчета
+        long startedAt = System.nanoTime();
         try {
             ScanResult result = scanner.scan(target, optionsOf(target, settings));
             printerFactory.create(settings.reportFile()).print(result);
+            System.out.println(TOTAL_TIME + settings.getTimeUnit().format(System.nanoTime() - startedAt));
             return result.hasViolations() ? EXIT_VIOLATIONS_FOUND : EXIT_OK;
         } catch (RuntimeException exception) {
             System.err.println("Ошибка: " + exception.getMessage());

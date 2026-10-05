@@ -142,7 +142,8 @@ class ScanRunnerTest {
                 "6", "1", "jr:1, jr:999", "4", // отключить правило, неизвестное пропускается
                 "7", "generated, *Dto.java",   // исключенные пути
                 "8", "1", "9",                 // миграции БД: не проверять
-                "9",
+                "9", "2",                      // единица времени: секунды
+                "10",
                 SCAN, EXIT);
 
         runner.run(new DefaultApplicationArguments());
@@ -154,6 +155,7 @@ class ScanRunnerTest {
                 "zond.rules.disabled=jr:1",
                 "zond.rules.min-level=CRITICAL",
                 "zond.rules.min-confidence=PROBABLE",
+                "zond.progress.time-unit=s",
                 "zond.scan.skip-tests=true",
                 "zond.scan.exclude=generated, *Dto.java",
                 "zond.scan.sql=false",
@@ -175,7 +177,7 @@ class ScanRunnerTest {
                 CANCEL,
                 SETTINGS,
                 "6", "1", "TransactionOnPrivateMethodRule", "2", "jr:1", "4",
-                "9",
+                "10",
                 EXIT);
 
         runner.run(new DefaultApplicationArguments());
@@ -328,6 +330,10 @@ class ScanRunnerTest {
         ScanRunner wrong = runner("");
         wrong.run(new DefaultApplicationArguments("--path=" + dir, "--min-confidence=sure"));
         assertThat(wrong.getExitCode()).isEqualTo(2);
+
+        ScanRunner wrongUnit = runner("");
+        wrongUnit.run(new DefaultApplicationArguments("--path=" + dir, "--time-unit=minutes"));
+        assertThat(wrongUnit.getExitCode()).isEqualTo(2);
     }
 
     @Test

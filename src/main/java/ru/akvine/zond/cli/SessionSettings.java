@@ -3,6 +3,7 @@ package ru.akvine.zond.cli;
 import lombok.Getter;
 import lombok.Setter;
 import ru.akvine.zond.enums.Confidence;
+import ru.akvine.zond.enums.DurationUnit;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.enums.ReportFormat;
@@ -43,6 +44,11 @@ public class SessionSettings {
      * Наименьшая уверенность находки, с которой она попадает в отчет
      */
     private Confidence minConfidence = Confidence.SUSPICION;
+
+    /**
+     * В чем показывать время работы правил и всей проверки
+     */
+    private DurationUnit timeUnit = DurationUnit.MILLISECONDS;
 
     /**
      * Коды и имена отключенных правил в том виде, как их задал пользователь
@@ -146,6 +152,7 @@ public class SessionSettings {
                 .withExclusions(exclusions)
                 .withThreads(threads)
                 .withMinConfidence(minConfidence)
+                .withTimeUnit(timeUnit)
                 .withSkippedKinds(skippedKinds);
     }
 }

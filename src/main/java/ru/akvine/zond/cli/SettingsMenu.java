@@ -3,6 +3,7 @@ package ru.akvine.zond.cli;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.Confidence;
+import ru.akvine.zond.enums.DurationUnit;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.enums.ReportFormat;
@@ -50,6 +51,7 @@ public class SettingsMenu {
                     "Отключенные правила: " + describeDisabled(settings),
                     "Исключенные пути: " + describeExclusions(settings),
                     "Файлы помимо Java: " + describeKinds(settings),
+                    "Единица времени: " + settings.getTimeUnit().getTitle(),
                     BACK));
             switch (choice) {
                 case 1 -> chooseReportDirectory(settings);
@@ -60,6 +62,7 @@ public class SettingsMenu {
                 case 6 -> editDisabledRules(settings);
                 case 7 -> editExclusions(settings);
                 case 8 -> editKinds(settings);
+                case 9 -> chooseTimeUnit(settings);
                 default -> {
                     return;
                 }
@@ -113,6 +116,15 @@ public class SettingsMenu {
                 "Минимальная уверенность: в отчет попадают находки с этой уверенностью и выше",
                 values.stream().map(this::describe).toList());
         settings.setMinConfidence(values.get(choice - 1));
+        save(settings);
+    }
+
+    private void chooseTimeUnit(SessionSettings settings) {
+        List<DurationUnit> units = List.of(DurationUnit.values());
+        int choice = menu.choose(
+                "Единица времени: в ней показывается время работы каждого правила и всей проверки",
+                units.stream().map(DurationUnit::getTitle).toList());
+        settings.setTimeUnit(units.get(choice - 1));
         save(settings);
     }
 

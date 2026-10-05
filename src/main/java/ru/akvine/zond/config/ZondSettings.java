@@ -22,6 +22,7 @@ public class ZondSettings {
     private static final String CLASSPATH_SEPARATOR = "[;,]";
     private static final String MIN_CONFIDENCE = "zond.rules.min-confidence";
     private static final String PROGRESS_PERCENT = "zond.progress.percent";
+    private static final String TIME_UNIT = "zond.progress.time-unit";
     private static final String FLOW_LIBRARY = "zond.flow.library";
     private static final String AUTO_CLASSPATH = "zond.scan.auto-classpath";
     private static final String MAVEN_REPOSITORY = "zond.scan.maven-repository";
@@ -122,6 +123,13 @@ public class ZondSettings {
      */
     public String minConfidence() {
         return environment.getProperty(MIN_CONFIDENCE, "");
+    }
+
+    /**
+     * @return единица времени для хода сканирования, как задано либо пустая строка
+     */
+    public String timeUnit() {
+        return environment.getProperty(TIME_UNIT, "");
     }
 
     /**
