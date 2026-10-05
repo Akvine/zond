@@ -1,13 +1,37 @@
 package ru.akvine.zond.printers;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.config.ZondSettings;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.models.Violation;
 
 import java.nio.file.Path;
+import java.util.Arrays;
+import java.util.stream.Collectors;
 
 @Component
 public class ReportFormatter {
+    // Показывать ли уверенность: в каждой находке и сводкой в шапке
+    private final boolean showConfidence;
+
+    @Autowired
+    public ReportFormatter(ZondSettings settings) {
+        this(settings.reportConfidence());
+    }
+
+    public ReportFormatter() {
+        this(true);
+    }
+
+    public ReportFormatter(boolean showConfidence) {
+        this.showConfidence = showConfidence;
+    }
+
+    public boolean showsConfidence() {
+        return showConfidence;
+    }
 
     public String format(ScanResult result) {
         String newLine = System.lineSeparator();
@@ -30,6 +54,13 @@ public class ReportFormatter {
             report.append(" (скрыто комментариями zond:ignore: ").append(result.suppressedCount()).append(')');
         }
         report.append(newLine);
+        if (showConfidence && result.hasViolations()) {
+            report.append("По уверенности: ").append(describeConfidence(result)).append(newLine);
+        }
+        if (result.lowConfidenceCount() > 0) {
+            report.append("Скрыто находок с уверенностью ниже заданной: ")
+                    .append(result.lowConfidenceCount()).append(newLine);
+        }
 
         if (result.hasViolations()) {
             report.append(newLine);
@@ -37,6 +68,7 @@ public class ReportFormatter {
                 report
                         .append("[").append(violation.errorLevel()).append("] ")
                         .append("[").append(violation.errorType()).append("] ")
+                        .append(showConfidence ? "[" + violation.confidenceOrDefault().getTitle() + "] " : "")
                         .append('[').append(violation.ruleCode()).append("] ")
                         .append(violation.file()).append(':').append(violation.line())
                         .append(" - ").append(violation.message())
@@ -53,5 +85,14 @@ public class ReportFormatter {
             }
         }
         return report.toString();
+    }
+
+    // подтверждено: 12, вероятно: 30, подозрение: 5
+    private String describeConfidence(ScanResult result) {
+        return Arrays.stream(Confidence.values())
+                .map(confidence -> confidence.getTitle() + ": " + result.violations().stream()
+                        .filter(violation -> violation.confidenceOrDefault() == confidence)
+                        .count())
+                .collect(Collectors.joining(", "));
     }
 }

@@ -62,7 +62,10 @@ public class CheckLogInjectionRule extends AbstractTaintRule {
             if (CLEANED.matcher(argument.toString()).matches()) {
                 continue;
             }
-            Optional<String> source = taint.findSource(argument);
+            // Подделать строку лога пытается тот, кто шлет данные сам; ответ внешнего сервиса в логе - обычное дело
+            Optional<String> source = taint.findSource(argument)
+                    .filter(Taint.Source::isDirectInput)
+                    .map(Taint.Source::toString);
             if (source.isPresent()) {
                 return source;
             }

@@ -32,18 +32,33 @@ class JdbcRulesTest {
     @Test
     void statementInsteadOfPrepared() {
         assertThat(RuleTests.lines(new CheckStatementInsteadOfPreparedRule(), """
+                @RestController
                 class Sample {
-                    void run(Connection connection, Statement statement, PreparedStatement prepared, String name) throws SQLException {
+                    @GetMapping("/run")
+                    void run(@RequestParam String name, PreparedStatement prepared) throws SQLException {
+                        Statement statement = connection.createStatement();
                         statement.executeQuery("select * from users where name = '" + name + "'");
-                        String sql = build(name);
+                        String sql = "delete from users where name = '" + name + "'";
                         statement.execute(sql);
                         connection.createStatement().executeUpdate(sql);
                         statement.executeQuery("select * from users");
                         statement.executeQuery(SELECT_ALL);
+                        statement.executeQuery(configuredQuery);
                         prepared.executeQuery();
                     }
+                    // Запрос приходит параметром, а кто его передает, неизвестно: данных клиента в нем не видно
+                    void internal(Statement statement, String sql) throws SQLException {
+                        statement.execute(sql);
+                    }
                 }
-                """)).containsExactly(3, 5, 6);
+                // Обертка над Statement передает запрос дальше как есть
+                class StatementProxy {
+                    private Statement target;
+                    public boolean execute(String sql) throws SQLException {
+                        return target.execute(sql);
+                    }
+                }
+                """)).containsExactly(6, 8, 9);
     }
 
     @Test

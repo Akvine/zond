@@ -18,6 +18,10 @@ import java.util.List;
 @PropertySource(value = "file:${config:./app.properties}", ignoreResourceNotFound = true, encoding = "UTF-8")
 public class ZondSettings {
     private static final String CLASSPATH_SEPARATOR = "[;,]";
+    private static final String MIN_CONFIDENCE = "zond.rules.min-confidence";
+    private static final String PROGRESS_PERCENT = "zond.progress.percent";
+    private static final String REPORT_CONFIDENCE = "zond.report.confidence";
+    private static final String FALSE = "false";
 
     private final String reportPath;
     private final String disabledRules;
@@ -101,6 +105,29 @@ public class ZondSettings {
      */
     public String scanEnabled(FileKind kind) {
         return environment.getProperty(kind.property(), "");
+    }
+
+    /**
+     * @return наименьшая уверенность находки, попадающей в отчет, как задано либо пустая строка
+     */
+    public String minConfidence() {
+        return environment.getProperty(MIN_CONFIDENCE, "");
+    }
+
+    /**
+     * @return true, если при сканировании рядом со счетчиком правил нужно показывать процент.
+     * Выключается только явным false
+     */
+    public boolean progressPercent() {
+        return !FALSE.equalsIgnoreCase(environment.getProperty(PROGRESS_PERCENT, "").trim());
+    }
+
+    /**
+     * @return true, если в отчете нужно показывать уверенность находок. Выключается только явным false;
+     * на отбор находок по zond.rules.min-confidence это не влияет
+     */
+    public boolean reportConfidence() {
+        return !FALSE.equalsIgnoreCase(environment.getProperty(REPORT_CONFIDENCE, "").trim());
     }
 
     public static List<Path> parseClasspath(String classpath) {

@@ -6,6 +6,7 @@ import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.Expression;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -55,6 +56,12 @@ public class CheckInsecureRandomRule extends AbstractRule {
                             + " используйте SecureRandom")));
         }
         return violations;
+    }
+
+    // Для чего нужно случайное число, по коду не видно: для задержки повтора Random годится
+    @Override
+    public Confidence confidence() {
+        return Confidence.SUSPICION;
     }
 
     @Override

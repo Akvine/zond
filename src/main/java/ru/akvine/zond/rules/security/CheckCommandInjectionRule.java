@@ -85,7 +85,7 @@ public class CheckCommandInjectionRule extends AbstractTaintRule {
                 .map(taint::findSource)
                 .flatMap(Optional::stream)
                 .findFirst()
-                .map(source -> " (данные запроса: " + source + ")")
+                .map(source -> " (" + source.describe() + ")")
                 .orElse("");
     }
 

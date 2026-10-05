@@ -7,22 +7,26 @@ import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
+import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.ProtectedProperties;
 import ru.akvine.zond.rules.support.Secrets;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Component
-public class CheckSecretInToStringRule extends AbstractRule {
+public class CheckSecretInToStringRule extends AbstractRule implements ProjectRule {
     private static final String TO_STRING = "toString";
     private static final String TO_STRING_EXCLUDE = "ToString.Exclude";
 
@@ -40,7 +44,12 @@ public class CheckSecretInToStringRule extends AbstractRule {
     }
 
     @Override
-    public List<Violation> check(SourceFile sourceFile) {
+    public List<Violation> checkProject(List<SourceFile> sourceFiles) {
+        ProtectedProperties properties = ProtectedProperties.of(sourceFiles);
+        return sourceFiles.stream().flatMap(sourceFile -> check(sourceFile, properties).stream()).toList();
+    }
+
+    private List<Violation> check(SourceFile sourceFile, ProtectedProperties properties) {
         List<Violation> violations = new ArrayList<>();
         for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
             boolean generated = Annotations.hasAny(type, TO_STRING_GENERATORS);
@@ -52,7 +61,9 @@ public class CheckSecretInToStringRule extends AbstractRule {
                 for (VariableDeclarator variable : field.getVariables()) {
                     String name = variable.getNameAsString();
                     boolean isPrinted = printed.contains(name) || (generated && !excluded && !field.isStatic());
-                    if (isPrinted && Secrets.isSecretName(name)) {
+                    // Поле, в которое кладут только хеш или шифртекст, в toString() секрет не раскроет
+                    boolean isProtected = properties.isProtected(Optional.of(type.getNameAsString()), name);
+                    if (isPrinted && Secrets.isSecretName(name) && !isProtected) {
                         violations.add(violation(sourceFile, variable,
                                 "Секретное поле '" + name + "' попадает в toString() класса '"
                                         + type.getNameAsString() + "': первая же запись объекта в лог или в текст"
@@ -62,6 +73,12 @@ public class CheckSecretInToStringRule extends AbstractRule {
             }
         }
         return violations;
+    }
+
+    // О том, что поле хранит секрет, говорит только его имя
+    @Override
+    public Confidence confidence() {
+        return Confidence.SUSPICION;
     }
 
     @Override

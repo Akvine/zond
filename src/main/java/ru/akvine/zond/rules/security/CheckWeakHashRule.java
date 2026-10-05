@@ -4,6 +4,7 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.StringLiteralExpr;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -56,6 +57,12 @@ public class CheckWeakHashRule extends AbstractRule {
 
         violations.sort(Comparator.comparingInt(Violation::line));
         return violations;
+    }
+
+    // Для чего считается хеш, по коду не видно: для контрольной суммы файла MD5 годится
+    @Override
+    public Confidence confidence() {
+        return Confidence.SUSPICION;
     }
 
     @Override

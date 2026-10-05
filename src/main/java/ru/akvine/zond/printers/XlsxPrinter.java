@@ -39,10 +39,10 @@ public class XlsxPrinter implements Printer {
     private static final String FAILED_FILES_SHEET = "Не разобраны";
 
     private static final List<String> VIOLATION_HEADERS =
-            List.of("Уровень", "Тип", "Код", "Правило", "Файл", "Строка", "Сообщение");
+            List.of("Уровень", "Тип", "Код", "Правило", "Файл", "Строка", "Сообщение", "Уверенность");
 
     // Ширина колонок листа с проблемами в символах, в порядке заголовков
-    private static final List<Integer> VIOLATION_COLUMN_WIDTHS = List.of(12, 24, 9, 46, 70, 9, 120);
+    private static final List<Integer> VIOLATION_COLUMN_WIDTHS = List.of(12, 24, 9, 46, 70, 9, 120, 16);
     private static final int SUMMARY_LABEL_WIDTH = 46;
     private static final int SUMMARY_VALUE_WIDTH = 60;
 
@@ -59,6 +59,12 @@ public class XlsxPrinter implements Printer {
             ErrorLevel.MINOR, IndexedColors.LIGHT_YELLOW));
 
     private final Path reportFile;
+    // Показывать ли уверенность находок
+    private final boolean showConfidence;
+
+    public XlsxPrinter(Path reportFile) {
+        this(reportFile, true);
+    }
 
     @Override
     public void print(ScanResult result) {
@@ -121,14 +127,18 @@ public class XlsxPrinter implements Printer {
     }
 
     private void writeViolations(Sheet sheet, ScanResult result, Styles styles) {
-        for (int column = 0; column < VIOLATION_COLUMN_WIDTHS.size(); column++) {
+        // Уверенность - последняя колонка: без нее таблица просто на колонку короче
+        List<String> headers = showConfidence
+                ? VIOLATION_HEADERS
+                : VIOLATION_HEADERS.subList(0, VIOLATION_HEADERS.size() - 1);
+        for (int column = 0; column < headers.size(); column++) {
             sheet.setColumnWidth(column, VIOLATION_COLUMN_WIDTHS.get(column) * WIDTH_UNIT);
         }
-        writeHeader(sheet, 0, styles, VIOLATION_HEADERS.toArray(String[]::new));
+        writeHeader(sheet, 0, styles, headers.toArray(String[]::new));
 
         // Шапка остается на месте при прокрутке, по любой колонке можно отфильтровать
         sheet.createFreezePane(0, 1);
-        sheet.setAutoFilter(new CellRangeAddress(0, result.violations().size(), 0, VIOLATION_HEADERS.size() - 1));
+        sheet.setAutoFilter(new CellRangeAddress(0, result.violations().size(), 0, headers.size() - 1));
 
         int row = 1;
         for (Violation violation : result.violations()) {
@@ -146,6 +156,9 @@ public class XlsxPrinter implements Printer {
             Cell message = line.createCell(6);
             message.setCellValue(violation.message());
             message.setCellStyle(styles.wrapped());
+            if (showConfidence) {
+                line.createCell(headers.size() - 1).setCellValue(violation.confidenceOrDefault().getTitle());
+            }
         }
     }
 

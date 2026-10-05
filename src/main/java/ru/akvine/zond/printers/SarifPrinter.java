@@ -32,6 +32,12 @@ public class SarifPrinter implements Printer {
     private static final String INDENT = "  ";
 
     private final Path reportFile;
+    // Показывать ли уверенность находок
+    private final boolean showConfidence;
+
+    public SarifPrinter(Path reportFile) {
+        this(reportFile, true);
+    }
 
     @Override
     public void print(ScanResult result) {
@@ -58,12 +64,17 @@ public class SarifPrinter implements Printer {
         List<String> ruleIds = new ArrayList<>(rules.keySet());
         List<String> resultItems = new ArrayList<>();
         for (Violation violation : result.violations()) {
-            resultItems.add(object(4,
+            List<String> fields = new ArrayList<>(List.of(
                     pair("ruleId", string(violation.ruleCode())),
                     pair("ruleIndex", String.valueOf(ruleIds.indexOf(violation.ruleCode()))),
                     pair("level", string(levelOf(violation.errorLevel()))),
-                    pair("message", "{ " + pair("text", string(violation.message())) + " }"),
-                    pair("locations", "[ " + location(result.root(), violation) + " ]")));
+                    pair("message", "{ " + pair("text", string(violation.message())) + " }")));
+            if (showConfidence) {
+                fields.add(pair("properties",
+                        "{ " + pair("confidence", string(violation.confidenceOrDefault().name())) + " }"));
+            }
+            fields.add(pair("locations", "[ " + location(result.root(), violation) + " ]"));
+            resultItems.add(object(4, fields.toArray(String[]::new)));
         }
 
         String driver = object(4,

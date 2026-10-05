@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules;
 
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.flow.FlowAnalysis;
@@ -17,6 +18,16 @@ public abstract class AbstractFlowRule extends AbstractRule implements ProjectRu
      * @return виды находок анализа, о которых сообщает правило
      */
     protected abstract Set<FlowAnalysis.Kind> kinds();
+
+    // Значение, вычисленное по всем путям, - факт; "на одном из путей" - только вероятность
+    private static final Set<FlowAnalysis.Kind> CERTAIN = Set.of(
+            FlowAnalysis.Kind.NULL_DEREFERENCE, FlowAnalysis.Kind.CONSTANT_CONDITION,
+            FlowAnalysis.Kind.UNREACHABLE_CODE, FlowAnalysis.Kind.DIVISION_BY_ZERO);
+
+    @Override
+    public Confidence confidence() {
+        return CERTAIN.containsAll(kinds()) ? Confidence.CONFIRMED : Confidence.PROBABLE;
+    }
 
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {

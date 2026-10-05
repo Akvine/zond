@@ -2,6 +2,7 @@ package ru.akvine.zond.cli;
 
 import lombok.Getter;
 import lombok.Setter;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.enums.ReportFormat;
@@ -37,6 +38,11 @@ public class SessionSettings {
 
     private boolean skipTests;
     private ErrorLevel minLevel = ErrorLevel.INFO;
+
+    /**
+     * Наименьшая уверенность находки, с которой она попадает в отчет
+     */
+    private Confidence minConfidence = Confidence.SUSPICION;
 
     /**
      * Коды и имена отключенных правил в том виде, как их задал пользователь
@@ -134,6 +140,7 @@ public class SessionSettings {
                 .withClasspath(classpath)
                 .withExclusions(exclusions)
                 .withThreads(threads)
+                .withMinConfidence(minConfidence)
                 .withSkippedKinds(skippedKinds);
     }
 }

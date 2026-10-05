@@ -7,24 +7,23 @@ import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.AbstractRule;
+import ru.akvine.zond.rules.AbstractTaintRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.StringLiterals;
+import ru.akvine.zond.rules.support.Taint;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 @Component
-public class CheckStatementInsteadOfPreparedRule extends AbstractRule {
+public class CheckStatementInsteadOfPreparedRule extends AbstractTaintRule {
     private static final String STATEMENT = "Statement";
     private static final String CREATE_STATEMENT = "createStatement";
     private static final Set<String> EXECUTE_METHODS = Set.of("executeQuery", "executeUpdate", "execute", "addBatch");
-
-    // Запрос из константы - не пользовательский ввод
-    private static final Pattern CONSTANT_NAME = Pattern.compile("^[A-Z][A-Z0-9_]*$");
 
     @Override
     public String code() {
@@ -33,20 +32,28 @@ public class CheckStatementInsteadOfPreparedRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет выполнение собранного в коде SQL через Statement вместо PreparedStatement";
+        return "Сканирует код и ищет выполнение через Statement запроса, в текст которого попадают данные извне";
     }
 
     @Override
-    public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
-                .filter(call -> EXECUTE_METHODS.contains(call.getNameAsString()) && !call.getArguments().isEmpty())
-                .filter(call -> call.getScope().filter(this::isStatement).isPresent())
-                .filter(call -> isBuiltInCode(call.getArgument(0)))
-                .map(call -> violation(sourceFile, call,
-                        "'" + call.getScope().get() + "." + call.getNameAsString() + "(...)' выполняет через"
-                                + " Statement запрос, текст которого собирается в коде: значения попадают прямо в"
-                                + " SQL, возможна инъекция; используйте PreparedStatement с параметрами"))
-                .toList();
+    protected List<Violation> check(SourceFile sourceFile, Taint taint) {
+        List<Violation> violations = new ArrayList<>();
+        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            boolean isExecution = EXECUTE_METHODS.contains(call.getNameAsString()) && !call.getArguments().isEmpty()
+                    && call.getScope().filter(this::isStatement).isPresent();
+            if (!isExecution || StringLiterals.textOf(Nodes.unwrap(call.getArgument(0))).isPresent()) {
+                continue;
+            }
+            // Statement сам по себе не уязвимость: запрос из константы, из настроек или собранный в коде
+            // нарушителю недоступен. Опасен только текст, в который попадают данные клиента
+            Optional<Taint.Source> source = taint.findSource(call.getArgument(0));
+            source.ifPresent(found -> violations.add(violation(sourceFile, call,
+                    "'" + call.getScope().get() + "." + call.getNameAsString() + "(...)' выполняет через Statement"
+                            + " запрос, в текст которого попадают данные извне (" + found.describe() + "): тот, кто ими"
+                            + " управляет, может дописать к запросу свой SQL; используйте PreparedStatement"
+                            + " с параметрами")));
+        }
+        return violations;
     }
 
     @Override
@@ -66,20 +73,5 @@ public class CheckStatementInsteadOfPreparedRule extends AbstractRule {
             return CREATE_STATEMENT.equals(value.asMethodCallExpr().getNameAsString());
         }
         return LocalTypes.typeOf(value).filter(STATEMENT::equals).isPresent();
-    }
-
-    // Все, кроме строкового литерала и константы: переменная, конкатенация, вызов метода
-    private boolean isBuiltInCode(Expression sql) {
-        Expression value = Nodes.unwrap(sql);
-        if (StringLiterals.textOf(value).isPresent()) {
-            return false;
-        }
-        if (value.isNameExpr()) {
-            return !CONSTANT_NAME.matcher(value.asNameExpr().getNameAsString()).matches();
-        }
-        if (value.isFieldAccessExpr()) {
-            return !CONSTANT_NAME.matcher(value.asFieldAccessExpr().getNameAsString()).matches();
-        }
-        return true;
     }
 }

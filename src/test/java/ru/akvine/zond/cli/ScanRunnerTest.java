@@ -137,10 +137,11 @@ class ScanRunnerTest {
                 "2", "3",                      // формат: xlsx
                 "3",                           // тесты: не сканировать
                 "4", "2",                      // минимальный уровень: CRITICAL
-                "5", "1", "jr:1, jr:999", "4", // отключить правило, неизвестное пропускается
-                "6", "generated, *Dto.java",   // исключенные пути
-                "7", "1", "9",                 // миграции БД: не проверять
-                "8",
+                "5", "2",                      // минимальная уверенность: PROBABLE
+                "6", "1", "jr:1, jr:999", "4", // отключить правило, неизвестное пропускается
+                "7", "generated, *Dto.java",   // исключенные пути
+                "8", "1", "9",                 // миграции БД: не проверять
+                "9",
                 SCAN, EXIT);
 
         runner.run(new DefaultApplicationArguments());
@@ -151,6 +152,7 @@ class ScanRunnerTest {
                 "other.property=1",
                 "zond.rules.disabled=jr:1",
                 "zond.rules.min-level=CRITICAL",
+                "zond.rules.min-confidence=PROBABLE",
                 "zond.scan.skip-tests=true",
                 "zond.scan.exclude=generated, *Dto.java",
                 "zond.scan.sql=false",
@@ -171,8 +173,8 @@ class ScanRunnerTest {
         ScanRunner runner = runner("",
                 CANCEL,
                 SETTINGS,
-                "5", "1", "CheckTransactionOnPrivateMethodRule", "2", "jr:1", "4",
-                "8",
+                "6", "1", "CheckTransactionOnPrivateMethodRule", "2", "jr:1", "4",
+                "9",
                 EXIT);
 
         runner.run(new DefaultApplicationArguments());
@@ -304,6 +306,22 @@ class ScanRunnerTest {
         environment.setProperty("zond.scan.sql", "нет");
         ScanRunner wrong = runner("");
         wrong.run(new DefaultApplicationArguments("--path=" + dir));
+        assertThat(wrong.getExitCode()).isEqualTo(2);
+    }
+
+    @Test
+    void minConfidenceArgumentHidesLessCertainFindings() {
+        // Единственное правило дает находки с уверенностью "вероятно"
+        ScanRunner all = runner("");
+        all.run(new DefaultApplicationArguments("--path=" + dir, "--min-confidence=probable"));
+        assertThat(all.getExitCode()).isEqualTo(1);
+
+        ScanRunner confirmedOnly = runner("");
+        confirmedOnly.run(new DefaultApplicationArguments("--path=" + dir, "--min-confidence=CONFIRMED"));
+        assertThat(confirmedOnly.getExitCode()).isZero();
+
+        ScanRunner wrong = runner("");
+        wrong.run(new DefaultApplicationArguments("--path=" + dir, "--min-confidence=sure"));
         assertThat(wrong.getExitCode()).isEqualTo(2);
     }
 

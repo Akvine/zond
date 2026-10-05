@@ -1,5 +1,6 @@
 package ru.akvine.zond.models;
 
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.FileKind;
 
@@ -19,6 +20,7 @@ import java.util.stream.Collectors;
  * @param classpath     jar-файлы и папки с библиотеками проекта: по ним разрешаются типы из зависимостей
  * @param exclusions    пути, которые сканировать не нужно
  * @param threads       сколько потоков использовать при сканировании: 1 - один, 0 - по числу ядер
+ * @param minConfidence наименьшая уверенность находки, с которой она еще попадает в отчет
  * @param skippedKinds  виды файлов помимо Java, которые проверять не нужно: SQL, файлы сборки и прочие
  */
 public record ScanOptions(
@@ -28,7 +30,8 @@ public record ScanOptions(
         List<Path> classpath,
         PathExclusions exclusions,
         int threads,
-        Set<FileKind> skippedKinds) {
+        Set<FileKind> skippedKinds,
+        Confidence minConfidence) {
     private static final int SINGLE_THREAD = 1;
     private static final String SEPARATOR = "[,;\\s]+";
     private static final String TEST_DIRECTORY = "test";
@@ -38,28 +41,33 @@ public record ScanOptions(
      */
     public static ScanOptions defaults() {
         return new ScanOptions(
-                Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of());
+                Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(), Confidence.SUSPICION);
     }
 
     public ScanOptions withSkipTests(boolean skip) {
-        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions, threads, skippedKinds);
+        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions, threads, skippedKinds, minConfidence);
     }
 
     public ScanOptions withClasspath(List<Path> libraries) {
         return new ScanOptions(
-                disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions, threads, skippedKinds);
+                disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions, threads, skippedKinds, minConfidence);
     }
 
     public ScanOptions withExclusions(PathExclusions excluded) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded, threads, skippedKinds);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded, threads, skippedKinds, minConfidence);
     }
 
     public ScanOptions withThreads(int count) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, count, skippedKinds);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, count, skippedKinds, minConfidence);
+    }
+
+    public ScanOptions withMinConfidence(Confidence confidence) {
+        return new ScanOptions(
+                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, confidence);
     }
 
     public ScanOptions withSkippedKinds(Set<FileKind> kinds) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, Set.copyOf(kinds));
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, Set.copyOf(kinds), minConfidence);
     }
 
     /**
@@ -101,7 +109,7 @@ public record ScanOptions(
                 .map(ScanOptions::normalize)
                 .collect(Collectors.toSet());
         return new ScanOptions(
-                disabled, parseLevel(minLevel), false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of());
+                disabled, parseLevel(minLevel), false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(), Confidence.SUSPICION);
     }
 
     /**

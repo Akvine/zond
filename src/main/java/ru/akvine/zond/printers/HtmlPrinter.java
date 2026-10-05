@@ -101,6 +101,12 @@ public class HtmlPrinter implements Printer {
             """;
 
     private final Path reportFile;
+    // Показывать ли уверенность находок
+    private final boolean showConfidence;
+
+    public HtmlPrinter(Path reportFile) {
+        this(reportFile, true);
+    }
 
     @Override
     public void print(ScanResult result) {
@@ -184,7 +190,9 @@ public class HtmlPrinter implements Printer {
 
     private void appendRow(StringBuilder html, String file, Violation violation) {
         // Текст для поиска: по нему находку можно найти по файлу, правилу и сообщению
-        String searchText = String.join(" ", file, violation.ruleCode(), violation.ruleName(), violation.message())
+        String confidence = showConfidence ? violation.confidenceOrDefault().getTitle() : "";
+        String searchText = String.join(" ", file, violation.ruleCode(), violation.ruleName(), violation.message(),
+                        confidence)
                 .toLowerCase(Locale.ROOT);
         html.append("<div class=\"row ").append(violation.errorLevel()).append("\" data-level=\"")
                 .append(violation.errorLevel()).append("\" data-text=\"").append(escape(searchText)).append("\">")
@@ -193,6 +201,7 @@ public class HtmlPrinter implements Printer {
                 .append("<span class=\"code\">").append(escape(violation.ruleCode())).append("</span>")
                 .append("<span class=\"text\">").append(escape(violation.message()))
                 .append("<div class=\"rule\">").append(escape(describe(violation.errorType()))).append(" · ")
+                .append(confidence.isEmpty() ? "" : confidence + " · ")
                 .append(escape(violation.ruleName())).append("</div></span></div>\n");
     }
 

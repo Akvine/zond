@@ -2,6 +2,7 @@ package ru.akvine.zond.cli;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.enums.ReportFormat;
@@ -45,6 +46,7 @@ public class SettingsMenu {
                     "Формат отчета: " + settings.reportFormat().getDescription(),
                     "Сканирование тестов: " + (settings.isSkipTests() ? "отключено" : "включено"),
                     "Минимальный уровень: " + settings.getMinLevel(),
+                    "Минимальная уверенность: " + describe(settings.getMinConfidence()),
                     "Отключенные правила: " + describeDisabled(settings),
                     "Исключенные пути: " + describeExclusions(settings),
                     "Файлы помимо Java: " + describeKinds(settings),
@@ -54,9 +56,10 @@ public class SettingsMenu {
                 case 2 -> chooseReportFormat(settings);
                 case 3 -> toggleTests(settings);
                 case 4 -> chooseMinLevel(settings);
-                case 5 -> editDisabledRules(settings);
-                case 6 -> editExclusions(settings);
-                case 7 -> editKinds(settings);
+                case 5 -> chooseMinConfidence(settings);
+                case 6 -> editDisabledRules(settings);
+                case 7 -> editExclusions(settings);
+                case 8 -> editKinds(settings);
                 default -> {
                     return;
                 }
@@ -102,6 +105,19 @@ public class SettingsMenu {
                 levels.stream().map(Enum::name).toList());
         settings.setMinLevel(levels.get(choice - 1));
         save(settings);
+    }
+
+    private void chooseMinConfidence(SessionSettings settings) {
+        List<Confidence> values = List.of(Confidence.values());
+        int choice = menu.choose(
+                "Минимальная уверенность: в отчет попадают находки с этой уверенностью и выше",
+                values.stream().map(this::describe).toList());
+        settings.setMinConfidence(values.get(choice - 1));
+        save(settings);
+    }
+
+    private String describe(Confidence confidence) {
+        return confidence.name() + " (" + confidence.getTitle() + ")";
     }
 
     private void editDisabledRules(SessionSettings settings) {

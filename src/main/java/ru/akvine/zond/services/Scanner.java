@@ -3,6 +3,7 @@ package ru.akvine.zond.services;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import ru.akvine.zond.config.RuleSettings;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.loaders.ConfigLoader;
@@ -74,6 +75,11 @@ public class Scanner {
         int found = violations.size();
         violations.removeIf(suppressions::isSuppressed);
 
+        // Находки, в которых анализатор уверен меньше заданного порога
+        int beforeConfidence = violations.size();
+        violations.removeIf(violation -> !violation.confidenceOrDefault().isAtLeast(options.minConfidence()));
+        int lowConfidence = beforeConfidence - violations.size();
+
         // Проверка идет по правилам, а читать отчет удобнее по файлам
         violations.sort(Comparator.comparing((Violation violation) -> violation.file().toString())
                 .thenComparingInt(Violation::line));
@@ -83,9 +89,10 @@ public class Scanner {
                 activeRules.size(),
                 enabledRules.size() - activeRules.size(),
                 violations,
-                found - violations.size(),
+                found - beforeConfidence,
                 options.skipTests(),
-                loaded.failedFiles());
+                loaded.failedFiles(),
+                lowConfidence);
     }
 
     /**
@@ -115,7 +122,7 @@ public class Scanner {
 
     private List<Violation> run(Rule rule, ScanContext context, AtomicInteger started, int total) {
         progressListener.onRuleStarted(started.incrementAndGet(), total, rule);
-        return withLevel(levelOf(rule), apply(rule, context));
+        return withLevel(levelOf(rule), rule.confidence(), apply(rule, context));
     }
 
     // Ошибку правила отдаем наружу такой же, какой она была бы при работе в один поток
@@ -138,17 +145,12 @@ public class Scanner {
         return ruleSettings.level(rule.code(), rule.name()).orElseGet(rule::errorLevel);
     }
 
-    // Правило проставляет находкам свой уровень - заменяем его действующим
-    private List<Violation> withLevel(ErrorLevel level, List<Violation> violations) {
+    // Правило проставляет находкам свой уровень - заменяем его действующим; находка, для которой правило
+    // не уточнило уверенность, получает уверенность самого правила
+    private List<Violation> withLevel(ErrorLevel level, Confidence confidence, List<Violation> violations) {
         return violations.stream()
-                .map(violation -> violation.errorLevel() == level ? violation : new Violation(
-                        level,
-                        violation.errorType(),
-                        violation.ruleCode(),
-                        violation.ruleName(),
-                        violation.file(),
-                        violation.line(),
-                        violation.message()))
+                .map(violation -> violation.errorLevel() == level ? violation : violation.withLevel(level))
+                .map(violation -> violation.confidence() == null ? violation.withConfidence(confidence) : violation)
                 .toList();
     }
 

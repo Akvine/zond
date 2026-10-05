@@ -38,7 +38,7 @@ class RuleTests {
         return check(rule, code).stream().map(Violation::line).toList();
     }
 
-    private SourceFile parse(Path path, String code) {
+    SourceFile parse(Path path, String code) {
         StaticJavaParser.getParserConfiguration().setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_21);
         return new SourceFile(path, StaticJavaParser.parse(code));
     }

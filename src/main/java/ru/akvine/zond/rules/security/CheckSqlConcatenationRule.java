@@ -16,6 +16,7 @@ import ru.akvine.zond.rules.support.Taint;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 @Component
@@ -27,9 +28,6 @@ public class CheckSqlConcatenationRule extends AbstractTaintRule {
             "^\\s*(select\\b.+\\bfrom\\b|insert\\s+into\\b|update\\s+\\S+\\s+set\\b|delete\\s+from\\b)",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
-    // Имя таблицы или схемы из константы - не пользовательский ввод
-    private static final Pattern CONSTANT_NAME = Pattern.compile("^[A-Z][A-Z0-9_]*$");
-
     @Override
     public String code() {
         return RuleCodes.CHECK_SQL_CONCATENATION_RULE_CODE;
@@ -37,7 +35,7 @@ public class CheckSqlConcatenationRule extends AbstractTaintRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет SQL-запросы, собранные конкатенацией строк с параметрами";
+        return "Сканирует код и ищет SQL-запросы, в текст которых конкатенацией попадают данные извне";
     }
 
     @Override
@@ -47,12 +45,11 @@ public class CheckSqlConcatenationRule extends AbstractTaintRule {
             if (concatenation.getOperator() != BinaryExpr.Operator.PLUS || isPartOfConcatenation(concatenation)) {
                 continue;
             }
-
             List<Expression> operands = new ArrayList<>();
             flatten(concatenation, operands);
 
             StringBuilder text = new StringBuilder();
-            List<String> dynamicParts = new ArrayList<>();
+            List<String> clientData = new ArrayList<>();
             for (Expression operand : operands) {
                 if (operand.isStringLiteralExpr()) {
                     text.append(operand.asStringLiteralExpr().asString());
@@ -60,16 +57,17 @@ public class CheckSqlConcatenationRule extends AbstractTaintRule {
                     text.append(operand.asTextBlockLiteralExpr().asString());
                 } else {
                     text.append(PLACEHOLDER);
-                    if (isDynamic(operand)) {
-                        dynamicParts.add(operand + describeOrigin(operand, taint));
-                    }
+                    // Инъекция возможна, только если значением управляет клиент. Имя таблицы из константы,
+                    // значение из настроек или посчитанное в коде нарушителю недоступно
+                    Optional<Taint.Source> source = operand.isLiteralExpr() ? Optional.empty() : taint.findSource(operand);
+                    source.ifPresent(found -> clientData.add(operand + " (" + found.describe() + ")"));
                 }
             }
-
-            if (!dynamicParts.isEmpty() && SQL.matcher(text).find()) {
+            if (!clientData.isEmpty() && SQL.matcher(text).find()) {
                 violations.add(violation(sourceFile, concatenation,
-                        "SQL-запрос собирается конкатенацией с " + String.join(", ", dynamicParts)
-                                + ": возможна SQL-инъекция; передавайте значения параметрами запроса"));
+                        "В SQL-запрос конкатенацией попадает " + String.join(", ", clientData)
+                                + ": тот, кто управляет этим значением, может дописать к запросу свой SQL; передавайте значения"
+                                + " параметрами запроса"));
             }
         }
         return violations;
@@ -83,11 +81,6 @@ public class CheckSqlConcatenationRule extends AbstractTaintRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.SECURITY;
-    }
-
-    // Данные клиента в запросе - уже не теоретическая, а прямая уязвимость: говорим об этом в сообщении
-    private String describeOrigin(Expression operand, Taint taint) {
-        return taint.findSource(operand).map(source -> " (данные запроса: " + source + ")").orElse("");
     }
 
     // "a" + b + "c" разбирается как ("a" + b) + "c": проверяем только самое внешнее выражение
@@ -107,18 +100,5 @@ public class CheckSqlConcatenationRule extends AbstractTaintRule {
         } else {
             operands.add(value);
         }
-    }
-
-    private boolean isDynamic(Expression operand) {
-        if (operand.isLiteralExpr()) {
-            return false;
-        }
-        if (operand.isNameExpr()) {
-            return !CONSTANT_NAME.matcher(operand.asNameExpr().getNameAsString()).matches();
-        }
-        if (operand.isFieldAccessExpr()) {
-            return !CONSTANT_NAME.matcher(operand.asFieldAccessExpr().getNameAsString()).matches();
-        }
-        return true;
     }
 }

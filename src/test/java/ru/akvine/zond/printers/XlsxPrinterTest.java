@@ -64,13 +64,13 @@ class XlsxPrinterTest {
             assertThat(summary).containsSubsequence("CheckMagicNumberRule|2|jr:40", "CheckFirstRule|1|jr:1");
 
             assertThat(rows(workbook.getSheet("Проблемы"))).containsExactly(
-                    "Уровень|Тип|Код|Правило|Файл|Строка|Сообщение",
+                    "Уровень|Тип|Код|Правило|Файл|Строка|Сообщение|Уверенность",
                     "CRITICAL|Логические ошибки|jr:1|CheckFirstRule|" + path("src/main/java/Order.java")
-                            + "|7|Первая проблема",
+                            + "|7|Первая проблема|вероятно",
                     "INFO|Качество кода|jr:40|CheckMagicNumberRule|" + path("src/main/java/Order.java")
-                            + "|9|Магическое число 42",
+                            + "|9|Магическое число 42|вероятно",
                     "INFO|Качество кода|jr:40|CheckMagicNumberRule|" + path("src/main/java/Item.java")
-                            + "|3|Магическое число 7");
+                            + "|3|Магическое число 7|вероятно");
 
             assertThat(rows(workbook.getSheet("Не разобраны")))
                     .containsExactly("Файл", path("src/main/java/Broken.java"));
@@ -85,7 +85,7 @@ class XlsxPrinterTest {
 
         try (InputStream input = Files.newInputStream(report); Workbook workbook = new XSSFWorkbook(input)) {
             assertThat(workbook.getNumberOfSheets()).isEqualTo(2);
-            assertThat(rows(workbook.getSheet("Проблемы"))).containsExactly("Уровень|Тип|Код|Правило|Файл|Строка|Сообщение");
+            assertThat(rows(workbook.getSheet("Проблемы"))).containsExactly("Уровень|Тип|Код|Правило|Файл|Строка|Сообщение|Уверенность");
             assertThat(rows(workbook.getSheet("Сводка"))).contains("Найдено проблем|0", "Каталоги test|проверены");
         }
     }

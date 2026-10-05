@@ -22,9 +22,9 @@ public class PrinterFactory {
             return new ConsolePrinter(formatter);
         }
         return switch (ReportFormat.of(reportFile.getFileName().toString())) {
-            case XLSX -> new XlsxPrinter(reportFile);
-            case HTML -> new HtmlPrinter(reportFile);
-            case SARIF -> new SarifPrinter(reportFile);
+            case XLSX -> new XlsxPrinter(reportFile, formatter.showsConfidence());
+            case HTML -> new HtmlPrinter(reportFile, formatter.showsConfidence());
+            case SARIF -> new SarifPrinter(reportFile, formatter.showsConfidence());
             default -> new FilePrinter(formatter, reportFile);
         };
     }

@@ -6,6 +6,7 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ExitCodeGenerator;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.config.ZondSettings;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.services.RuleCatalog;
@@ -24,6 +25,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String CLASSPATH_OPTION = "classpath";
     private static final String EXCLUDE_OPTION = "exclude";
     private static final String THREADS_OPTION = "threads";
+    private static final String MIN_CONFIDENCE_OPTION = "min-confidence";
     private static final String RULES_SEPARATOR = ",";
     private static final String TRUE = "true";
     private static final String FALSE = "false";
@@ -103,6 +105,9 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         for (FileKind kind : FileKind.values()) {
             session.setScanned(kind, resolveScanned(args, kind));
         }
+
+        String minConfidence = optionValue(args, MIN_CONFIDENCE_OPTION);
+        session.setMinConfidence(Confidence.parse(minConfidence == null ? settings.minConfidence() : minConfidence));
         return session;
     }
 

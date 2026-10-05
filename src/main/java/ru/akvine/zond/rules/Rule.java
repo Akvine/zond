@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules;
 
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.RuleParameter;
@@ -36,4 +37,13 @@ public interface Rule {
     ErrorLevel errorLevel();
 
     ErrorType errorType();
+
+    /**
+     * @return насколько правило уверено в своих находках, если сама находка этого не уточняет.
+     * Замечание о качестве кода (длинный метод, лишний импорт) - факт, видный в тексте; остальное
+     * без отдельного подтверждения считается вероятным
+     */
+    default Confidence confidence() {
+        return errorType() == ErrorType.CODE_SMELL ? Confidence.CONFIRMED : Confidence.PROBABLE;
+    }
 }

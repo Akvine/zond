@@ -34,7 +34,14 @@ public class Secrets {
             Set.of("value", "val", "string", "str", "default", "plain", "raw", "base64", "hex", "bytes");
 
     // passwordForAdmin, tokenOfService: секрет - то, что до предлога
-    private final static Set<String> PREPOSITIONS = Set.of("for", "of", "from", "to", "in");
+    // botPathWithSecret - это путь, а не секрет: слово после with лишь уточняет
+    private final static Set<String> PREPOSITIONS = Set.of("for", "of", "from", "to", "in", "with", "by");
+
+    // encryptedPassword, passwordHash, maskedToken: значение уже зашифровано, захешировано или скрыто.
+    // В логе или в toString() оно секрет не раскрывает
+    private final static Set<String> PROTECTED_WORDS = Set.of(
+            "encrypted", "encoded", "hashed", "hash", "masked", "mask", "digest", "cipher", "ciphered",
+            "bcrypt", "salted", "obfuscated", "checksum", "fingerprint", "signature", "enc");
 
     // INVALID_TOKEN, RESET_PASSWORD, showPassword: действие с секретом, его состояние или текст ошибки
     private final static Set<String> ABOUT_PREFIXES = Set.of(
@@ -63,7 +70,7 @@ public class Secrets {
      */
     public boolean isSecretName(String name) {
         List<String> words = meaningfulWords(name);
-        if (words.isEmpty() || ABOUT_PREFIXES.contains(words.get(0))) {
+        if (words.isEmpty() || ABOUT_PREFIXES.contains(words.get(0)) || isProtectedName(name)) {
             return false;
         }
 
@@ -87,11 +94,27 @@ public class Secrets {
         if (AUTHORIZATION_VALUE.matcher(text).matches()) {
             return true;
         }
+        // "Secret", "password", "TOKEN": название вида значения, а не само значение
+        if (SECRET_WORDS.contains(singular(text.toLowerCase(Locale.ROOT)))) {
+            return false;
+        }
         // Фраза из нескольких слов или текст не на латинице - подпись кнопки, сообщение, описание
         if (WHITESPACE.matcher(text).find() || NON_ASCII_LETTER.matcher(text).find()) {
             return false;
         }
         return !KEY_LIKE_VALUE.matcher(text).matches() && !PATH_LIKE_VALUE.matcher(text).matches();
+    }
+
+    /**
+     * @return true, если имя говорит, что значение защищено: encryptedPassword, tokenHash
+     */
+    public boolean isProtectedName(String name) {
+        for (String word : WORD_BOUNDARY.split(name)) {
+            if (PROTECTED_WORDS.contains(TRAILING_DIGITS.matcher(word).replaceAll("").toLowerCase(Locale.ROOT))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Слова имени в нижнем регистре без нейтральных окончаний и без того, что стоит после предлога

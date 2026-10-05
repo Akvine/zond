@@ -21,7 +21,14 @@ public record ScanResult(
         List<Violation> violations,
         int suppressedCount,
         boolean testsSkipped,
-        List<Path> failedFiles) {
+        List<Path> failedFiles,
+        int lowConfidenceCount) {
+
+    public ScanResult(
+            Path root, int filesCount, int rulesCount, int disabledRulesCount, List<Violation> violations,
+            int suppressedCount, boolean testsSkipped, List<Path> failedFiles) {
+        this(root, filesCount, rulesCount, disabledRulesCount, violations, suppressedCount, testsSkipped, failedFiles, 0);
+    }
 
     public boolean hasViolations() {
         return !violations.isEmpty();

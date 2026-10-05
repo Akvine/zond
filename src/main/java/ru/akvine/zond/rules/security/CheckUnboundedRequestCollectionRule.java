@@ -4,6 +4,7 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -61,6 +62,12 @@ public class CheckUnboundedRequestCollectionRule extends AbstractRule {
             }
         }
         return violations;
+    }
+
+    // О том, что класс принимает данные запроса, правило судит по имени
+    @Override
+    public Confidence confidence() {
+        return Confidence.SUSPICION;
     }
 
     @Override
