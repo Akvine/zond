@@ -1,7 +1,9 @@
 package ru.akvine.zond.rules;
 
 import com.github.javaparser.ast.Node;
+import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.enums.Confidence;
+import ru.akvine.zond.models.RuleParameter;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.support.Taint;
@@ -18,6 +20,15 @@ public abstract class AbstractTaintRule extends AbstractRule implements ProjectR
      * @param taint отвечает, попадают ли в выражение данные клиента
      */
     protected abstract List<Violation> check(SourceFile sourceFile, Taint taint);
+
+    private static final RuleParameter MAX_CALL_DEPTH = new RuleParameter(
+            RuleSettings.MAX_CALL_DEPTH, 4,
+            "На сколько вызовов вверх от метода искать, откуда пришло значение; 0 - только в самом методе");
+
+    @Override
+    public List<RuleParameter> parameters() {
+        return List.of(MAX_CALL_DEPTH);
+    }
 
     // Отслеживание данных текущего сканирования: по нему находка узнает свою уверенность
     private Taint current;
@@ -40,6 +51,7 @@ public abstract class AbstractTaintRule extends AbstractRule implements ProjectR
         Taint taint = Taint.of(sourceFiles);
         current = taint;
         taint.takeConfidence();
+        taint.limitDepth(value(MAX_CALL_DEPTH));
         return sourceFiles.stream().flatMap(sourceFile -> check(sourceFile, taint).stream()).toList();
     }
 }

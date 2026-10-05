@@ -26,8 +26,12 @@ import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.Resources;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -39,6 +43,15 @@ import java.util.Set;
  */
 @Component
 public class CheckUnclosedResourceRule extends AbstractRule implements ProjectRule {
+    // Методы, которые сейчас разбираются на пути вглубь. Без этого метод, вызывающий сам себя (или два метода,
+    // вызывающих друг друга), обходился бы заново на каждом уровне, и время росло бы как степень глубины
+    private final Set<Node> tracing = Collections.newSetFromMap(new IdentityHashMap<>());
+
+    // Уже посчитанное за это сканирование: до одного метода доходят разными путями, а ответ один.
+    // Ключ - номер параметра и оставшаяся глубина
+    private final Map<MethodDeclaration, Map<String, Fate>> knownFates = new IdentityHashMap<>();
+    private final Map<MethodDeclaration, Map<Integer, Boolean>> knownOpeners = new IdentityHashMap<>();
+
     private static final RuleParameter MAX_CALL_DEPTH = new RuleParameter(
             "max-call-depth", 3, "На сколько вызовов вглубь прослеживать ресурс; 0 - только в самом методе");
 
@@ -86,6 +99,8 @@ public class CheckUnclosedResourceRule extends AbstractRule implements ProjectRu
 
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
+        knownFates.clear();
+        knownOpeners.clear();
         CallGraph graph = CallGraph.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
@@ -155,9 +170,23 @@ public class CheckUnclosedResourceRule extends AbstractRule implements ProjectRu
 
     // return new FileReader(...); либо return reader; где reader открыт в этом же методе; либо return open(...);
     private boolean returnsOpenedResource(MethodDeclaration method, CallGraph graph, int depth) {
-        if (depth <= 0 || method.getBody().isEmpty()) {
+        if (depth <= 0 || method.getBody().isEmpty() || !tracing.add(method)) {
             return false;
         }
+        try {
+            Map<Integer, Boolean> known = knownOpeners.computeIfAbsent(method, key -> new HashMap<>());
+            Boolean result = known.get(depth);
+            if (result == null) {
+                result = returnsOpened(method, graph, depth);
+                known.put(depth, result);
+            }
+            return result;
+        } finally {
+            tracing.remove(method);
+        }
+    }
+
+    private boolean returnsOpened(MethodDeclaration method, CallGraph graph, int depth) {
         for (ReturnStmt returned : method.getBody().get().findAll(ReturnStmt.class)) {
             if (returned.getExpression().isEmpty() || Nodes.isInNestedScope(returned, method)) {
                 continue;
@@ -232,10 +261,24 @@ public class CheckUnclosedResourceRule extends AbstractRule implements ProjectRu
             if (index >= target.getParameters().size() || target.getBody().isEmpty()) {
                 return Optional.empty();
             }
-            Fate fate = fateOf(target.getParameter(index).getNameAsString(), target, graph, depth - 1);
-            closed |= fate.closed();
-            escaped |= fate.escaped();
-            passed.addAll(fate.passed());
+            // Метод уже разбирается выше по цепочке (рекурсия): о ресурсе в нем ничего нового не узнать
+            if (!tracing.add(target)) {
+                return Optional.empty();
+            }
+            try {
+                Map<String, Fate> known = knownFates.computeIfAbsent(target, key -> new HashMap<>());
+                String key = index + "/" + depth;
+                Fate fate = known.get(key);
+                if (fate == null) {
+                    fate = fateOf(target.getParameter(index).getNameAsString(), target, graph, depth - 1);
+                    known.put(key, fate);
+                }
+                closed |= fate.closed();
+                escaped |= fate.escaped();
+                passed.addAll(fate.passed());
+            } finally {
+                tracing.remove(target);
+            }
         }
         return Optional.of(new Fate(closed, escaped, passed));
     }

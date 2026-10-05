@@ -76,6 +76,16 @@ public class RuleCatalog {
                     + "<правило>.<параметр>, где правило - имя класса или код через дефис (jr-193)");
         }
 
+        for (String name : ruleSettings.common().keySet()) {
+            rules.stream()
+                    .flatMap(rule -> rule.parameters().stream()
+                            .filter(parameter -> parameter.name().equals(name))
+                            .map(parameter -> problemOf(rule, parameter)))
+                    .flatMap(Optional::stream)
+                    .findFirst()
+                    .ifPresent(problems::add);
+        }
+
         for (Map.Entry<String, Map<String, String>> configured : ruleSettings.configured().entrySet()) {
             Optional<Rule> rule = rules.stream()
                     .filter(candidate -> RuleSettings.refersTo(configured.getKey(), candidate.code(), candidate.name()))
@@ -88,6 +98,16 @@ public class RuleCatalog {
             configured.getValue().keySet().forEach(parameter -> checkParameter(rule.get(), parameter, problems));
         }
         return problems;
+    }
+
+    // Правило со своим значением параметра общую настройку не читает - ошибка в ней его не касается
+    private Optional<String> problemOf(Rule rule, RuleParameter parameter) {
+        try {
+            ruleSettings.value(rule.code(), rule.name(), parameter);
+            return Optional.empty();
+        } catch (IllegalArgumentException exception) {
+            return Optional.of(exception.getMessage()).filter(message -> message.contains(RuleSettings.COMMON_PREFIX));
+        }
     }
 
     private void checkParameter(Rule rule, String name, List<String> problems) {

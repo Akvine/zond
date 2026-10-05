@@ -39,8 +39,8 @@ import java.util.regex.Pattern;
  * очистки либо проверено на пути к использованию: по списку допустимых, по шаблону, сравнением с константой.
  */
 public final class Taint {
-    // Сколько вызовов можно пройти вверх от метода к тем, кто его вызывает
-    private static final int MAX_CALL_DEPTH = 4;
+    // Сколько вызовов можно пройти вверх от метода к тем, кто его вызывает, если правило не задало свое число
+    private static final int DEFAULT_CALL_DEPTH = 4;
 
     private static final Set<String> REQUEST_ANNOTATIONS =
             Set.of("RequestParam", "PathVariable", "RequestHeader", "RequestPart", "CookieValue", "MatrixVariable");
@@ -172,6 +172,8 @@ public final class Taint {
     private final Map<String, List<Expression>> writes = new HashMap<>();
     // Самый достоверный источник, найденный в этом потоке после последнего запроса уверенности
     private final ThreadLocal<Confidence> found = new ThreadLocal<>();
+    // Предел глубины для правила, которое сейчас работает в этом потоке
+    private final ThreadLocal<Integer> depthLimit = ThreadLocal.withInitial(() -> DEFAULT_CALL_DEPTH);
 
     private Taint(List<SourceFile> sources) {
         this.graph = CallGraph.of(sources);
@@ -217,6 +219,13 @@ public final class Taint {
             }
         });
         return source;
+    }
+
+    /**
+     * Задает, на сколько вызовов вверх прослеживать значение для правила, работающего в этом потоке
+     */
+    public void limitDepth(int depth) {
+        depthLimit.set(depth);
     }
 
     /**
@@ -336,7 +345,7 @@ public final class Taint {
         if (Annotations.hasAny(method.get(), LISTENER_ANNOTATIONS)) {
             return Optional.of(new Origin(parameter.getNameAsString(), method.get(), Kind.MESSAGE));
         }
-        if (depth >= MAX_CALL_DEPTH) {
+        if (depth >= depthLimit.get()) {
             return Optional.empty();
         }
 
@@ -404,7 +413,7 @@ public final class Taint {
     private Optional<Origin> sourceOfProperty(
             MethodCallExpr getter, Optional<String> ownerType, int depth, Set<Node> visited) {
         Optional<String> property = PropertyAccess.readProperty(getter);
-        if (property.isEmpty() || ownerType.isEmpty() || depth >= MAX_CALL_DEPTH) {
+        if (property.isEmpty() || ownerType.isEmpty() || depth >= depthLimit.get()) {
             return Optional.empty();
         }
         String key = ownerType.get() + "." + property.get();

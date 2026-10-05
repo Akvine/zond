@@ -44,8 +44,22 @@ public class CallChains {
             int depth,
             Predicate<MethodDeclaration> skip,
             Function<Node, Optional<String>> operation) {
-        Set<MethodDeclaration> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-        return find(graph, method, depth, skip, operation, visited);
+        int reached = -1;
+        // Сначала ищем на малой глубине и только потом глубже: так находится кратчайший путь к операции,
+        // и сообщение не зависит от того, насколько велик предел
+        for (int limit = 1; limit <= depth; limit++) {
+            Set<MethodDeclaration> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+            Optional<Found> found = find(graph, method, limit, skip, operation, visited);
+            if (found.isPresent()) {
+                return found;
+            }
+            // Глубже идти некуда: все достижимые методы уже просмотрены
+            if (visited.size() == reached) {
+                break;
+            }
+            reached = visited.size();
+        }
+        return Optional.empty();
     }
 
     private Optional<Found> find(

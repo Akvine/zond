@@ -33,16 +33,29 @@ public class RuleSettings {
     public static final String PREFIX = "zond.rule.";
     public static final String LEVEL = "level";
 
+    /**
+     * Параметр, который можно задать сразу для всех правил, у которых он есть: zond.max-call-depth=5.
+     * Значение для отдельного правила (zond.rule.jr-57.max-call-depth) важнее общего
+     */
+    public static final String MAX_CALL_DEPTH = "max-call-depth";
+    public static final String COMMON_PREFIX = "zond.";
+
     private static final char SEPARATOR = '.';
     private static final String CODE_PUNCTUATION = "[:_-]";
 
     // Правило (в том виде, как записано в настройках) -> параметр -> значение
     private final Map<String, Map<String, String>> configured = new LinkedHashMap<>();
     private final List<String> malformedKeys = new ArrayList<>();
+    // Параметр -> значение, общее для всех правил
+    private final Map<String, String> common = new LinkedHashMap<>();
 
     @Autowired
     public RuleSettings(ConfigurableEnvironment environment) {
         this(read(environment));
+        String depth = environment.getProperty(COMMON_PREFIX + MAX_CALL_DEPTH);
+        if (depth != null && !depth.isBlank()) {
+            common.put(MAX_CALL_DEPTH, depth.trim());
+        }
     }
 
     private RuleSettings(Map<String, String> properties) {
@@ -69,11 +82,23 @@ public class RuleSettings {
     }
 
     /**
+     * @param properties настройки правил без общего префикса
+     * @param common     параметры, общие для всех правил: "max-call-depth" -> "5"
+     */
+    public static RuleSettings of(Map<String, String> properties, Map<String, String> common) {
+        RuleSettings settings = new RuleSettings(properties);
+        settings.common.putAll(common);
+        return settings;
+    }
+
+    /**
      * @return значение параметра из настроек либо значение по умолчанию
      * @throws IllegalArgumentException если в настройках не целое неотрицательное число
      */
     public int value(String ruleCode, String ruleName, RuleParameter parameter) {
-        Optional<String> value = find(ruleCode, ruleName, parameter.name());
+        Optional<String> own = find(ruleCode, ruleName, parameter.name());
+        // Своей настройки у правила нет - действует общая, если она задана для этого параметра
+        Optional<String> value = own.or(() -> Optional.ofNullable(common.get(parameter.name())));
         if (value.isEmpty()) {
             return parameter.defaultValue();
         }
@@ -85,8 +110,11 @@ public class RuleSettings {
         } catch (NumberFormatException exception) {
             // Сообщение ниже общее для "не число" и "отрицательное число"
         }
-        throw new IllegalArgumentException("Параметр '" + parameter.name() + "' правила " + ruleCode
-                + " должен быть целым неотрицательным числом, а задано '" + value.get() + "'");
+        String setting = own.isPresent()
+                ? "Параметр '" + parameter.name() + "' правила " + ruleCode + " должен"
+                : "Настройка '" + COMMON_PREFIX + parameter.name() + "' должна";
+        throw new IllegalArgumentException(setting + " быть целым неотрицательным числом, а задано '"
+                + value.get() + "'");
     }
 
     /**
@@ -105,6 +133,13 @@ public class RuleSettings {
                     + ". Допустимые значения: "
                     + Arrays.stream(ErrorLevel.values()).map(Enum::name).collect(Collectors.joining(", ")));
         }
+    }
+
+    /**
+     * @return параметры, заданные сразу для всех правил: параметр -> значение
+     */
+    public Map<String, String> common() {
+        return Collections.unmodifiableMap(common);
     }
 
     /**
