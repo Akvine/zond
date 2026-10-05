@@ -25,6 +25,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String CLASSPATH_OPTION = "classpath";
     private static final String EXCLUDE_OPTION = "exclude";
     private static final String THREADS_OPTION = "threads";
+    private static final String AUTO_CLASSPATH_OPTION = "auto-classpath";
     private static final String MIN_CONFIDENCE_OPTION = "min-confidence";
     private static final String RULES_SEPARATOR = ",";
     private static final String TRUE = "true";
@@ -98,6 +99,14 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         String excluded = optionValue(args, EXCLUDE_OPTION);
         session.setExclusions(PathExclusions.parse(
                 excluded == null ? settings.exclude() : settings.exclude() + RULES_SEPARATOR + excluded));
+
+        // --auto-classpath и --auto-classpath=true включают поиск библиотек, --auto-classpath=false отключает
+        if (args.containsOption(AUTO_CLASSPATH_OPTION)) {
+            String auto = optionValue(args, AUTO_CLASSPATH_OPTION);
+            session.setAutoClasspath(auto == null || auto.isBlank() || Boolean.parseBoolean(auto.trim()));
+        } else {
+            session.setAutoClasspath(settings.autoClasspath());
+        }
 
         String threads = optionValue(args, THREADS_OPTION);
         session.setThreads(parseThreads(threads == null ? settings.threads() : threads));

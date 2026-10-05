@@ -13,6 +13,7 @@ import ru.akvine.zond.config.ZondSettings;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.loaders.FileSystemTextFileLoader;
+import ru.akvine.zond.loaders.MavenClasspathResolver;
 import ru.akvine.zond.printers.PrinterFactory;
 import ru.akvine.zond.printers.ReportFormatter;
 import ru.akvine.zond.printers.RuleListFormatter;
@@ -379,7 +380,8 @@ class ScanRunnerTest {
                         rules,
                         (number, total, rule) -> {},
                         ruleSettings),
-                new PrinterFactory(new ReportFormatter()));
+                new PrinterFactory(new ReportFormatter()),
+                new MavenClasspathResolver(configDir.resolve("repository")));
         MainMenu mainMenu = new MainMenu(
                 menu,
                 folderPicker,

@@ -9,6 +9,7 @@ import ru.akvine.zond.enums.FileKind;
 import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Настройки из внешнего файла: app.properties в рабочей директории либо файл из --config=<путь>.
@@ -20,6 +21,8 @@ public class ZondSettings {
     private static final String CLASSPATH_SEPARATOR = "[;,]";
     private static final String MIN_CONFIDENCE = "zond.rules.min-confidence";
     private static final String PROGRESS_PERCENT = "zond.progress.percent";
+    private static final String AUTO_CLASSPATH = "zond.scan.auto-classpath";
+    private static final String MAVEN_REPOSITORY = "zond.scan.maven-repository";
     private static final String REPORT_CONFIDENCE = "zond.report.confidence";
     private static final String FALSE = "false";
 
@@ -128,6 +131,21 @@ public class ZondSettings {
      */
     public boolean reportConfidence() {
         return !FALSE.equalsIgnoreCase(environment.getProperty(REPORT_CONFIDENCE, "").trim());
+    }
+
+    /**
+     * @return true, если библиотеки проекта нужно искать самому по его pom.xml. Выключается только явным false
+     */
+    public boolean autoClasspath() {
+        return !FALSE.equalsIgnoreCase(environment.getProperty(AUTO_CLASSPATH, "").trim());
+    }
+
+    /**
+     * @return локальный репозиторий Maven, если он задан настройкой; иначе берется ~/.m2/repository
+     */
+    public Optional<Path> mavenRepository() {
+        String path = environment.getProperty(MAVEN_REPOSITORY, "").trim();
+        return path.isEmpty() ? Optional.empty() : Optional.of(Path.of(path));
     }
 
     public static List<Path> parseClasspath(String classpath) {

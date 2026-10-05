@@ -55,6 +55,11 @@ public class SessionSettings {
     private List<Path> classpath = List.of();
 
     /**
+     * Искать библиотеки проекта самому: по его pom.xml в локальном репозитории Maven
+     */
+    private boolean autoClasspath = true;
+
+    /**
      * Пути, которые не нужно сканировать
      */
     private PathExclusions exclusions = PathExclusions.none();
