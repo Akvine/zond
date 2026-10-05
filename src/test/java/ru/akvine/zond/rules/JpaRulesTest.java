@@ -2,20 +2,20 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckManyToManyRule;
-import ru.akvine.zond.rules.concurrency.CheckEntityWithoutVersionRule;
-import ru.akvine.zond.rules.logical.CheckEntityEqualsWithRelationsRule;
-import ru.akvine.zond.rules.logical.CheckEntityFinalMethodRule;
-import ru.akvine.zond.rules.logical.CheckEntityToStringWithRelationsRule;
-import ru.akvine.zond.rules.logical.CheckEntityWithDataRule;
-import ru.akvine.zond.rules.logical.CheckEntityWithoutIdRule;
-import ru.akvine.zond.rules.logical.CheckEntityWithoutNoArgsConstructorRule;
-import ru.akvine.zond.rules.logical.CheckEnumeratedOrdinalRule;
-import ru.akvine.zond.rules.logical.CheckLazyAccessOutsideTransactionRule;
-import ru.akvine.zond.rules.performance.CheckEagerFetchRule;
-import ru.akvine.zond.rules.performance.CheckFindAllWithoutPagingRule;
-import ru.akvine.zond.rules.performance.CheckRelationContainsInLoopRule;
-import ru.akvine.zond.rules.performance.CheckRelationSizeInLoopRule;
+import ru.akvine.zond.rules.codesmell.ManyToManyRule;
+import ru.akvine.zond.rules.concurrency.EntityWithoutVersionRule;
+import ru.akvine.zond.rules.logical.EntityEqualsWithRelationsRule;
+import ru.akvine.zond.rules.logical.EntityFinalMethodRule;
+import ru.akvine.zond.rules.logical.EntityToStringWithRelationsRule;
+import ru.akvine.zond.rules.logical.EntityWithDataRule;
+import ru.akvine.zond.rules.logical.EntityWithoutIdRule;
+import ru.akvine.zond.rules.logical.EntityWithoutNoArgsConstructorRule;
+import ru.akvine.zond.rules.logical.EnumeratedOrdinalRule;
+import ru.akvine.zond.rules.logical.LazyAccessOutsideTransactionRule;
+import ru.akvine.zond.rules.performance.EagerFetchRule;
+import ru.akvine.zond.rules.performance.FindAllWithoutPagingRule;
+import ru.akvine.zond.rules.performance.RelationContainsInLoopRule;
+import ru.akvine.zond.rules.performance.RelationSizeInLoopRule;
 
 import java.util.List;
 
@@ -58,7 +58,7 @@ class JpaRulesTest {
 
     @Test
     void relationAccessIsIgnoredOutsidePersistenceCode() {
-        assertThat(RuleTests.lines(new CheckRelationSizeInLoopRule(), """
+        assertThat(RuleTests.lines(new RelationSizeInLoopRule(), """
                 class Sample {
                     void run(List<MethodCallExpr> calls) {
                         calls.forEach(call -> total += call.getArguments().size());
@@ -69,7 +69,7 @@ class JpaRulesTest {
 
     @Test
     void entityWithData() {
-        assertThat(RuleTests.lines(new CheckEntityWithDataRule(), """
+        assertThat(RuleTests.lines(new EntityWithDataRule(), """
                 @Data
                 @Entity
                 class User {
@@ -86,7 +86,7 @@ class JpaRulesTest {
 
     @Test
     void entityEqualsWithRelations() {
-        List<Violation> violations = RuleTests.check(new CheckEntityEqualsWithRelationsRule(), """
+        List<Violation> violations = RuleTests.check(new EntityEqualsWithRelationsRule(), """
                 @Entity
                 class Order {
                     @Id
@@ -132,7 +132,7 @@ class JpaRulesTest {
 
     @Test
     void entityToStringWithRelations() {
-        assertThat(RuleTests.lines(new CheckEntityToStringWithRelationsRule(), """
+        assertThat(RuleTests.lines(new EntityToStringWithRelationsRule(), """
                 @Entity
                 class Order {
                     @OneToMany
@@ -161,7 +161,7 @@ class JpaRulesTest {
 
     @Test
     void lazyAccessOutsideTransaction() {
-        assertThat(RuleTests.lines(new CheckLazyAccessOutsideTransactionRule(), """
+        assertThat(RuleTests.lines(new LazyAccessOutsideTransactionRule(), """
                 @Service
                 class OrderService {
                     public int count(Long id) {
@@ -187,7 +187,7 @@ class JpaRulesTest {
 
     @Test
     void enumeratedOrdinal() {
-        assertThat(RuleTests.lines(new CheckEnumeratedOrdinalRule(), """
+        assertThat(RuleTests.lines(new EnumeratedOrdinalRule(), """
                 @Entity
                 class Order {
                     @Enumerated
@@ -202,7 +202,7 @@ class JpaRulesTest {
 
     @Test
     void entityWithoutVersion() {
-        assertThat(RuleTests.lines(new CheckEntityWithoutVersionRule(), """
+        assertThat(RuleTests.lines(new EntityWithoutVersionRule(), """
                 @Entity
                 class Plain {
                     @Id
@@ -223,7 +223,7 @@ class JpaRulesTest {
 
     @Test
     void findAllWithoutPaging() {
-        assertThat(RuleTests.lines(new CheckFindAllWithoutPagingRule(), """
+        assertThat(RuleTests.lines(new FindAllWithoutPagingRule(), """
                 class Sample {
                     void run(Pageable pageable) {
                         List<User> all = userRepository.findAll();
@@ -236,22 +236,22 @@ class JpaRulesTest {
 
     @Test
     void relationSizeInLoop() {
-        assertThat(RuleTests.lines(new CheckRelationSizeInLoopRule(), RELATION_ACCESS)).containsExactly(4, 8);
+        assertThat(RuleTests.lines(new RelationSizeInLoopRule(), RELATION_ACCESS)).containsExactly(4, 8);
     }
 
     @Test
     void relationContainsInLoop() {
-        assertThat(RuleTests.lines(new CheckRelationContainsInLoopRule(), RELATION_ACCESS)).containsExactly(5);
+        assertThat(RuleTests.lines(new RelationContainsInLoopRule(), RELATION_ACCESS)).containsExactly(5);
     }
 
     @Test
     void manyToMany() {
-        assertThat(RuleTests.lines(new CheckManyToManyRule(), RELATIONS)).containsExactly(3);
+        assertThat(RuleTests.lines(new ManyToManyRule(), RELATIONS)).containsExactly(3);
     }
 
     @Test
     void eagerFetch() {
-        List<Violation> violations = RuleTests.check(new CheckEagerFetchRule(), RELATIONS);
+        List<Violation> violations = RuleTests.check(new EagerFetchRule(), RELATIONS);
 
         assertThat(violations).extracting(Violation::line).containsExactly(5, 9);
         assertThat(violations.get(0).message()).contains("@ManyToOne без fetch");
@@ -260,7 +260,7 @@ class JpaRulesTest {
 
     @Test
     void entityFinalMethod() {
-        assertThat(RuleTests.lines(new CheckEntityFinalMethodRule(), """
+        assertThat(RuleTests.lines(new EntityFinalMethodRule(), """
                 @Entity
                 final class Closed {
                     public final Long getId() { return null; }
@@ -278,7 +278,7 @@ class JpaRulesTest {
 
     @Test
     void entityWithoutNoArgsConstructor() {
-        assertThat(RuleTests.lines(new CheckEntityWithoutNoArgsConstructorRule(), """
+        assertThat(RuleTests.lines(new EntityWithoutNoArgsConstructorRule(), """
                 @Entity
                 class WithArgs {
                     WithArgs(Long id) {}
@@ -305,7 +305,7 @@ class JpaRulesTest {
 
     @Test
     void entityWithoutId() {
-        assertThat(RuleTests.lines(new CheckEntityWithoutIdRule(), """
+        assertThat(RuleTests.lines(new EntityWithoutIdRule(), """
                 @Entity
                 class NoId {
                     private String name;

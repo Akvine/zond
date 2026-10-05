@@ -58,7 +58,7 @@ public class RuleCatalog {
     public Optional<String> findCode(String codeOrName) {
         String wanted = codeOrName.trim();
         return rules.stream()
-                .filter(rule -> rule.code().equalsIgnoreCase(wanted) || rule.name().equalsIgnoreCase(wanted))
+                .filter(rule -> rule.code().equalsIgnoreCase(wanted) || RuleSettings.isNameOf(wanted, rule.name()))
                 .map(Rule::code)
                 .findFirst();
     }

@@ -1,12 +1,12 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.logical.CheckFixedSizeListModificationRule;
-import ru.akvine.zond.rules.logical.CheckImmutableCollectionModificationRule;
-import ru.akvine.zond.rules.logical.CheckIteratorNextWithoutHasNextRule;
-import ru.akvine.zond.rules.logical.CheckListGetFirstWithoutCheckRule;
-import ru.akvine.zond.rules.performance.CheckLinkedListGetInLoopRule;
-import ru.akvine.zond.rules.performance.CheckListContainsInLoopRule;
+import ru.akvine.zond.rules.logical.FixedSizeListModificationRule;
+import ru.akvine.zond.rules.logical.ImmutableCollectionModificationRule;
+import ru.akvine.zond.rules.logical.IteratorNextWithoutHasNextRule;
+import ru.akvine.zond.rules.logical.ListGetFirstWithoutCheckRule;
+import ru.akvine.zond.rules.performance.LinkedListGetInLoopRule;
+import ru.akvine.zond.rules.performance.ListContainsInLoopRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,7 +17,7 @@ class CollectionRulesTest {
 
     @Test
     void listGetFirstWithoutCheck() {
-        assertThat(RuleTests.lines(new CheckListGetFirstWithoutCheckRule(), """
+        assertThat(RuleTests.lines(new ListGetFirstWithoutCheckRule(), """
                 class Sample {
                     String first(List<String> names, List<String> checked, Map<Integer, String> map) {
                         String a = names.get(0);
@@ -36,7 +36,7 @@ class CollectionRulesTest {
 
     @Test
     void iteratorNextWithoutHasNext() {
-        assertThat(RuleTests.lines(new CheckIteratorNextWithoutHasNextRule(), """
+        assertThat(RuleTests.lines(new IteratorNextWithoutHasNextRule(), """
                 class Sample {
                     String run(Iterator<String> iterator, Iterator<String> checked, List<String> items,
                                List<String> guarded, Scanner scanner) {
@@ -56,7 +56,7 @@ class CollectionRulesTest {
 
     @Test
     void fixedSizeListModification() {
-        assertThat(RuleTests.lines(new CheckFixedSizeListModificationRule(), """
+        assertThat(RuleTests.lines(new FixedSizeListModificationRule(), """
                 class Sample {
                     private final List<String> fixed = Arrays.asList("a", "b");
                     void run() {
@@ -77,7 +77,7 @@ class CollectionRulesTest {
 
     @Test
     void immutableCollectionModification() {
-        assertThat(RuleTests.lines(new CheckImmutableCollectionModificationRule(), """
+        assertThat(RuleTests.lines(new ImmutableCollectionModificationRule(), """
                 class Sample {
                     private final Map<String, String> settings = Map.of("a", "b");
                     void run(List<String> source) {
@@ -99,7 +99,7 @@ class CollectionRulesTest {
 
     @Test
     void linkedListGetInLoop() {
-        assertThat(RuleTests.lines(new CheckLinkedListGetInLoopRule(), """
+        assertThat(RuleTests.lines(new LinkedListGetInLoopRule(), """
                 class Sample {
                     void run(LinkedList<String> linked, ArrayList<String> array) {
                         List<String> declared = new LinkedList<>();
@@ -116,7 +116,7 @@ class CollectionRulesTest {
 
     @Test
     void listContainsInLoop() {
-        assertThat(RuleTests.lines(new CheckListContainsInLoopRule(), """
+        assertThat(RuleTests.lines(new ListContainsInLoopRule(), """
                 class Sample {
                     void run(List<String> names, Set<String> unique, List<String> items) {
                         for (String item : items) {

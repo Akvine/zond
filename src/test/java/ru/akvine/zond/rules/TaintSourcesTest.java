@@ -3,8 +3,8 @@ package ru.akvine.zond.rules;
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.security.CheckCommandInjectionRule;
-import ru.akvine.zond.rules.security.CheckSqlConcatenationRule;
+import ru.akvine.zond.rules.security.CommandInjectionRule;
+import ru.akvine.zond.rules.security.SqlConcatenationRule;
 
 import java.util.List;
 import java.util.Map;
@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * и уверенность находки в зависимости от источника
  */
 class TaintSourcesTest {
-    private final CheckSqlConcatenationRule rule = new CheckSqlConcatenationRule();
+    private final SqlConcatenationRule rule = new SqlConcatenationRule();
 
     @Test
     void messageFromQueueIsExternalData() {
@@ -126,7 +126,7 @@ class TaintSourcesTest {
 
     @Test
     void findingWithoutSourceIsOnlySuspicion() {
-        List<Violation> violations = RuleTests.check(new CheckCommandInjectionRule(), """
+        List<Violation> violations = RuleTests.check(new CommandInjectionRule(), """
                 @RestController
                 class Tools {
                     @GetMapping("/ping")

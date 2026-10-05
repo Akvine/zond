@@ -1,12 +1,12 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.security.CheckExpressionInjectionRule;
-import ru.akvine.zond.rules.security.CheckLogInjectionRule;
-import ru.akvine.zond.rules.security.CheckReflectionFromRequestRule;
-import ru.akvine.zond.rules.security.CheckRegexFromRequestRule;
-import ru.akvine.zond.rules.security.CheckResponseWriteWithoutEscapingRule;
-import ru.akvine.zond.rules.security.CheckSsrfRule;
+import ru.akvine.zond.rules.security.ExpressionInjectionRule;
+import ru.akvine.zond.rules.security.LogInjectionRule;
+import ru.akvine.zond.rules.security.ReflectionFromRequestRule;
+import ru.akvine.zond.rules.security.RegexFromRequestRule;
+import ru.akvine.zond.rules.security.ResponseWriteWithoutEscapingRule;
+import ru.akvine.zond.rules.security.SsrfRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,7 +17,7 @@ class RequestDataRulesTest {
 
     @Test
     void ssrf() {
-        assertThat(RuleTests.lines(new CheckSsrfRule(), """
+        assertThat(RuleTests.lines(new SsrfRule(), """
                 class Proxy {
                     @GetMapping("/fetch")
                     String fetch(@RequestParam String url, @RequestParam String id) {
@@ -33,7 +33,7 @@ class RequestDataRulesTest {
 
     @Test
     void logInjection() {
-        assertThat(RuleTests.lines(new CheckLogInjectionRule(), """
+        assertThat(RuleTests.lines(new LogInjectionRule(), """
                 class Users {
                     @GetMapping("/users")
                     String find(@RequestParam String name, @RequestParam Long id) {
@@ -48,7 +48,7 @@ class RequestDataRulesTest {
 
     @Test
     void regexFromRequest() {
-        assertThat(RuleTests.lines(new CheckRegexFromRequestRule(), """
+        assertThat(RuleTests.lines(new RegexFromRequestRule(), """
                 class Search {
                     @GetMapping("/search")
                     boolean search(@RequestParam String pattern, @RequestParam String text) {
@@ -65,7 +65,7 @@ class RequestDataRulesTest {
 
     @Test
     void reflectionFromRequest() {
-        assertThat(RuleTests.lines(new CheckReflectionFromRequestRule(), """
+        assertThat(RuleTests.lines(new ReflectionFromRequestRule(), """
                 class Plugins {
                     @PostMapping("/run")
                     void run(@RequestParam String className) throws Exception {
@@ -78,7 +78,7 @@ class RequestDataRulesTest {
 
     @Test
     void expressionInjection() {
-        assertThat(RuleTests.lines(new CheckExpressionInjectionRule(), """
+        assertThat(RuleTests.lines(new ExpressionInjectionRule(), """
                 class Rules {
                     @PostMapping("/eval")
                     Object eval(@RequestParam String expression, @RequestParam String user) {
@@ -92,7 +92,7 @@ class RequestDataRulesTest {
 
     @Test
     void responseWriteWithoutEscaping() {
-        assertThat(RuleTests.lines(new CheckResponseWriteWithoutEscapingRule(), """
+        assertThat(RuleTests.lines(new ResponseWriteWithoutEscapingRule(), """
                 class Hello {
                     @GetMapping("/hello")
                     void hello(@RequestParam String name, HttpServletResponse response) throws Exception {

@@ -1,14 +1,14 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.logical.CheckAssignmentInConditionRule;
-import ru.akvine.zond.rules.logical.CheckDeadCodeRule;
-import ru.akvine.zond.rules.logical.CheckEmptyStatementRule;
-import ru.akvine.zond.rules.logical.CheckFileNameMismatchRule;
-import ru.akvine.zond.rules.logical.CheckMisleadingIndentationRule;
-import ru.akvine.zond.rules.logical.CheckPackageMismatchRule;
-import ru.akvine.zond.rules.logical.CheckSwitchFallThroughRule;
-import ru.akvine.zond.rules.logical.CheckSwitchWithoutDefaultRule;
+import ru.akvine.zond.rules.logical.AssignmentInConditionRule;
+import ru.akvine.zond.rules.logical.DeadCodeRule;
+import ru.akvine.zond.rules.logical.EmptyStatementRule;
+import ru.akvine.zond.rules.logical.FileNameMismatchRule;
+import ru.akvine.zond.rules.logical.MisleadingIndentationRule;
+import ru.akvine.zond.rules.logical.PackageMismatchRule;
+import ru.akvine.zond.rules.logical.SwitchFallThroughRule;
+import ru.akvine.zond.rules.logical.SwitchWithoutDefaultRule;
 
 import java.nio.file.Path;
 
@@ -21,7 +21,7 @@ class SyntaxRulesTest {
 
     @Test
     void emptyStatement() {
-        assertThat(RuleTests.lines(new CheckEmptyStatementRule(), """
+        assertThat(RuleTests.lines(new EmptyStatementRule(), """
                 class Sample {
                     void run(boolean ready, List<String> items) {
                         if (ready);
@@ -40,7 +40,7 @@ class SyntaxRulesTest {
 
     @Test
     void assignmentInCondition() {
-        assertThat(RuleTests.lines(new CheckAssignmentInConditionRule(), """
+        assertThat(RuleTests.lines(new AssignmentInConditionRule(), """
                 class Sample {
                     void run(boolean flag, BufferedReader reader) throws Exception {
                         if (flag = true) {
@@ -61,7 +61,7 @@ class SyntaxRulesTest {
 
     @Test
     void switchFallThrough() {
-        assertThat(RuleTests.lines(new CheckSwitchFallThroughRule(), """
+        assertThat(RuleTests.lines(new SwitchFallThroughRule(), """
                 class Sample {
                     void run(int code) {
                         switch (code) {
@@ -91,7 +91,7 @@ class SyntaxRulesTest {
 
     @Test
     void misleadingIndentation() {
-        assertThat(RuleTests.lines(new CheckMisleadingIndentationRule(), """
+        assertThat(RuleTests.lines(new MisleadingIndentationRule(), """
                 class Sample {
                     void run(boolean ready) {
                         if (ready)
@@ -111,7 +111,7 @@ class SyntaxRulesTest {
 
     @Test
     void deadCode() {
-        assertThat(RuleTests.lines(new CheckDeadCodeRule(), """
+        assertThat(RuleTests.lines(new DeadCodeRule(), """
                 class Sample {
                     int run(boolean ready) {
                         if (false) {
@@ -137,7 +137,7 @@ class SyntaxRulesTest {
 
     @Test
     void switchWithoutDefault() {
-        assertThat(RuleTests.lines(new CheckSwitchWithoutDefaultRule(), """
+        assertThat(RuleTests.lines(new SwitchWithoutDefaultRule(), """
                 class Sample {
                     int run(int code, Status status) {
                         switch (code) {
@@ -159,7 +159,7 @@ class SyntaxRulesTest {
 
     @Test
     void fileNameMismatch() {
-        CheckFileNameMismatchRule rule = new CheckFileNameMismatchRule();
+        FileNameMismatchRule rule = new FileNameMismatchRule();
 
         assertThat(RuleTests.lines(rule, """
                 public class Other {
@@ -177,7 +177,7 @@ class SyntaxRulesTest {
 
     @Test
     void packageMismatch() {
-        CheckPackageMismatchRule rule = new CheckPackageMismatchRule();
+        PackageMismatchRule rule = new PackageMismatchRule();
         Path path = Path.of("src", "main", "java", "com", "example", "app", "Sample.java");
 
         assertThat(RuleTests.check(rule, path, "package com.example.app;\nclass Sample {}")).isEmpty();

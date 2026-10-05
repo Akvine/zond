@@ -2,18 +2,18 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckLazyInjectionRule;
-import ru.akvine.zond.rules.codesmell.CheckManualRepositoryCreationRule;
-import ru.akvine.zond.rules.codesmell.CheckManualServiceCreationRule;
-import ru.akvine.zond.rules.concurrency.CheckAsyncVoidRule;
-import ru.akvine.zond.rules.concurrency.CheckAsyncWithoutExecutorRule;
-import ru.akvine.zond.rules.concurrency.CheckScheduledWithoutLockRule;
-import ru.akvine.zond.rules.logical.CheckCacheableSelfInvocationRule;
-import ru.akvine.zond.rules.logical.CheckRetryableSelfInvocationRule;
-import ru.akvine.zond.rules.logical.CheckTransactionalOnFinalRule;
-import ru.akvine.zond.rules.performance.CheckRepositoryCallInLoopRule;
-import ru.akvine.zond.rules.resources.CheckTransactionalFileIoRule;
-import ru.akvine.zond.rules.resources.CheckTransactionalHttpCallRule;
+import ru.akvine.zond.rules.codesmell.LazyInjectionRule;
+import ru.akvine.zond.rules.codesmell.ManualRepositoryCreationRule;
+import ru.akvine.zond.rules.codesmell.ManualServiceCreationRule;
+import ru.akvine.zond.rules.concurrency.AsyncVoidRule;
+import ru.akvine.zond.rules.concurrency.AsyncWithoutExecutorRule;
+import ru.akvine.zond.rules.concurrency.ScheduledWithoutLockRule;
+import ru.akvine.zond.rules.logical.CacheableSelfInvocationRule;
+import ru.akvine.zond.rules.logical.RetryableSelfInvocationRule;
+import ru.akvine.zond.rules.logical.TransactionalOnFinalRule;
+import ru.akvine.zond.rules.performance.RepositoryCallInLoopRule;
+import ru.akvine.zond.rules.resources.TransactionalFileIoRule;
+import ru.akvine.zond.rules.resources.TransactionalHttpCallRule;
 
 import java.util.List;
 
@@ -26,7 +26,7 @@ class SpringRulesTest {
 
     @Test
     void asyncWithoutExecutor() {
-        assertThat(RuleTests.lines(new CheckAsyncWithoutExecutorRule(), """
+        assertThat(RuleTests.lines(new AsyncWithoutExecutorRule(), """
                 class Sample {
                     @Async
                     public void first() {}
@@ -46,7 +46,7 @@ class SpringRulesTest {
 
     @Test
     void lazyOnInjectedDependency() {
-        List<Violation> violations = RuleTests.check(new CheckLazyInjectionRule(), """
+        List<Violation> violations = RuleTests.check(new LazyInjectionRule(), """
                 @Service
                 class Sample {
                     @Lazy
@@ -72,7 +72,7 @@ class SpringRulesTest {
 
     @Test
     void cacheableSelfInvocation() {
-        List<Violation> violations = RuleTests.check(new CheckCacheableSelfInvocationRule(), """
+        List<Violation> violations = RuleTests.check(new CacheableSelfInvocationRule(), """
                 class Sample {
                     public User load(Long id) {
                         return findUser(id);
@@ -97,7 +97,7 @@ class SpringRulesTest {
 
     @Test
     void retryableSelfInvocation() {
-        List<Violation> violations = RuleTests.check(new CheckRetryableSelfInvocationRule(), """
+        List<Violation> violations = RuleTests.check(new RetryableSelfInvocationRule(), """
                 class Sample {
                     public void run() {
                         send("a");
@@ -114,7 +114,7 @@ class SpringRulesTest {
 
     @Test
     void httpCallInsideTransaction() {
-        List<Violation> violations = RuleTests.check(new CheckTransactionalHttpCallRule(), """
+        List<Violation> violations = RuleTests.check(new TransactionalHttpCallRule(), """
                 class Sample {
                     @Transactional
                     public void pay(Order order) {
@@ -139,7 +139,7 @@ class SpringRulesTest {
 
     @Test
     void fileIoInsideTransaction() {
-        assertThat(RuleTests.lines(new CheckTransactionalFileIoRule(), """
+        assertThat(RuleTests.lines(new TransactionalFileIoRule(), """
                 @Transactional
                 class Sample {
                     public void export(Path path, MultipartFile upload) throws IOException {
@@ -157,7 +157,7 @@ class SpringRulesTest {
 
     @Test
     void transactionalOnFinal() {
-        List<Violation> violations = RuleTests.check(new CheckTransactionalOnFinalRule(), """
+        List<Violation> violations = RuleTests.check(new TransactionalOnFinalRule(), """
                 class Sample {
                     @Transactional
                     public final void save() {}
@@ -188,7 +188,7 @@ class SpringRulesTest {
 
     @Test
     void manualServiceCreation() {
-        assertThat(RuleTests.lines(new CheckManualServiceCreationRule(), """
+        assertThat(RuleTests.lines(new ManualServiceCreationRule(), """
                 @Service
                 class Sample {
                     void run() {
@@ -213,7 +213,7 @@ class SpringRulesTest {
 
     @Test
     void manualRepositoryCreation() {
-        assertThat(RuleTests.lines(new CheckManualRepositoryCreationRule(), """
+        assertThat(RuleTests.lines(new ManualRepositoryCreationRule(), """
                 class Sample {
                     void run() {
                         UserRepository users = new UserRepository();
@@ -232,7 +232,7 @@ class SpringRulesTest {
 
     @Test
     void repositoryCallInLoop() {
-        assertThat(RuleTests.lines(new CheckRepositoryCallInLoopRule(), """
+        assertThat(RuleTests.lines(new RepositoryCallInLoopRule(), """
                 class Sample {
                     void run(List<Long> ids) {
                         for (Long id : ids) {
@@ -261,7 +261,7 @@ class SpringRulesTest {
 
     @Test
     void scheduledWithoutLock() {
-        assertThat(RuleTests.lines(new CheckScheduledWithoutLockRule(), """
+        assertThat(RuleTests.lines(new ScheduledWithoutLockRule(), """
                 class Sample {
                     @Scheduled(fixedRate = 1000)
                     public void sync() {}
@@ -283,7 +283,7 @@ class SpringRulesTest {
 
     @Test
     void asyncVoid() {
-        assertThat(RuleTests.lines(new CheckAsyncVoidRule(), """
+        assertThat(RuleTests.lines(new AsyncVoidRule(), """
                 class Sample {
                     @Async
                     public void send() {}

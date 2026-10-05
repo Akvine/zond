@@ -29,7 +29,7 @@ class Suppressions {
     private static final Pattern DIRECTIVE =
             Pattern.compile("(?://|/\\*|^\\s*\\*|#|--|<!--).*?zond:ignore(-file)?\\b(.*)$");
 
-    // jr:40 либо имя правила: CheckMagicNumberRule
+    // jr:40 либо имя правила: MagicNumberRule
     private static final Pattern RULE_ID = Pattern.compile("[A-Za-z]+:\\d+|Check\\w+Rule");
 
     // Строка, на которой нет ничего, кроме комментария

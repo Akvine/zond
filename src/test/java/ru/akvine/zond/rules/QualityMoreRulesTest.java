@@ -2,19 +2,19 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckAssertTrueEqualsRule;
-import ru.akvine.zond.rules.codesmell.CheckCommentedOutCodeRule;
-import ru.akvine.zond.rules.codesmell.CheckCyclomaticComplexityRule;
-import ru.akvine.zond.rules.codesmell.CheckDuplicateStringLiteralRule;
-import ru.akvine.zond.rules.codesmell.CheckLoggerWrongClassRule;
-import ru.akvine.zond.rules.codesmell.CheckRedundantBooleanReturnRule;
-import ru.akvine.zond.rules.codesmell.CheckTryFailRule;
-import ru.akvine.zond.rules.codesmell.CheckUnusedLocalVariableRule;
-import ru.akvine.zond.rules.exceptions.CheckGenericExceptionRule;
-import ru.akvine.zond.rules.exceptions.CheckLogAndRethrowRule;
-import ru.akvine.zond.rules.exceptions.CheckLostStackTraceInLogRule;
-import ru.akvine.zond.rules.logical.CheckIncompleteAssertionRule;
-import ru.akvine.zond.rules.logical.CheckLogPlaceholderMismatchRule;
+import ru.akvine.zond.rules.codesmell.AssertTrueEqualsRule;
+import ru.akvine.zond.rules.codesmell.CommentedOutCodeRule;
+import ru.akvine.zond.rules.codesmell.CyclomaticComplexityRule;
+import ru.akvine.zond.rules.codesmell.DuplicateStringLiteralRule;
+import ru.akvine.zond.rules.codesmell.LoggerWrongClassRule;
+import ru.akvine.zond.rules.codesmell.RedundantBooleanReturnRule;
+import ru.akvine.zond.rules.codesmell.TryFailRule;
+import ru.akvine.zond.rules.codesmell.UnusedLocalVariableRule;
+import ru.akvine.zond.rules.exceptions.GenericExceptionRule;
+import ru.akvine.zond.rules.exceptions.LogAndRethrowRule;
+import ru.akvine.zond.rules.exceptions.LostStackTraceInLogRule;
+import ru.akvine.zond.rules.logical.IncompleteAssertionRule;
+import ru.akvine.zond.rules.logical.LogPlaceholderMismatchRule;
 
 import java.util.List;
 
@@ -27,7 +27,7 @@ class QualityMoreRulesTest {
 
     @Test
     void lostStackTraceInLog() {
-        assertThat(RuleTests.lines(new CheckLostStackTraceInLogRule(), """
+        assertThat(RuleTests.lines(new LostStackTraceInLogRule(), """
                 class Sample {
                     void run() {
                         try {
@@ -46,7 +46,7 @@ class QualityMoreRulesTest {
 
     @Test
     void logPlaceholderMismatch() {
-        List<Violation> violations = RuleTests.check(new CheckLogPlaceholderMismatchRule(), """
+        List<Violation> violations = RuleTests.check(new LogPlaceholderMismatchRule(), """
                 class Sample {
                     void run(Long id, String name, Exception e, Object[] values) {
                         log.info("User {} {}", id);
@@ -67,7 +67,7 @@ class QualityMoreRulesTest {
 
     @Test
     void loggerWrongClass() {
-        assertThat(RuleTests.lines(new CheckLoggerWrongClassRule(), """
+        assertThat(RuleTests.lines(new LoggerWrongClassRule(), """
                 class OrderService {
                     private static final Logger log = LoggerFactory.getLogger(PaymentService.class);
                     class Inner {
@@ -82,7 +82,7 @@ class QualityMoreRulesTest {
 
     @Test
     void genericException() {
-        assertThat(RuleTests.lines(new CheckGenericExceptionRule(), """
+        assertThat(RuleTests.lines(new GenericExceptionRule(), """
                 class Sample {
                     void run() throws Exception {
                         throw new RuntimeException("failed");
@@ -98,7 +98,7 @@ class QualityMoreRulesTest {
 
     @Test
     void logAndRethrow() {
-        assertThat(RuleTests.lines(new CheckLogAndRethrowRule(), """
+        assertThat(RuleTests.lines(new LogAndRethrowRule(), """
                 class Sample {
                     void run() {
                         try {
@@ -124,7 +124,7 @@ class QualityMoreRulesTest {
 
     @Test
     void unusedLocalVariable() {
-        assertThat(RuleTests.lines(new CheckUnusedLocalVariableRule(), """
+        assertThat(RuleTests.lines(new UnusedLocalVariableRule(), """
                 class Sample {
                     int run(List<String> items) {
                         int leftover = 5;
@@ -149,7 +149,7 @@ class QualityMoreRulesTest {
                 + "    }\n"
                 + "}\n";
 
-        List<Violation> violations = RuleTests.check(new CheckCyclomaticComplexityRule(), code);
+        List<Violation> violations = RuleTests.check(new CyclomaticComplexityRule(), code);
 
         assertThat(violations).extracting(Violation::line).containsExactly(2);
         assertThat(violations.get(0).message()).contains("'complex'", "- 12 ");
@@ -157,7 +157,7 @@ class QualityMoreRulesTest {
 
     @Test
     void commentedOutCode() {
-        assertThat(RuleTests.lines(new CheckCommentedOutCodeRule(), """
+        assertThat(RuleTests.lines(new CommentedOutCodeRule(), """
                 class Sample {
                     void run() {
                         // service.process(order);
@@ -175,7 +175,7 @@ class QualityMoreRulesTest {
 
     @Test
     void duplicateStringLiteral() {
-        List<Violation> violations = RuleTests.check(new CheckDuplicateStringLiteralRule(), """
+        List<Violation> violations = RuleTests.check(new DuplicateStringLiteralRule(), """
                 class Sample {
                     private static final String CONSTANT = "constant value";
                     void run() {
@@ -197,7 +197,7 @@ class QualityMoreRulesTest {
 
     @Test
     void redundantBooleanReturn() {
-        assertThat(RuleTests.lines(new CheckRedundantBooleanReturnRule(), """
+        assertThat(RuleTests.lines(new RedundantBooleanReturnRule(), """
                 class Sample {
                     boolean first(int a) {
                         if (a > 0) {
@@ -221,7 +221,7 @@ class QualityMoreRulesTest {
 
     @Test
     void incompleteAssertion() {
-        assertThat(RuleTests.lines(new CheckIncompleteAssertionRule(), """
+        assertThat(RuleTests.lines(new IncompleteAssertionRule(), """
                 class SampleTest {
                     @Test
                     void run() {
@@ -234,7 +234,7 @@ class QualityMoreRulesTest {
 
     @Test
     void assertTrueEquals() {
-        assertThat(RuleTests.lines(new CheckAssertTrueEqualsRule(), """
+        assertThat(RuleTests.lines(new AssertTrueEqualsRule(), """
                 class SampleTest {
                     @Test
                     void run() {
@@ -250,7 +250,7 @@ class QualityMoreRulesTest {
 
     @Test
     void tryFail() {
-        assertThat(RuleTests.lines(new CheckTryFailRule(), """
+        assertThat(RuleTests.lines(new TryFailRule(), """
                 class SampleTest {
                     @Test
                     void run() {

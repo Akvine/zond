@@ -24,7 +24,7 @@ import java.util.stream.Collectors;
  * поэтому jr:193 в ключе записать нельзя.
  * <pre>
  * zond.rule.jr-193.max-complexity=15
- * zond.rule.CheckLongMethodRule.max-lines=80
+ * zond.rule.LongMethodRule.max-lines=80
  * zond.rule.jr-36.level=INFO
  * </pre>
  */
@@ -32,6 +32,7 @@ import java.util.stream.Collectors;
 public class RuleSettings {
     public static final String PREFIX = "zond.rule.";
     public static final String LEVEL = "level";
+    public static final String OLD_NAME_PREFIX = "Check";
 
     /**
      * Параметр, который можно задать сразу для всех правил, у которых он есть: zond.max-call-depth=5.
@@ -160,7 +161,16 @@ public class RuleSettings {
      * @return true, если правило с таким кодом и именем записано в настройках как configuredRule
      */
     public static boolean refersTo(String configuredRule, String ruleCode, String ruleName) {
-        return normalize(configuredRule).equals(normalize(ruleCode)) || configuredRule.equalsIgnoreCase(ruleName);
+        return normalize(configuredRule).equals(normalize(ruleCode)) || isNameOf(configuredRule, ruleName);
+    }
+
+    /**
+     * @return true, если правило названо этим именем. Раньше имена правил начинались с Check
+     * (CheckLongMethodRule): в настройках, написанных до переименования, старое имя продолжает работать
+     */
+    public static boolean isNameOf(String given, String ruleName) {
+        String name = given.trim();
+        return name.equalsIgnoreCase(ruleName) || name.equalsIgnoreCase(OLD_NAME_PREFIX + ruleName);
     }
 
     /**

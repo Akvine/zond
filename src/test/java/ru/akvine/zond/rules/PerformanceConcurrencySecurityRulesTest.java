@@ -1,20 +1,20 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.concurrency.CheckAtomicGetThenSetRule;
-import ru.akvine.zond.rules.concurrency.CheckSleepInLoopRule;
-import ru.akvine.zond.rules.concurrency.CheckSynchronizedCollectionIterationRule;
-import ru.akvine.zond.rules.concurrency.CheckSynchronizedMethodWithIoRule;
-import ru.akvine.zond.rules.exceptions.CheckFutureWithoutErrorHandlingRule;
-import ru.akvine.zond.rules.performance.CheckBoxingInLoopRule;
-import ru.akvine.zond.rules.performance.CheckKeySetWithGetRule;
-import ru.akvine.zond.rules.performance.CheckMapperPerCallRule;
-import ru.akvine.zond.rules.performance.CheckRegexInLoopRule;
-import ru.akvine.zond.rules.performance.CheckWholeUploadInMemoryRule;
-import ru.akvine.zond.rules.security.CheckInsecureCookieRule;
-import ru.akvine.zond.rules.security.CheckInsecureTempFileRule;
-import ru.akvine.zond.rules.security.CheckJwtWithoutSignatureCheckRule;
-import ru.akvine.zond.rules.security.CheckSecretComparisonRule;
+import ru.akvine.zond.rules.concurrency.AtomicGetThenSetRule;
+import ru.akvine.zond.rules.concurrency.SleepInLoopRule;
+import ru.akvine.zond.rules.concurrency.SynchronizedCollectionIterationRule;
+import ru.akvine.zond.rules.concurrency.SynchronizedMethodWithIoRule;
+import ru.akvine.zond.rules.exceptions.FutureWithoutErrorHandlingRule;
+import ru.akvine.zond.rules.performance.BoxingInLoopRule;
+import ru.akvine.zond.rules.performance.KeySetWithGetRule;
+import ru.akvine.zond.rules.performance.MapperPerCallRule;
+import ru.akvine.zond.rules.performance.RegexInLoopRule;
+import ru.akvine.zond.rules.performance.WholeUploadInMemoryRule;
+import ru.akvine.zond.rules.security.InsecureCookieRule;
+import ru.akvine.zond.rules.security.InsecureTempFileRule;
+import ru.akvine.zond.rules.security.JwtWithoutSignatureCheckRule;
+import ru.akvine.zond.rules.security.SecretComparisonRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -25,7 +25,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void regexInLoop() {
-        assertThat(RuleTests.lines(new CheckRegexInLoopRule(), """
+        assertThat(RuleTests.lines(new RegexInLoopRule(), """
                 class Sample {
                     void run(List<String> lines) {
                         for (String line : lines) {
@@ -42,7 +42,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void mapperPerCall() {
-        assertThat(RuleTests.lines(new CheckMapperPerCallRule(), """
+        assertThat(RuleTests.lines(new MapperPerCallRule(), """
                 class Sample {
                     private final ObjectMapper shared = new ObjectMapper();
                     String toJson(Object value) throws Exception {
@@ -56,7 +56,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void keySetWithGet() {
-        assertThat(RuleTests.lines(new CheckKeySetWithGetRule(), """
+        assertThat(RuleTests.lines(new KeySetWithGetRule(), """
                 class Sample {
                     void run(Map<String, Integer> prices) {
                         for (String name : prices.keySet()) {
@@ -72,7 +72,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void wholeUploadInMemory() {
-        assertThat(RuleTests.lines(new CheckWholeUploadInMemoryRule(), """
+        assertThat(RuleTests.lines(new WholeUploadInMemoryRule(), """
                 class Uploads {
                     void store(MultipartFile file, HttpServletRequest request) throws Exception {
                         byte[] content = file.getBytes();
@@ -85,7 +85,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void boxingInLoop() {
-        assertThat(RuleTests.lines(new CheckBoxingInLoopRule(), """
+        assertThat(RuleTests.lines(new BoxingInLoopRule(), """
                 class Sample {
                     long total(List<Long> values) {
                         Long sum = 0L;
@@ -102,7 +102,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void futureWithoutErrorHandling() {
-        assertThat(RuleTests.lines(new CheckFutureWithoutErrorHandlingRule(), """
+        assertThat(RuleTests.lines(new FutureWithoutErrorHandlingRule(), """
                 class Sample {
                     void run() {
                         CompletableFuture.runAsync(this::work);
@@ -116,7 +116,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void synchronizedCollectionIteration() {
-        assertThat(RuleTests.lines(new CheckSynchronizedCollectionIterationRule(), """
+        assertThat(RuleTests.lines(new SynchronizedCollectionIterationRule(), """
                 class Sample {
                     private final List<String> names = Collections.synchronizedList(new ArrayList<>());
                     void print() {
@@ -135,7 +135,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void atomicGetThenSet() {
-        assertThat(RuleTests.lines(new CheckAtomicGetThenSetRule(), """
+        assertThat(RuleTests.lines(new AtomicGetThenSetRule(), """
                 class Sample {
                     private final AtomicInteger counter = new AtomicInteger();
                     void run() {
@@ -149,7 +149,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void sleepInLoop() {
-        assertThat(RuleTests.lines(new CheckSleepInLoopRule(), """
+        assertThat(RuleTests.lines(new SleepInLoopRule(), """
                 class Sample {
                     void waitFor() throws Exception {
                         while (!ready()) {
@@ -163,7 +163,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void synchronizedMethodWithIo() {
-        assertThat(RuleTests.lines(new CheckSynchronizedMethodWithIoRule(), """
+        assertThat(RuleTests.lines(new SynchronizedMethodWithIoRule(), """
                 @Service
                 class Counters {
                     synchronized void save(Counter counter) {
@@ -178,7 +178,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void insecureCookie() {
-        assertThat(RuleTests.lines(new CheckInsecureCookieRule(), """
+        assertThat(RuleTests.lines(new InsecureCookieRule(), """
                 class Sample {
                     void login(HttpServletResponse response) {
                         Cookie plain = new Cookie("session", "1");
@@ -195,7 +195,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void jwtWithoutSignatureCheck() {
-        assertThat(RuleTests.lines(new CheckJwtWithoutSignatureCheckRule(), """
+        assertThat(RuleTests.lines(new JwtWithoutSignatureCheckRule(), """
                 class Tokens {
                     void read(String token) {
                         parser.parseClaimsJwt(token);
@@ -208,7 +208,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void secretComparison() {
-        assertThat(RuleTests.lines(new CheckSecretComparisonRule(), """
+        assertThat(RuleTests.lines(new SecretComparisonRule(), """
                 class Auth {
                     boolean check(String token, String expectedToken, User user, String password, String name) {
                         boolean a = token.equals(expectedToken);
@@ -222,7 +222,7 @@ class PerformanceConcurrencySecurityRulesTest {
 
     @Test
     void insecureTempFile() {
-        assertThat(RuleTests.lines(new CheckInsecureTempFileRule(), """
+        assertThat(RuleTests.lines(new InsecureTempFileRule(), """
                 class Sample {
                     void run() throws Exception {
                         File.createTempFile("report", ".tmp");

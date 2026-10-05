@@ -1,12 +1,12 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.concurrency.CheckCheckThenActRule;
-import ru.akvine.zond.rules.concurrency.CheckLockWithoutFinallyRule;
-import ru.akvine.zond.rules.concurrency.CheckManualThreadInBeanRule;
-import ru.akvine.zond.rules.concurrency.CheckNonThreadSafeCollectionInBeanRule;
-import ru.akvine.zond.rules.concurrency.CheckParallelStreamSideEffectRule;
-import ru.akvine.zond.rules.concurrency.CheckUnsynchronizedLazyInitRule;
+import ru.akvine.zond.rules.concurrency.CheckThenActRule;
+import ru.akvine.zond.rules.concurrency.LockWithoutFinallyRule;
+import ru.akvine.zond.rules.concurrency.ManualThreadInBeanRule;
+import ru.akvine.zond.rules.concurrency.NonThreadSafeCollectionInBeanRule;
+import ru.akvine.zond.rules.concurrency.ParallelStreamSideEffectRule;
+import ru.akvine.zond.rules.concurrency.UnsynchronizedLazyInitRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -17,7 +17,7 @@ class ThreadRulesTest {
 
     @Test
     void lockWithoutFinally() {
-        assertThat(RuleTests.lines(new CheckLockWithoutFinallyRule(), """
+        assertThat(RuleTests.lines(new LockWithoutFinallyRule(), """
                 class Sample {
                     private final Lock lock = new ReentrantLock();
                     void bad() {
@@ -42,7 +42,7 @@ class ThreadRulesTest {
 
     @Test
     void checkThenAct() {
-        assertThat(RuleTests.lines(new CheckCheckThenActRule(), """
+        assertThat(RuleTests.lines(new CheckThenActRule(), """
                 class Sample {
                     private final Map<String, Session> sessions = new ConcurrentHashMap<>();
                     private final Map<String, Session> plain = new HashMap<>();
@@ -67,7 +67,7 @@ class ThreadRulesTest {
 
     @Test
     void nonThreadSafeCollectionInBean() {
-        assertThat(RuleTests.lines(new CheckNonThreadSafeCollectionInBeanRule(), """
+        assertThat(RuleTests.lines(new NonThreadSafeCollectionInBeanRule(), """
                 @Service
                 class CacheService {
                     private final Map<String, String> cache = new HashMap<>();
@@ -96,7 +96,7 @@ class ThreadRulesTest {
 
     @Test
     void parallelStreamSideEffect() {
-        assertThat(RuleTests.lines(new CheckParallelStreamSideEffectRule(), """
+        assertThat(RuleTests.lines(new ParallelStreamSideEffectRule(), """
                 class Sample {
                     void run(List<String> items) {
                         List<String> results = new ArrayList<>();
@@ -114,7 +114,7 @@ class ThreadRulesTest {
 
     @Test
     void unsynchronizedLazyInit() {
-        assertThat(RuleTests.lines(new CheckUnsynchronizedLazyInitRule(), """
+        assertThat(RuleTests.lines(new UnsynchronizedLazyInitRule(), """
                 @Service
                 class Sample {
                     private Config config;
@@ -151,7 +151,7 @@ class ThreadRulesTest {
 
     @Test
     void manualThreadInBean() {
-        assertThat(RuleTests.lines(new CheckManualThreadInBeanRule(), """
+        assertThat(RuleTests.lines(new ManualThreadInBeanRule(), """
                 @Service
                 class Sample {
                     void run() {

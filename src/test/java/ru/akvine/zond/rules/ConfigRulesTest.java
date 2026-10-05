@@ -5,11 +5,11 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.models.ConfigFile;
-import ru.akvine.zond.rules.logical.CheckDdlAutoRule;
-import ru.akvine.zond.rules.performance.CheckOpenInViewRule;
-import ru.akvine.zond.rules.security.CheckActuatorExposureRule;
-import ru.akvine.zond.rules.security.CheckSecretInConfigRule;
-import ru.akvine.zond.rules.security.CheckStacktraceExposureRule;
+import ru.akvine.zond.rules.logical.DdlAutoRule;
+import ru.akvine.zond.rules.performance.OpenInViewRule;
+import ru.akvine.zond.rules.security.ActuatorExposureRule;
+import ru.akvine.zond.rules.security.SecretInConfigRule;
+import ru.akvine.zond.rules.security.StacktraceExposureRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -75,29 +75,29 @@ class ConfigRulesTest {
 
     @Test
     void ddlAuto() {
-        assertThat(check(new CheckDdlAutoRule())).containsExactly("application.properties:3", "application.yml:5");
+        assertThat(check(new DdlAutoRule())).containsExactly("application.properties:3", "application.yml:5");
     }
 
     @Test
     void openInView() {
         // В .properties свойство не задано (по умолчанию включено), в .yml включено явно
-        assertThat(check(new CheckOpenInViewRule())).containsExactly("application.properties:1", "application.yml:3");
+        assertThat(check(new OpenInViewRule())).containsExactly("application.properties:1", "application.yml:3");
     }
 
     @Test
     void actuatorExposure() {
-        assertThat(check(new CheckActuatorExposureRule()))
+        assertThat(check(new ActuatorExposureRule()))
                 .containsExactly("application.properties:4", "application.yml:12");
     }
 
     @Test
     void stacktraceExposure() {
-        assertThat(check(new CheckStacktraceExposureRule())).containsExactly("application.properties:5");
+        assertThat(check(new StacktraceExposureRule())).containsExactly("application.properties:5");
     }
 
     @Test
     void secretInConfig() {
-        assertThat(check(new CheckSecretInConfigRule())).containsExactly("application.properties:2", "application.yml:7");
+        assertThat(check(new SecretInConfigRule())).containsExactly("application.properties:2", "application.yml:7");
     }
 
     private List<String> check(ConfigRule rule) {

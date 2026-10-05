@@ -2,17 +2,17 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckRepositoryCollectionParameterRule;
-import ru.akvine.zond.rules.exceptions.CheckSingleResultWithoutHandlingRule;
-import ru.akvine.zond.rules.logical.CheckConstraintOnWrongTypeRule;
-import ru.akvine.zond.rules.logical.CheckConstraintWithoutValidatedRule;
-import ru.akvine.zond.rules.logical.CheckJdbcTransactionWithoutRollbackRule;
-import ru.akvine.zond.rules.logical.CheckModifyingQueryMisuseRule;
-import ru.akvine.zond.rules.logical.CheckNativePagingWithoutCountQueryRule;
-import ru.akvine.zond.rules.logical.CheckNestedDtoWithoutValidRule;
-import ru.akvine.zond.rules.logical.CheckQueryParameterMismatchRule;
-import ru.akvine.zond.rules.performance.CheckFetchJoinWithPaginationRule;
-import ru.akvine.zond.rules.performance.CheckSelectStarRule;
+import ru.akvine.zond.rules.codesmell.RepositoryCollectionParameterRule;
+import ru.akvine.zond.rules.exceptions.SingleResultWithoutHandlingRule;
+import ru.akvine.zond.rules.logical.ConstraintOnWrongTypeRule;
+import ru.akvine.zond.rules.logical.ConstraintWithoutValidatedRule;
+import ru.akvine.zond.rules.logical.JdbcTransactionWithoutRollbackRule;
+import ru.akvine.zond.rules.logical.ModifyingQueryMisuseRule;
+import ru.akvine.zond.rules.logical.NativePagingWithoutCountQueryRule;
+import ru.akvine.zond.rules.logical.NestedDtoWithoutValidRule;
+import ru.akvine.zond.rules.logical.QueryParameterMismatchRule;
+import ru.akvine.zond.rules.performance.FetchJoinWithPaginationRule;
+import ru.akvine.zond.rules.performance.SelectStarRule;
 
 import java.util.List;
 import java.util.Map;
@@ -26,7 +26,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void modifyingQueryMisuse() {
-        assertThat(RuleTests.lines(new CheckModifyingQueryMisuseRule(), """
+        assertThat(RuleTests.lines(new ModifyingQueryMisuseRule(), """
                 interface Users {
                     @Query("update User u set u.active = false")
                     void deactivate();
@@ -44,7 +44,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void queryParameterMismatch() {
-        List<Violation> found = RuleTests.check(new CheckQueryParameterMismatchRule(), """
+        List<Violation> found = RuleTests.check(new QueryParameterMismatchRule(), """
                 interface Users {
                     @Query("select u from User u where u.name = :name and u.age > :minAge")
                     List<User> byName(@Param("name") String name, @Param("age") int age);
@@ -71,7 +71,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void fetchJoinWithPagination() {
-        assertThat(RuleTests.lines(new CheckFetchJoinWithPaginationRule(), """
+        assertThat(RuleTests.lines(new FetchJoinWithPaginationRule(), """
                 interface Orders {
                     @Query("select o from Order o join fetch o.items")
                     Page<Order> withItems(Pageable pageable);
@@ -85,7 +85,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void nativePagingWithoutCountQuery() {
-        assertThat(RuleTests.lines(new CheckNativePagingWithoutCountQueryRule(), """
+        assertThat(RuleTests.lines(new NativePagingWithoutCountQueryRule(), """
                 interface Orders {
                     @Query(value = "select id from orders", nativeQuery = true)
                     Page<Order> page(Pageable pageable);
@@ -99,7 +99,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void selectStar() {
-        assertThat(RuleTests.lines(new CheckSelectStarRule(), """
+        assertThat(RuleTests.lines(new SelectStarRule(), """
                 class Sample {
                     void run() {
                         jdbc.query("select * from users", mapper);
@@ -113,7 +113,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void singleResultWithoutHandling() {
-        assertThat(RuleTests.lines(new CheckSingleResultWithoutHandlingRule(), """
+        assertThat(RuleTests.lines(new SingleResultWithoutHandlingRule(), """
                 class Sample {
                     User one(Long id) {
                         return em.createQuery("select u from User u where u.id = :id", User.class).getSingleResult();
@@ -137,7 +137,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void jdbcTransactionWithoutRollback() {
-        assertThat(RuleTests.lines(new CheckJdbcTransactionWithoutRollbackRule(), """
+        assertThat(RuleTests.lines(new JdbcTransactionWithoutRollbackRule(), """
                 class Sample {
                     void transfer(Connection connection) throws SQLException {
                         connection.setAutoCommit(false);
@@ -159,7 +159,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void constraintOnWrongType() {
-        List<Violation> found = RuleTests.check(new CheckConstraintOnWrongTypeRule(), """
+        List<Violation> found = RuleTests.check(new ConstraintOnWrongTypeRule(), """
                 class Request {
                     @NotNull
                     private int count;
@@ -189,7 +189,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void constraintWithoutValidated() {
-        assertThat(RuleTests.lines(new CheckConstraintWithoutValidatedRule(), """
+        assertThat(RuleTests.lines(new ConstraintWithoutValidatedRule(), """
                 @Service
                 class Orders {
                     void place(@NotNull Order order) {}
@@ -209,7 +209,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void nestedDtoWithoutValid() {
-        List<Violation> found = RuleTests.checkProject(new CheckNestedDtoWithoutValidRule(), Map.of(
+        List<Violation> found = RuleTests.checkProject(new NestedDtoWithoutValidRule(), Map.of(
                 "Address.java", "class Address { @NotBlank private String city; }",
                 "OrderRequest.java", """
                         class OrderRequest {
@@ -231,7 +231,7 @@ class ValidationAndQueryRulesTest {
 
     @Test
     void repositoryCollectionParameter() {
-        assertThat(RuleTests.lines(new CheckRepositoryCollectionParameterRule(), """
+        assertThat(RuleTests.lines(new RepositoryCollectionParameterRule(), """
                 interface UserRepository extends JpaRepository<User, Long> {
                     List<User> findByIdIn(List<Long> ids);
                     List<User> findByNameIn(Collection<String> names);

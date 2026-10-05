@@ -2,17 +2,17 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.performance.CheckInMemoryWorkbookRule;
-import ru.akvine.zond.rules.security.CheckCommandInjectionRule;
-import ru.akvine.zond.rules.security.CheckDisabledSecurityRule;
-import ru.akvine.zond.rules.security.CheckHeaderInjectionRule;
-import ru.akvine.zond.rules.security.CheckInsecureRandomRule;
-import ru.akvine.zond.rules.security.CheckRequestBodyWithoutValidRule;
-import ru.akvine.zond.rules.security.CheckSeededSecureRandomRule;
-import ru.akvine.zond.rules.security.CheckTrustAllSslRule;
-import ru.akvine.zond.rules.security.CheckUnboundedRequestCollectionRule;
-import ru.akvine.zond.rules.security.CheckUnsafeDeserializationRule;
-import ru.akvine.zond.rules.security.CheckWeakHashRule;
+import ru.akvine.zond.rules.performance.InMemoryWorkbookRule;
+import ru.akvine.zond.rules.security.CommandInjectionRule;
+import ru.akvine.zond.rules.security.DisabledSecurityRule;
+import ru.akvine.zond.rules.security.HeaderInjectionRule;
+import ru.akvine.zond.rules.security.InsecureRandomRule;
+import ru.akvine.zond.rules.security.RequestBodyWithoutValidRule;
+import ru.akvine.zond.rules.security.SeededSecureRandomRule;
+import ru.akvine.zond.rules.security.TrustAllSslRule;
+import ru.akvine.zond.rules.security.UnboundedRequestCollectionRule;
+import ru.akvine.zond.rules.security.UnsafeDeserializationRule;
+import ru.akvine.zond.rules.security.WeakHashRule;
 
 import java.util.List;
 
@@ -25,7 +25,7 @@ class SecurityRulesTest {
 
     @Test
     void weakHash() {
-        assertThat(RuleTests.lines(new CheckWeakHashRule(), """
+        assertThat(RuleTests.lines(new WeakHashRule(), """
                 class Sample {
                     void run(String input) throws Exception {
                         MessageDigest.getInstance("MD5");
@@ -41,7 +41,7 @@ class SecurityRulesTest {
 
     @Test
     void disabledSecurity() {
-        List<Violation> violations = RuleTests.check(new CheckDisabledSecurityRule(), """
+        List<Violation> violations = RuleTests.check(new DisabledSecurityRule(), """
                 class Config {
                     void configure(HttpSecurity http, CorsRegistry registry) throws Exception {
                         http.csrf(AbstractHttpConfigurer::disable);
@@ -70,7 +70,7 @@ class SecurityRulesTest {
 
     @Test
     void headerInjection() {
-        List<Violation> violations = RuleTests.check(new CheckHeaderInjectionRule(), """
+        List<Violation> violations = RuleTests.check(new HeaderInjectionRule(), """
                 class Sample {
                     ResponseEntity<byte[]> run(String fileName, HttpServletResponse response) {
                         response.setHeader("Content-Disposition", "attachment; filename=" + fileName + ";");
@@ -88,7 +88,7 @@ class SecurityRulesTest {
 
     @Test
     void seededSecureRandom() {
-        assertThat(RuleTests.lines(new CheckSeededSecureRandomRule(), """
+        assertThat(RuleTests.lines(new SeededSecureRandomRule(), """
                 class Sample {
                     void run(byte[] seed, Config config) throws Exception {
                         SecureRandom random = SecureRandom.getInstance("SHA1PRNG");
@@ -105,7 +105,7 @@ class SecurityRulesTest {
 
     @Test
     void inMemoryWorkbook() {
-        assertThat(RuleTests.lines(new CheckInMemoryWorkbookRule(), """
+        assertThat(RuleTests.lines(new InMemoryWorkbookRule(), """
                 class Sample {
                     void run(InputStream in) throws Exception {
                         Workbook a = new XSSFWorkbook();
@@ -118,7 +118,7 @@ class SecurityRulesTest {
 
     @Test
     void unboundedRequestCollection() {
-        assertThat(RuleTests.lines(new CheckUnboundedRequestCollectionRule(), """
+        assertThat(RuleTests.lines(new UnboundedRequestCollectionRule(), """
                 class GenerateRequest {
                     private List<Column> columns;
                     @Size(max = 100)
@@ -138,7 +138,7 @@ class SecurityRulesTest {
 
     @Test
     void requestBodyWithoutValid() {
-        assertThat(RuleTests.lines(new CheckRequestBodyWithoutValidRule(), """
+        assertThat(RuleTests.lines(new RequestBodyWithoutValidRule(), """
                 class Controller {
                     void create(@RequestBody OrderDto order) {}
                     void update(@Valid @RequestBody OrderDto order) {}
@@ -150,7 +150,7 @@ class SecurityRulesTest {
 
     @Test
     void insecureRandom() {
-        assertThat(RuleTests.lines(new CheckInsecureRandomRule(), """
+        assertThat(RuleTests.lines(new InsecureRandomRule(), """
                 class TokenService {
                     String next() {
                         return String.valueOf(new Random().nextInt());
@@ -168,7 +168,7 @@ class SecurityRulesTest {
 
     @Test
     void commandInjection() {
-        assertThat(RuleTests.lines(new CheckCommandInjectionRule(), """
+        assertThat(RuleTests.lines(new CommandInjectionRule(), """
                 class Sample {
                     void run(String host) throws Exception {
                         Runtime.getRuntime().exec("ping " + host);
@@ -182,7 +182,7 @@ class SecurityRulesTest {
 
     @Test
     void unsafeDeserialization() {
-        assertThat(RuleTests.lines(new CheckUnsafeDeserializationRule(), """
+        assertThat(RuleTests.lines(new UnsafeDeserializationRule(), """
                 class Sample {
                     Object run(InputStream in) throws Exception {
                         return new ObjectInputStream(in).readObject();
@@ -193,7 +193,7 @@ class SecurityRulesTest {
 
     @Test
     void trustAllSsl() {
-        assertThat(RuleTests.lines(new CheckTrustAllSslRule(), """
+        assertThat(RuleTests.lines(new TrustAllSslRule(), """
                 class Sample {
                     void run(HttpsURLConnection connection) {
                         connection.setHostnameVerifier((host, session) -> true);

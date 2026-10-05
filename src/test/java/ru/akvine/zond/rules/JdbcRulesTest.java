@@ -1,11 +1,11 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.logical.CheckDeleteWithoutWhereRule;
-import ru.akvine.zond.rules.logical.CheckUpdateWithoutWhereRule;
-import ru.akvine.zond.rules.performance.CheckMissingBatchProcessingRule;
-import ru.akvine.zond.rules.resources.CheckManualResourceCloseRule;
-import ru.akvine.zond.rules.security.CheckStatementInsteadOfPreparedRule;
+import ru.akvine.zond.rules.logical.DeleteWithoutWhereRule;
+import ru.akvine.zond.rules.logical.UpdateWithoutWhereRule;
+import ru.akvine.zond.rules.performance.MissingBatchProcessingRule;
+import ru.akvine.zond.rules.resources.ManualResourceCloseRule;
+import ru.akvine.zond.rules.security.StatementInsteadOfPreparedRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -31,7 +31,7 @@ class JdbcRulesTest {
 
     @Test
     void statementInsteadOfPrepared() {
-        assertThat(RuleTests.lines(new CheckStatementInsteadOfPreparedRule(), """
+        assertThat(RuleTests.lines(new StatementInsteadOfPreparedRule(), """
                 @RestController
                 class Sample {
                     @GetMapping("/run")
@@ -63,17 +63,17 @@ class JdbcRulesTest {
 
     @Test
     void deleteWithoutWhere() {
-        assertThat(RuleTests.lines(new CheckDeleteWithoutWhereRule(), QUERIES)).containsExactly(2, 5);
+        assertThat(RuleTests.lines(new DeleteWithoutWhereRule(), QUERIES)).containsExactly(2, 5);
     }
 
     @Test
     void updateWithoutWhere() {
-        assertThat(RuleTests.lines(new CheckUpdateWithoutWhereRule(), QUERIES)).containsExactly(6, 11);
+        assertThat(RuleTests.lines(new UpdateWithoutWhereRule(), QUERIES)).containsExactly(6, 11);
     }
 
     @Test
     void missingBatchProcessing() {
-        assertThat(RuleTests.lines(new CheckMissingBatchProcessingRule(), """
+        assertThat(RuleTests.lines(new MissingBatchProcessingRule(), """
                 class Sample {
                     void run(List<Order> orders, PreparedStatement statement) throws SQLException {
                         for (Order order : orders) {
@@ -91,7 +91,7 @@ class JdbcRulesTest {
 
     @Test
     void manualResourceClose() {
-        assertThat(RuleTests.lines(new CheckManualResourceCloseRule(), """
+        assertThat(RuleTests.lines(new ManualResourceCloseRule(), """
                 class Sample {
                     void run() throws IOException {
                         FileInputStream in = new FileInputStream("a.txt");

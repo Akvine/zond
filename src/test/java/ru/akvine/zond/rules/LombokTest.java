@@ -7,9 +7,9 @@ import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.concurrency.CheckMutableStateInSingletonBeanRule;
-import ru.akvine.zond.rules.logical.CheckIgnoredResultRule;
-import ru.akvine.zond.rules.resources.CheckUnclosedResourceRule;
+import ru.akvine.zond.rules.concurrency.MutableStateInSingletonBeanRule;
+import ru.akvine.zond.rules.logical.IgnoredResultRule;
+import ru.akvine.zond.rules.resources.UnclosedResourceRule;
 import ru.akvine.zond.rules.support.LocalTypes;
 
 import java.io.IOException;
@@ -172,7 +172,7 @@ class LombokTest {
                     }
                 }
                 """));
-        CheckIgnoredResultRule rule = new CheckIgnoredResultRule();
+        IgnoredResultRule rule = new IgnoredResultRule();
 
         List<Integer> lines = sources.stream()
                 .flatMap(source -> rule.check(source).stream())
@@ -184,7 +184,7 @@ class LombokTest {
 
     @Test
     void generatedSetterMakesSingletonStateMutable() {
-        assertThat(RuleTests.check(new CheckMutableStateInSingletonBeanRule(), """
+        assertThat(RuleTests.check(new MutableStateInSingletonBeanRule(), """
                 @Service
                 @Setter
                 class Counter {
@@ -200,7 +200,7 @@ class LombokTest {
 
     @Test
     void cleanupClosesResource() {
-        assertThat(RuleTests.lines(new CheckUnclosedResourceRule(), """
+        assertThat(RuleTests.lines(new UnclosedResourceRule(), """
                 class Sample {
                     void run() throws Exception {
                         @Cleanup FileReader managed = new FileReader("a.txt");

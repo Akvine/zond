@@ -1,9 +1,9 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.performance.CheckLogConcatenationRule;
-import ru.akvine.zond.rules.performance.CheckLoggingInLoopRule;
-import ru.akvine.zond.rules.security.CheckAuthorizationHeaderLoggingRule;
+import ru.akvine.zond.rules.performance.LogConcatenationRule;
+import ru.akvine.zond.rules.performance.LoggingInLoopRule;
+import ru.akvine.zond.rules.security.AuthorizationHeaderLoggingRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,7 +14,7 @@ class LoggingRulesTest {
 
     @Test
     void logConcatenation() {
-        assertThat(RuleTests.lines(new CheckLogConcatenationRule(), """
+        assertThat(RuleTests.lines(new LogConcatenationRule(), """
                 class Sample {
                     void run(Long id, Exception e) {
                         log.info("User " + id + " saved");
@@ -30,7 +30,7 @@ class LoggingRulesTest {
 
     @Test
     void loggingInLoop() {
-        assertThat(RuleTests.lines(new CheckLoggingInLoopRule(), """
+        assertThat(RuleTests.lines(new LoggingInLoopRule(), """
                 class Sample {
                     void run(List<Order> orders) {
                         for (Order order : orders) {
@@ -46,7 +46,7 @@ class LoggingRulesTest {
 
     @Test
     void authorizationHeaderLogging() {
-        assertThat(RuleTests.lines(new CheckAuthorizationHeaderLoggingRule(), """
+        assertThat(RuleTests.lines(new AuthorizationHeaderLoggingRule(), """
                 class Sample {
                     void run(HttpServletRequest request, String authHeader, HttpHeaders headers) {
                         log.info("Header {}", request.getHeader("Authorization"));

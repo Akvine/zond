@@ -5,8 +5,8 @@ import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckUnusedClassRule;
-import ru.akvine.zond.rules.codesmell.CheckUnusedMethodRule;
+import ru.akvine.zond.rules.codesmell.UnusedClassRule;
+import ru.akvine.zond.rules.codesmell.UnusedMethodRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -106,7 +106,7 @@ class UnusedDeclarationRulesTest {
 
     @Test
     void findsMethodsNobodyCalls() {
-        assertThat(names(RuleTests.checkProject(new CheckUnusedMethodRule(), PROJECT))).containsExactlyInAnyOrder(
+        assertThat(names(RuleTests.checkProject(new UnusedMethodRule(), PROJECT))).containsExactlyInAnyOrder(
                 // Вызов из самого себя использованием не считается
                 "Report.unusedHelper", "Report.recursive",
                 // @Deprecated не делает метод точкой входа, в отличие от @Scheduled
@@ -120,7 +120,7 @@ class UnusedDeclarationRulesTest {
     @Test
     void findsClassesNobodyRefersTo() {
         // Controller создает Spring, Marker - аннотация, вложенный Inner отдельно не перечисляется
-        assertThat(names(RuleTests.checkProject(new CheckUnusedClassRule(), PROJECT))).containsExactly("Orphan");
+        assertThat(names(RuleTests.checkProject(new UnusedClassRule(), PROJECT))).containsExactly("Orphan");
     }
 
     @Test
@@ -143,7 +143,7 @@ class UnusedDeclarationRulesTest {
                 "Ping.java", "class Ping { Pong pong; }",
                 "Pong.java", "class Pong { Ping ping; }");
 
-        List<Violation> methods = RuleTests.checkProject(new CheckUnusedMethodRule(), files);
+        List<Violation> methods = RuleTests.checkProject(new UnusedMethodRule(), files);
         // lonely() без единого вызова находит правило о приватных методах, а deep() мертв из-за цепочки
         assertThat(names(methods)).containsExactlyInAnyOrder(
                 "Service.legacy", "Service.helper", "Service.deep", "Formatter.format");
@@ -152,7 +152,7 @@ class UnusedDeclarationRulesTest {
                 .contains("вызывается только из неиспользуемого кода (Service.legacy)");
         assertThat(messageAbout(methods, "Formatter.format")).contains("(Service.legacy)");
 
-        List<Violation> classes = RuleTests.checkProject(new CheckUnusedClassRule(), files);
+        List<Violation> classes = RuleTests.checkProject(new UnusedClassRule(), files);
         // Ping и Pong ссылаются только друг на друга
         assertThat(names(classes)).containsExactlyInAnyOrder("Old", "OldHelper", "Ping", "Pong");
         assertThat(messageAbout(classes, "Old")).contains("нигде в проекте не используется");
@@ -170,8 +170,8 @@ class UnusedDeclarationRulesTest {
 
     @Test
     void singleFileIsNotEnoughToJudge() {
-        assertThat(RuleTests.check(new CheckUnusedMethodRule(), "class Report { void print() {} }")).isEmpty();
-        assertThat(RuleTests.check(new CheckUnusedClassRule(), "class Report { void print() {} }")).isEmpty();
+        assertThat(RuleTests.check(new UnusedMethodRule(), "class Report { void print() {} }")).isEmpty();
+        assertThat(RuleTests.check(new UnusedClassRule(), "class Report { void print() {} }")).isEmpty();
     }
 
     @Test
@@ -180,7 +180,7 @@ class UnusedDeclarationRulesTest {
                 "Node.java", "class Node { Node next; static Node empty() { return new Node(); } }",
                 "Main.java", "class Main { public static void main(String[] args) {} }");
 
-        assertThat(names(RuleTests.checkProject(new CheckUnusedClassRule(), files))).containsExactly("Node");
+        assertThat(names(RuleTests.checkProject(new UnusedClassRule(), files))).containsExactly("Node");
     }
 
     @Test
@@ -212,13 +212,13 @@ class UnusedDeclarationRulesTest {
                         """);
 
         // Решатель типов знает, что add() и clear() вызваны у списка, а не у корзины
-        assertThat(names(checkResolved(new CheckUnusedMethodRule(), files)))
+        assertThat(names(checkResolved(new UnusedMethodRule(), files)))
                 .containsExactlyInAnyOrder("Basket.add", "Basket.clear");
 
         // Без него вызов засчитывается всем методам с таким именем
         Map<String, String> unresolved = new HashMap<>();
         files.forEach((name, code) -> unresolved.put(name + ".java", code));
-        assertThat(RuleTests.checkProject(new CheckUnusedMethodRule(), unresolved)).isEmpty();
+        assertThat(RuleTests.checkProject(new UnusedMethodRule(), unresolved)).isEmpty();
     }
 
     @Test
@@ -229,8 +229,8 @@ class UnusedDeclarationRulesTest {
 
         List<SourceFile> sources = new FileSystemSourceLoader().load(dir).sources();
 
-        assertThat(new CheckUnusedClassRule().checkProject(sources)).isEmpty();
-        assertThat(new CheckUnusedMethodRule().checkProject(sources)).isEmpty();
+        assertThat(new UnusedClassRule().checkProject(sources)).isEmpty();
+        assertThat(new UnusedMethodRule().checkProject(sources)).isEmpty();
     }
 
     /**

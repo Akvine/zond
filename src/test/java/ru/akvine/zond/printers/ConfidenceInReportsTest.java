@@ -83,9 +83,9 @@ class ConfidenceInReportsTest {
     private ScanResult result() {
         Path file = dir.resolve("Users.java");
         List<Violation> violations = List.of(
-                new Violation(ErrorLevel.CRITICAL, ErrorType.SECURITY, "jr:18", "CheckSqlConcatenationRule", file, 5,
+                new Violation(ErrorLevel.CRITICAL, ErrorType.SECURITY, "jr:18", "SqlConcatenationRule", file, 5,
                         "В запрос попадают данные запроса", Confidence.CONFIRMED),
-                new Violation(ErrorLevel.MINOR, ErrorType.SECURITY, "jr:251", "CheckSecretComparisonRule", file, 9,
+                new Violation(ErrorLevel.MINOR, ErrorType.SECURITY, "jr:251", "SecretComparisonRule", file, 9,
                         "Сравнение секретов", Confidence.SUSPICION));
         return new ScanResult(dir, 1, 2, 0, violations, 0, false, List.of(), 4);
     }

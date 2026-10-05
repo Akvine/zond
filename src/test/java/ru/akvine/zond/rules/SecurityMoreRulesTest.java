@@ -1,14 +1,14 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.security.CheckExceptionMessageToClientRule;
-import ru.akvine.zond.rules.security.CheckOpenRedirectRule;
-import ru.akvine.zond.rules.security.CheckPathTraversalRule;
-import ru.akvine.zond.rules.security.CheckSecretInToStringRule;
-import ru.akvine.zond.rules.security.CheckSensitiveDataLoggingRule;
-import ru.akvine.zond.rules.security.CheckWeakCipherRule;
-import ru.akvine.zond.rules.security.CheckXxeRule;
-import ru.akvine.zond.rules.security.CheckZipSlipRule;
+import ru.akvine.zond.rules.security.ExceptionMessageToClientRule;
+import ru.akvine.zond.rules.security.OpenRedirectRule;
+import ru.akvine.zond.rules.security.PathTraversalRule;
+import ru.akvine.zond.rules.security.SecretInToStringRule;
+import ru.akvine.zond.rules.security.SensitiveDataLoggingRule;
+import ru.akvine.zond.rules.security.WeakCipherRule;
+import ru.akvine.zond.rules.security.XxeRule;
+import ru.akvine.zond.rules.security.ZipSlipRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -19,7 +19,7 @@ class SecurityMoreRulesTest {
 
     @Test
     void weakCipher() {
-        assertThat(RuleTests.lines(new CheckWeakCipherRule(), """
+        assertThat(RuleTests.lines(new WeakCipherRule(), """
                 class Sample {
                     void run(byte[] key) throws Exception {
                         Cipher a = Cipher.getInstance("DES");
@@ -35,7 +35,7 @@ class SecurityMoreRulesTest {
 
     @Test
     void xxe() {
-        CheckXxeRule rule = new CheckXxeRule();
+        XxeRule rule = new XxeRule();
 
         assertThat(RuleTests.lines(rule, """
                 class Sample {
@@ -57,7 +57,7 @@ class SecurityMoreRulesTest {
 
     @Test
     void pathTraversal() {
-        assertThat(RuleTests.lines(new CheckPathTraversalRule(), """
+        assertThat(RuleTests.lines(new PathTraversalRule(), """
                 class Controller {
                     byte[] download(@RequestParam String name, MultipartFile upload) throws IOException {
                         File file = new File("/data/" + name);
@@ -81,7 +81,7 @@ class SecurityMoreRulesTest {
 
     @Test
     void openRedirect() {
-        assertThat(RuleTests.lines(new CheckOpenRedirectRule(), """
+        assertThat(RuleTests.lines(new OpenRedirectRule(), """
                 class Controller {
                     String login(@RequestParam String returnUrl, HttpServletResponse response, Long id) throws IOException {
                         response.sendRedirect(returnUrl);
@@ -98,7 +98,7 @@ class SecurityMoreRulesTest {
 
     @Test
     void exceptionMessageToClient() {
-        assertThat(RuleTests.lines(new CheckExceptionMessageToClientRule(), """
+        assertThat(RuleTests.lines(new ExceptionMessageToClientRule(), """
                 class Handler {
                     @ExceptionHandler(Exception.class)
                     ResponseEntity<String> handle(Exception e) {
@@ -115,7 +115,7 @@ class SecurityMoreRulesTest {
 
     @Test
     void secretInToString() {
-        assertThat(RuleTests.lines(new CheckSecretInToStringRule(), """
+        assertThat(RuleTests.lines(new SecretInToStringRule(), """
                 @Data
                 class User {
                     private String name;
@@ -135,7 +135,7 @@ class SecurityMoreRulesTest {
 
     @Test
     void sensitiveDataLogging() {
-        assertThat(RuleTests.lines(new CheckSensitiveDataLoggingRule(), """
+        assertThat(RuleTests.lines(new SensitiveDataLoggingRule(), """
                 class Sample {
                     void run(String password, User user, String name) {
                         log.info("Login {} with {}", name, password);
@@ -149,7 +149,7 @@ class SecurityMoreRulesTest {
 
     @Test
     void zipSlip() {
-        assertThat(RuleTests.lines(new CheckZipSlipRule(), """
+        assertThat(RuleTests.lines(new ZipSlipRule(), """
                 class Sample {
                     void unzip(ZipInputStream zip, Path target) throws IOException {
                         ZipEntry entry = zip.getNextEntry();

@@ -1,16 +1,16 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.codesmell.CheckOptionalAsFieldOrParameterRule;
-import ru.akvine.zond.rules.concurrency.CheckSwallowedInterruptRule;
-import ru.akvine.zond.rules.concurrency.CheckSynchronizedOnBadLockRule;
-import ru.akvine.zond.rules.concurrency.CheckVolatileNonAtomicRule;
-import ru.akvine.zond.rules.datetime.CheckDatePatternRule;
-import ru.akvine.zond.rules.exceptions.CheckUnhandledNumberFormatRule;
-import ru.akvine.zond.rules.logical.CheckArrayMethodsRule;
-import ru.akvine.zond.rules.logical.CheckArraysAsListPrimitiveRule;
-import ru.akvine.zond.rules.logical.CheckOptionalOfNullableRule;
-import ru.akvine.zond.rules.performance.CheckOptionalOrElseCallRule;
+import ru.akvine.zond.rules.codesmell.OptionalAsFieldOrParameterRule;
+import ru.akvine.zond.rules.concurrency.SwallowedInterruptRule;
+import ru.akvine.zond.rules.concurrency.SynchronizedOnBadLockRule;
+import ru.akvine.zond.rules.concurrency.VolatileNonAtomicRule;
+import ru.akvine.zond.rules.datetime.DatePatternRule;
+import ru.akvine.zond.rules.exceptions.UnhandledNumberFormatRule;
+import ru.akvine.zond.rules.logical.ArrayMethodsRule;
+import ru.akvine.zond.rules.logical.ArraysAsListPrimitiveRule;
+import ru.akvine.zond.rules.logical.OptionalOfNullableRule;
+import ru.akvine.zond.rules.performance.OptionalOrElseCallRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,7 +21,7 @@ class JavaExtraRulesTest {
 
     @Test
     void unhandledNumberFormat() {
-        assertThat(RuleTests.lines(new CheckUnhandledNumberFormatRule(), """
+        assertThat(RuleTests.lines(new UnhandledNumberFormatRule(), """
                 class Sample {
                     int run(String value) {
                         int a = Integer.parseInt(value);
@@ -45,7 +45,7 @@ class JavaExtraRulesTest {
 
     @Test
     void swallowedInterrupt() {
-        assertThat(RuleTests.lines(new CheckSwallowedInterruptRule(), """
+        assertThat(RuleTests.lines(new SwallowedInterruptRule(), """
                 class Sample {
                     void run() {
                         try {
@@ -70,7 +70,7 @@ class JavaExtraRulesTest {
 
     @Test
     void synchronizedOnBadLock() {
-        assertThat(RuleTests.lines(new CheckSynchronizedOnBadLockRule(), """
+        assertThat(RuleTests.lines(new SynchronizedOnBadLockRule(), """
                 class Sample {
                     private Object mutableLock = new Object();
                     private final Object lock = new Object();
@@ -89,7 +89,7 @@ class JavaExtraRulesTest {
 
     @Test
     void volatileNonAtomic() {
-        assertThat(RuleTests.lines(new CheckVolatileNonAtomicRule(), """
+        assertThat(RuleTests.lines(new VolatileNonAtomicRule(), """
                 class Sample {
                     private volatile int counter;
                     private volatile boolean stopped;
@@ -111,7 +111,7 @@ class JavaExtraRulesTest {
 
     @Test
     void datePattern() {
-        assertThat(RuleTests.lines(new CheckDatePatternRule(), """
+        assertThat(RuleTests.lines(new DatePatternRule(), """
                 class Sample {
                     DateTimeFormatter a = DateTimeFormatter.ofPattern("YYYY-MM-dd");
                     DateTimeFormatter b = DateTimeFormatter.ofPattern("yyyy-MM-DD");
@@ -128,7 +128,7 @@ class JavaExtraRulesTest {
 
     @Test
     void optionalAsFieldOrParameter() {
-        assertThat(RuleTests.lines(new CheckOptionalAsFieldOrParameterRule(), """
+        assertThat(RuleTests.lines(new OptionalAsFieldOrParameterRule(), """
                 class Sample {
                     private Optional<String> name;
                     private String title;
@@ -143,7 +143,7 @@ class JavaExtraRulesTest {
 
     @Test
     void optionalOrElseCall() {
-        assertThat(RuleTests.lines(new CheckOptionalOrElseCallRule(), """
+        assertThat(RuleTests.lines(new OptionalOrElseCallRule(), """
                 class Sample {
                     void run(Optional<User> user) {
                         User a = user.orElse(loadDefault());
@@ -161,7 +161,7 @@ class JavaExtraRulesTest {
 
     @Test
     void optionalOfNullable() {
-        assertThat(RuleTests.lines(new CheckOptionalOfNullableRule(), """
+        assertThat(RuleTests.lines(new OptionalOfNullableRule(), """
                 class Sample {
                     void run(Map<String, User> map, String key) {
                         Optional<User> a = Optional.of(map.get(key));
@@ -178,7 +178,7 @@ class JavaExtraRulesTest {
 
     @Test
     void arrayMethods() {
-        assertThat(RuleTests.lines(new CheckArrayMethodsRule(), """
+        assertThat(RuleTests.lines(new ArrayMethodsRule(), """
                 class Sample {
                     private byte[] data;
                     boolean run(int[] numbers, int[] other, List<String> list) {
@@ -194,7 +194,7 @@ class JavaExtraRulesTest {
 
     @Test
     void arraysAsListPrimitive() {
-        assertThat(RuleTests.lines(new CheckArraysAsListPrimitiveRule(), """
+        assertThat(RuleTests.lines(new ArraysAsListPrimitiveRule(), """
                 class Sample {
                     void run(int[] numbers, String[] names, Integer[] boxed) {
                         List<int[]> a = Arrays.asList(numbers);

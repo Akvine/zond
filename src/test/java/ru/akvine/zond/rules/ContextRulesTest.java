@@ -8,23 +8,23 @@ import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.loaders.FileSystemTextFileLoader;
 import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckDockerAddInsteadOfCopyRule;
-import ru.akvine.zond.rules.codesmell.CheckDuplicateDependencyRule;
-import ru.akvine.zond.rules.codesmell.CheckTestDependencyInMainScopeRule;
-import ru.akvine.zond.rules.codesmell.CheckUnusedConfigPropertyRule;
-import ru.akvine.zond.rules.logical.CheckConflictingConfigValuesRule;
-import ru.akvine.zond.rules.logical.CheckDockerUnpinnedImageRule;
-import ru.akvine.zond.rules.logical.CheckDuplicatePropertyKeyRule;
-import ru.akvine.zond.rules.logical.CheckMessageBundleMismatchRule;
-import ru.akvine.zond.rules.logical.CheckMissingConfigPropertyRule;
-import ru.akvine.zond.rules.logical.CheckProfilePropertyMissingRule;
-import ru.akvine.zond.rules.logical.CheckSqlChangeWithoutWhereRule;
-import ru.akvine.zond.rules.logical.CheckSqlDestructiveStatementRule;
-import ru.akvine.zond.rules.logical.CheckSqlNotNullWithoutDefaultRule;
-import ru.akvine.zond.rules.logical.CheckUnstableDependencyVersionRule;
-import ru.akvine.zond.rules.performance.CheckSqlForeignKeyWithoutIndexRule;
-import ru.akvine.zond.rules.security.CheckDockerRootUserRule;
-import ru.akvine.zond.rules.security.CheckDockerSecretInImageRule;
+import ru.akvine.zond.rules.codesmell.DockerAddInsteadOfCopyRule;
+import ru.akvine.zond.rules.codesmell.DuplicateDependencyRule;
+import ru.akvine.zond.rules.codesmell.TestDependencyInMainScopeRule;
+import ru.akvine.zond.rules.codesmell.UnusedConfigPropertyRule;
+import ru.akvine.zond.rules.logical.ConflictingConfigValuesRule;
+import ru.akvine.zond.rules.logical.DockerUnpinnedImageRule;
+import ru.akvine.zond.rules.logical.DuplicatePropertyKeyRule;
+import ru.akvine.zond.rules.logical.MessageBundleMismatchRule;
+import ru.akvine.zond.rules.logical.MissingConfigPropertyRule;
+import ru.akvine.zond.rules.logical.ProfilePropertyMissingRule;
+import ru.akvine.zond.rules.logical.SqlChangeWithoutWhereRule;
+import ru.akvine.zond.rules.logical.SqlDestructiveStatementRule;
+import ru.akvine.zond.rules.logical.SqlNotNullWithoutDefaultRule;
+import ru.akvine.zond.rules.logical.UnstableDependencyVersionRule;
+import ru.akvine.zond.rules.performance.SqlForeignKeyWithoutIndexRule;
+import ru.akvine.zond.rules.security.DockerRootUserRule;
+import ru.akvine.zond.rules.security.DockerSecretInImageRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -193,37 +193,37 @@ class ContextRulesTest {
 
     @Test
     void sqlMigrations() {
-        assertThat(check(new CheckSqlDestructiveStatementRule()))
+        assertThat(check(new SqlDestructiveStatementRule()))
                 .containsExactly("V2__changes.sql:10", "V2__changes.sql:4", "V2__changes.sql:5");
-        assertThat(check(new CheckSqlNotNullWithoutDefaultRule())).containsExactly("V2__changes.sql:1");
+        assertThat(check(new SqlNotNullWithoutDefaultRule())).containsExactly("V2__changes.sql:1");
         // Индекс по manager_id создан отдельной командой, по customer_id его нет
-        assertThat(check(new CheckSqlForeignKeyWithoutIndexRule())).containsExactly("V1__init.sql:6");
+        assertThat(check(new SqlForeignKeyWithoutIndexRule())).containsExactly("V1__init.sql:6");
         // Точка с запятой внутри строки команду не завершает, а закомментированный delete не считается
-        assertThat(check(new CheckSqlChangeWithoutWhereRule())).containsExactly("V2__changes.sql:7");
+        assertThat(check(new SqlChangeWithoutWhereRule())).containsExactly("V2__changes.sql:7");
     }
 
     @Test
     void buildFiles() {
-        assertThat(check(new CheckUnstableDependencyVersionRule())).containsExactly("build.gradle:3", "pom.xml:13");
-        assertThat(check(new CheckDuplicateDependencyRule())).containsExactly("build.gradle:8", "pom.xml:33");
+        assertThat(check(new UnstableDependencyVersionRule())).containsExactly("build.gradle:3", "pom.xml:13");
+        assertThat(check(new DuplicateDependencyRule())).containsExactly("build.gradle:8", "pom.xml:33");
         // Исключения и dependencyManagement зависимостями не считаются
-        assertThat(check(new CheckTestDependencyInMainScopeRule())).containsExactly("build.gradle:4", "pom.xml:18");
+        assertThat(check(new TestDependencyInMainScopeRule())).containsExactly("build.gradle:4", "pom.xml:18");
     }
 
     @Test
     void dockerfile() {
-        assertThat(check(new CheckDockerRootUserRule())).containsExactly("Dockerfile:4");
+        assertThat(check(new DockerRootUserRule())).containsExactly("Dockerfile:4");
         // FROM base во втором файле - имя этапа сборки, а не образ
-        assertThat(check(new CheckDockerUnpinnedImageRule())).containsExactly("Dockerfile:4");
-        assertThat(check(new CheckDockerAddInsteadOfCopyRule())).containsExactly("Dockerfile:2");
-        assertThat(check(new CheckDockerSecretInImageRule())).containsExactly("Dockerfile:6");
+        assertThat(check(new DockerUnpinnedImageRule())).containsExactly("Dockerfile:4");
+        assertThat(check(new DockerAddInsteadOfCopyRule())).containsExactly("Dockerfile:2");
+        assertThat(check(new DockerSecretInImageRule())).containsExactly("Dockerfile:6");
     }
 
     @Test
     void codeAndSettings() {
-        assertThat(check(new CheckMissingConfigPropertyRule())).containsExactly("Settings.java:4");
+        assertThat(check(new MissingConfigPropertyRule())).containsExactly("Settings.java:4");
         // app.mail.* читает @ConfigurationProperties, app.feature.enabled - @ConditionalOnProperty
-        assertThat(check(new CheckUnusedConfigPropertyRule())).containsExactly(
+        assertThat(check(new UnusedConfigPropertyRule())).containsExactly(
                 "application-dev.properties:1", "application-dev.properties:2",
                 "application-prod.properties:1", "application-prod.properties:2",
                 "application.properties:2");
@@ -231,17 +231,17 @@ class ContextRulesTest {
 
     @Test
     void messagesAndSettingsFiles() {
-        List<Violation> bundle = new CheckMessageBundleMismatchRule().checkContext(context);
+        List<Violation> bundle = new MessageBundleMismatchRule().checkContext(context);
         assertThat(bundle).extracting(this::place)
                 .containsExactlyInAnyOrder("messages_ru.properties:1", "messages_ru.properties:2");
         assertThat(bundle).extracting(Violation::message)
                 .anyMatch(message -> message.contains("only.default"))
                 .anyMatch(message -> message.contains("[{0}]") && message.contains("[{0}, {1}]"));
 
-        assertThat(check(new CheckDuplicatePropertyKeyRule()))
+        assertThat(check(new DuplicatePropertyKeyRule()))
                 .containsExactly("application.properties:7", "messages_ru.properties:3");
 
-        List<Violation> profiles = new CheckProfilePropertyMissingRule().checkContext(context);
+        List<Violation> profiles = new ProfilePropertyMissingRule().checkContext(context);
         assertThat(profiles).extracting(this::place)
                 .containsExactlyInAnyOrder("application-dev.properties:1", "application-prod.properties:1");
         assertThat(profiles).extracting(Violation::message)
@@ -249,7 +249,7 @@ class ContextRulesTest {
                 .anyMatch(message -> message.contains("'prod'") && message.contains("app.dev-only"));
 
         // app.mail.host совпадает в обоих файлах, app.name - нет
-        assertThat(check(new CheckConflictingConfigValuesRule())).containsExactly("application.yml:2");
+        assertThat(check(new ConflictingConfigValuesRule())).containsExactly("application.yml:2");
     }
 
     @Test
@@ -257,10 +257,10 @@ class ContextRulesTest {
         Path empty = Files.createDirectories(dir.resolve("empty"));
         ScanContext nothing = new ScanContext(empty, List.of(), List.of(), List.of());
 
-        assertThat(new CheckMissingConfigPropertyRule().checkContext(nothing)).isEmpty();
-        assertThat(new CheckUnusedConfigPropertyRule().checkContext(nothing)).isEmpty();
-        assertThat(new CheckSqlForeignKeyWithoutIndexRule().checkContext(nothing)).isEmpty();
-        assertThat(new CheckMessageBundleMismatchRule().checkContext(nothing)).isEmpty();
+        assertThat(new MissingConfigPropertyRule().checkContext(nothing)).isEmpty();
+        assertThat(new UnusedConfigPropertyRule().checkContext(nothing)).isEmpty();
+        assertThat(new SqlForeignKeyWithoutIndexRule().checkContext(nothing)).isEmpty();
+        assertThat(new MessageBundleMismatchRule().checkContext(nothing)).isEmpty();
     }
 
     private void write(String path, String content) throws IOException {

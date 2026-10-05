@@ -1,20 +1,20 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.codesmell.CheckManualBeanLookupRule;
-import ru.akvine.zond.rules.codesmell.CheckRepositoryInControllerRule;
-import ru.akvine.zond.rules.concurrency.CheckAsyncOnCommonPoolRule;
-import ru.akvine.zond.rules.concurrency.CheckAsyncSelfInvocationRule;
-import ru.akvine.zond.rules.logical.CheckCascadeToParentRule;
-import ru.akvine.zond.rules.logical.CheckEntityCollectionReplacementRule;
-import ru.akvine.zond.rules.logical.CheckEventListenerInTransactionRule;
-import ru.akvine.zond.rules.logical.CheckModifyingWithoutTransactionalRule;
-import ru.akvine.zond.rules.logical.CheckMoneyInFloatingPointRule;
-import ru.akvine.zond.rules.performance.CheckFindByIdIsPresentRule;
-import ru.akvine.zond.rules.performance.CheckIdentityGenerationRule;
-import ru.akvine.zond.rules.performance.CheckListInManyToManyRule;
-import ru.akvine.zond.rules.performance.CheckOneToManyWithoutMappedByRule;
-import ru.akvine.zond.rules.resources.CheckHttpClientWithoutTimeoutRule;
+import ru.akvine.zond.rules.codesmell.ManualBeanLookupRule;
+import ru.akvine.zond.rules.codesmell.RepositoryInControllerRule;
+import ru.akvine.zond.rules.concurrency.AsyncOnCommonPoolRule;
+import ru.akvine.zond.rules.concurrency.AsyncSelfInvocationRule;
+import ru.akvine.zond.rules.logical.CascadeToParentRule;
+import ru.akvine.zond.rules.logical.EntityCollectionReplacementRule;
+import ru.akvine.zond.rules.logical.EventListenerInTransactionRule;
+import ru.akvine.zond.rules.logical.ModifyingWithoutTransactionalRule;
+import ru.akvine.zond.rules.logical.MoneyInFloatingPointRule;
+import ru.akvine.zond.rules.performance.FindByIdIsPresentRule;
+import ru.akvine.zond.rules.performance.IdentityGenerationRule;
+import ru.akvine.zond.rules.performance.ListInManyToManyRule;
+import ru.akvine.zond.rules.performance.OneToManyWithoutMappedByRule;
+import ru.akvine.zond.rules.resources.HttpClientWithoutTimeoutRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -50,7 +50,7 @@ class SpringMoreRulesTest {
 
     @Test
     void asyncSelfInvocation() {
-        assertThat(RuleTests.lines(new CheckAsyncSelfInvocationRule(), """
+        assertThat(RuleTests.lines(new AsyncSelfInvocationRule(), """
                 class Sample {
                     public void run() {
                         send();
@@ -64,7 +64,7 @@ class SpringMoreRulesTest {
 
     @Test
     void httpClientWithoutTimeout() {
-        CheckHttpClientWithoutTimeoutRule rule = new CheckHttpClientWithoutTimeoutRule();
+        HttpClientWithoutTimeoutRule rule = new HttpClientWithoutTimeoutRule();
 
         assertThat(RuleTests.lines(rule, """
                 class Sample {
@@ -85,7 +85,7 @@ class SpringMoreRulesTest {
 
     @Test
     void modifyingWithoutTransactional() {
-        assertThat(RuleTests.lines(new CheckModifyingWithoutTransactionalRule(), """
+        assertThat(RuleTests.lines(new ModifyingWithoutTransactionalRule(), """
                 interface OrderRepository {
                     @Modifying
                     @Query("update Order o set o.status = :status where o.id = :id")
@@ -105,7 +105,7 @@ class SpringMoreRulesTest {
 
     @Test
     void eventListenerInTransaction() {
-        assertThat(RuleTests.lines(new CheckEventListenerInTransactionRule(), """
+        assertThat(RuleTests.lines(new EventListenerInTransactionRule(), """
                 class Listener {
                     @EventListener
                     public void onCreated(OrderCreated event) {
@@ -129,7 +129,7 @@ class SpringMoreRulesTest {
 
     @Test
     void asyncOnCommonPool() {
-        assertThat(RuleTests.lines(new CheckAsyncOnCommonPoolRule(), """
+        assertThat(RuleTests.lines(new AsyncOnCommonPoolRule(), """
                 class Sample {
                     void run(Executor executor) {
                         CompletableFuture.supplyAsync(() -> load());
@@ -142,7 +142,7 @@ class SpringMoreRulesTest {
 
     @Test
     void repositoryInController() {
-        assertThat(RuleTests.lines(new CheckRepositoryInControllerRule(), """
+        assertThat(RuleTests.lines(new RepositoryInControllerRule(), """
                 @RestController
                 @RequiredArgsConstructor
                 class OrderController {
@@ -162,7 +162,7 @@ class SpringMoreRulesTest {
 
     @Test
     void findByIdIsPresent() {
-        assertThat(RuleTests.lines(new CheckFindByIdIsPresentRule(), """
+        assertThat(RuleTests.lines(new FindByIdIsPresentRule(), """
                 class Sample {
                     boolean run(Long id) {
                         boolean a = orderRepository.findById(id).isPresent();
@@ -177,7 +177,7 @@ class SpringMoreRulesTest {
 
     @Test
     void manualBeanLookup() {
-        assertThat(RuleTests.lines(new CheckManualBeanLookupRule(), """
+        assertThat(RuleTests.lines(new ManualBeanLookupRule(), """
                 @Service
                 class Sample {
                     void run() {
@@ -196,31 +196,31 @@ class SpringMoreRulesTest {
 
     @Test
     void cascadeToParent() {
-        assertThat(RuleTests.lines(new CheckCascadeToParentRule(), ENTITY)).containsExactly(6);
+        assertThat(RuleTests.lines(new CascadeToParentRule(), ENTITY)).containsExactly(6);
     }
 
     @Test
     void identityGeneration() {
-        assertThat(RuleTests.lines(new CheckIdentityGenerationRule(), ENTITY)).containsExactly(4);
+        assertThat(RuleTests.lines(new IdentityGenerationRule(), ENTITY)).containsExactly(4);
     }
 
     @Test
     void oneToManyWithoutMappedBy() {
-        assertThat(RuleTests.lines(new CheckOneToManyWithoutMappedByRule(), ENTITY)).containsExactly(10);
+        assertThat(RuleTests.lines(new OneToManyWithoutMappedByRule(), ENTITY)).containsExactly(10);
     }
 
     @Test
     void listInManyToMany() {
-        assertThat(RuleTests.lines(new CheckListInManyToManyRule(), ENTITY)).containsExactly(9);
+        assertThat(RuleTests.lines(new ListInManyToManyRule(), ENTITY)).containsExactly(9);
     }
 
     @Test
     void moneyInFloatingPoint() {
-        assertThat(RuleTests.lines(new CheckMoneyInFloatingPointRule(), ENTITY)).containsExactly(14);
+        assertThat(RuleTests.lines(new MoneyInFloatingPointRule(), ENTITY)).containsExactly(14);
     }
 
     @Test
     void entityCollectionReplacement() {
-        assertThat(RuleTests.lines(new CheckEntityCollectionReplacementRule(), ENTITY)).containsExactly(18);
+        assertThat(RuleTests.lines(new EntityCollectionReplacementRule(), ENTITY)).containsExactly(18);
     }
 }

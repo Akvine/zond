@@ -6,16 +6,16 @@ import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.logical.CheckIteratorNextWithoutHasNextRule;
-import ru.akvine.zond.rules.logical.CheckListGetFirstWithoutCheckRule;
-import ru.akvine.zond.rules.logical.CheckOptionalMisuseRule;
-import ru.akvine.zond.rules.logical.CheckWriteInReadOnlyTransactionRule;
-import ru.akvine.zond.rules.performance.CheckRepositoryCallInLoopRule;
-import ru.akvine.zond.rules.resources.CheckTransactionalHttpCallRule;
-import ru.akvine.zond.rules.resources.CheckUnclosedResourceRule;
-import ru.akvine.zond.rules.security.CheckOpenRedirectRule;
-import ru.akvine.zond.rules.security.CheckPathTraversalRule;
-import ru.akvine.zond.rules.security.CheckSqlConcatenationRule;
+import ru.akvine.zond.rules.logical.IteratorNextWithoutHasNextRule;
+import ru.akvine.zond.rules.logical.ListGetFirstWithoutCheckRule;
+import ru.akvine.zond.rules.logical.OptionalMisuseRule;
+import ru.akvine.zond.rules.logical.WriteInReadOnlyTransactionRule;
+import ru.akvine.zond.rules.performance.RepositoryCallInLoopRule;
+import ru.akvine.zond.rules.resources.TransactionalHttpCallRule;
+import ru.akvine.zond.rules.resources.UnclosedResourceRule;
+import ru.akvine.zond.rules.security.OpenRedirectRule;
+import ru.akvine.zond.rules.security.PathTraversalRule;
+import ru.akvine.zond.rules.security.SqlConcatenationRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -50,7 +50,7 @@ class FlowAnalysisTest {
 
     @Test
     void findsHttpCallHiddenBehindCallChain() throws IOException {
-        List<Violation> found = check(new CheckTransactionalHttpCallRule(), Map.of(
+        List<Violation> found = check(new TransactionalHttpCallRule(), Map.of(
                 "Sender", SENDER,
                 "Notifier", """
                         package demo;
@@ -91,7 +91,7 @@ class FlowAnalysisTest {
 
     @Test
     void customerNamedClientIsNotHttpClient() throws IOException {
-        List<Violation> found = check(new CheckTransactionalHttpCallRule(), Map.of(
+        List<Violation> found = check(new TransactionalHttpCallRule(), Map.of(
                 "Sender", SENDER,
                 "Client", """
                         package demo;
@@ -141,7 +141,7 @@ class FlowAnalysisTest {
     @Test
     void objectNamedClientIsJudgedByWhatIsDoneWithIt() {
         // Типы неизвестны: чтение и запись свойств - работа с данными, остальное - возможное обращение по сети
-        assertThat(RuleTests.lines(new CheckTransactionalHttpCallRule(), """
+        assertThat(RuleTests.lines(new TransactionalHttpCallRule(), """
                 class Orders {
                     @Transactional
                     public void place(Order order) {
@@ -159,7 +159,7 @@ class FlowAnalysisTest {
 
     @Test
     void callOfInterfaceMethodLeadsToImplementation() throws IOException {
-        List<Violation> found = check(new CheckTransactionalHttpCallRule(), Map.of(
+        List<Violation> found = check(new TransactionalHttpCallRule(), Map.of(
                 "Gateway", """
                         package demo;
 
@@ -197,7 +197,7 @@ class FlowAnalysisTest {
 
     @Test
     void asyncMethodRunsOutsideCallerTransaction() throws IOException {
-        List<Violation> found = check(new CheckTransactionalHttpCallRule(), Map.of(
+        List<Violation> found = check(new TransactionalHttpCallRule(), Map.of(
                 "Sender", SENDER.replace("    public void send()", "    @Async\n    public void send()"),
                 "Orders", """
                         package demo;
@@ -217,8 +217,8 @@ class FlowAnalysisTest {
 
     @Test
     void callDepthIsConfigurable() throws IOException {
-        CheckTransactionalHttpCallRule rule = new CheckTransactionalHttpCallRule();
-        rule.setSettings(RuleSettings.of(Map.of("CheckTransactionalHttpCallRule.max-call-depth", "0")));
+        TransactionalHttpCallRule rule = new TransactionalHttpCallRule();
+        rule.setSettings(RuleSettings.of(Map.of("TransactionalHttpCallRule.max-call-depth", "0")));
 
         List<Violation> found = check(rule, Map.of(
                 "Sender", SENDER,
@@ -241,7 +241,7 @@ class FlowAnalysisTest {
     @Test
     void findsRepositoryCallHiddenInMethodCalledFromLoop() {
         // Один файл без решателя типов: вызовы внутри класса находятся по именам
-        List<Violation> found = RuleTests.check(new CheckRepositoryCallInLoopRule(), """
+        List<Violation> found = RuleTests.check(new RepositoryCallInLoopRule(), """
                 class Orders {
                     void enrichAll(List<Order> orders) {
                         for (Order order : orders) {
@@ -276,7 +276,7 @@ class FlowAnalysisTest {
 
     @Test
     void findsWriteHiddenBehindCallFromReadOnlyTransaction() throws IOException {
-        List<Violation> found = check(new CheckWriteInReadOnlyTransactionRule(), Map.of(
+        List<Violation> found = check(new WriteInReadOnlyTransactionRule(), Map.of(
                 "Archive", """
                         package demo;
 
@@ -327,7 +327,7 @@ class FlowAnalysisTest {
 
     @Test
     void followsResourceThroughProjectMethods() {
-        List<Violation> found = RuleTests.check(new CheckUnclosedResourceRule(), """
+        List<Violation> found = RuleTests.check(new UnclosedResourceRule(), """
                 class Sample {
                     void leaksThroughHelper() throws Exception {
                         FileReader reader = new FileReader("a.txt");
@@ -381,7 +381,7 @@ class FlowAnalysisTest {
 
     @Test
     void followsRequestDataThroughVariablesAndCalls() throws IOException {
-        List<Violation> found = check(new CheckPathTraversalRule(), Map.of(
+        List<Violation> found = check(new PathTraversalRule(), Map.of(
                 "Storage", """
                         package demo;
 
@@ -430,7 +430,7 @@ class FlowAnalysisTest {
 
     @Test
     void unannotatedStringParameterOfHandlerIsRequestData() {
-        assertThat(RuleTests.lines(new CheckOpenRedirectRule(), """
+        assertThat(RuleTests.lines(new OpenRedirectRule(), """
                 class Pages {
                     @GetMapping("/go")
                     String go(String target, Long id) {
@@ -447,7 +447,7 @@ class FlowAnalysisTest {
 
     @Test
     void sqlConcatenationTellsWhenValueComesFromRequest() {
-        assertThat(RuleTests.check(new CheckSqlConcatenationRule(), """
+        assertThat(RuleTests.check(new SqlConcatenationRule(), """
                 class Users {
                     @GetMapping("/users")
                     List<User> find(@RequestParam String name) {
@@ -460,7 +460,7 @@ class FlowAnalysisTest {
 
     @Test
     void sizeCheckMustStandOnTheWayToAccess() {
-        assertThat(RuleTests.lines(new CheckListGetFirstWithoutCheckRule(), """
+        assertThat(RuleTests.lines(new ListGetFirstWithoutCheckRule(), """
                 class Sample {
                     void exitsEarly(List<String> list) {
                         if (list.isEmpty()) {
@@ -514,7 +514,7 @@ class FlowAnalysisTest {
 
     @Test
     void presenceCheckMustStandOnTheWayToGet() {
-        assertThat(RuleTests.lines(new CheckOptionalMisuseRule(), """
+        assertThat(RuleTests.lines(new OptionalMisuseRule(), """
                 class Sample {
                     void checked(Optional<String> value) {
                         if (value.isPresent()) {
@@ -534,7 +534,7 @@ class FlowAnalysisTest {
 
     @Test
     void hasNextMustStandOnTheWayToNext() {
-        assertThat(RuleTests.lines(new CheckIteratorNextWithoutHasNextRule(), """
+        assertThat(RuleTests.lines(new IteratorNextWithoutHasNextRule(), """
                 class Sample {
                     void loop(Iterator<String> iterator) {
                         while (iterator.hasNext()) {

@@ -11,14 +11,14 @@ import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.printers.FilePrinter;
 import ru.akvine.zond.printers.ReportFormatter;
-import ru.akvine.zond.rules.codesmell.CheckFieldInjectionRule;
-import ru.akvine.zond.rules.logical.CheckAutowiredOnStaticFieldRule;
-import ru.akvine.zond.rules.logical.CheckDdlAutoRule;
-import ru.akvine.zond.rules.logical.CheckSqlDestructiveStatementRule;
-import ru.akvine.zond.rules.logical.CheckTransactionOnPrivateMethodRule;
-import ru.akvine.zond.rules.logical.CheckTransactionalSelfInvocationRule;
-import ru.akvine.zond.rules.logical.CheckUnstableDependencyVersionRule;
-import ru.akvine.zond.rules.security.CheckSecretInConfigRule;
+import ru.akvine.zond.rules.codesmell.FieldInjectionRule;
+import ru.akvine.zond.rules.logical.AutowiredOnStaticFieldRule;
+import ru.akvine.zond.rules.logical.DdlAutoRule;
+import ru.akvine.zond.rules.logical.SqlDestructiveStatementRule;
+import ru.akvine.zond.rules.logical.TransactionOnPrivateMethodRule;
+import ru.akvine.zond.rules.logical.TransactionalSelfInvocationRule;
+import ru.akvine.zond.rules.logical.UnstableDependencyVersionRule;
+import ru.akvine.zond.rules.security.SecretInConfigRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -34,7 +34,7 @@ class ScannerTest {
             new FileSystemSourceLoader(),
             new FileSystemConfigLoader(),
             new FileSystemTextFileLoader(),
-            List.of(new CheckTransactionOnPrivateMethodRule()),
+            List.of(new TransactionOnPrivateMethodRule()),
             (number, total, rule) -> {},
                 RuleSettings.empty());
 
@@ -47,9 +47,9 @@ class ScannerTest {
                 new FileSystemConfigLoader(),
                 new FileSystemTextFileLoader(),
                 List.of(
-                        new CheckAutowiredOnStaticFieldRule(),
-                        new CheckTransactionalSelfInvocationRule(),
-                        new CheckTransactionOnPrivateMethodRule()),
+                        new AutowiredOnStaticFieldRule(),
+                        new TransactionalSelfInvocationRule(),
+                        new TransactionOnPrivateMethodRule()),
                 (number, total, rule) -> progress.add(number + " / " + total + " " + rule.code()),
                 RuleSettings.empty());
 
@@ -113,7 +113,7 @@ class ScannerTest {
                 new FileSystemSourceLoader(),
                 new FileSystemConfigLoader(),
                 new FileSystemTextFileLoader(),
-                List.of(new CheckTransactionOnPrivateMethodRule(), new CheckFieldInjectionRule()),
+                List.of(new TransactionOnPrivateMethodRule(), new FieldInjectionRule()),
                 (number, total, rule) -> {},
                 RuleSettings.empty());
 
@@ -125,7 +125,7 @@ class ScannerTest {
         assertThat(byCode.rulesCount()).isEqualTo(1);
         assertThat(byCode.disabledRulesCount()).isEqualTo(1);
 
-        ScanResult byName = twoRules.scan(dir, ScanOptions.parse("CheckFieldInjectionRule", ""));
+        ScanResult byName = twoRules.scan(dir, ScanOptions.parse("FieldInjectionRule", ""));
         assertThat(byName.violations()).extracting(violation -> violation.ruleCode()).containsExactly("jr:1");
 
         ScanResult byLevel = twoRules.scan(dir, ScanOptions.parse("", "MAJOR"));
@@ -150,7 +150,7 @@ class ScannerTest {
                 }
                 """);
         Files.writeString(dir.resolve("FileLevel.java"), """
-                // zond:ignore-file CheckTransactionOnPrivateMethodRule
+                // zond:ignore-file TransactionOnPrivateMethodRule
                 class FileLevel {
                     @Transactional
                     private void save() {}
@@ -216,7 +216,7 @@ class ScannerTest {
                 new FileSystemSourceLoader(),
                 new FileSystemConfigLoader(),
                 new FileSystemTextFileLoader(),
-                List.of(new CheckDdlAutoRule(), new CheckSecretInConfigRule()),
+                List.of(new DdlAutoRule(), new SecretInConfigRule()),
                 (number, total, rule) -> {},
                 RuleSettings.empty());
 
@@ -258,7 +258,7 @@ class ScannerTest {
                 new FileSystemSourceLoader(),
                 new FileSystemConfigLoader(),
                 new FileSystemTextFileLoader(),
-                List.of(new CheckSqlDestructiveStatementRule(), new CheckUnstableDependencyVersionRule()),
+                List.of(new SqlDestructiveStatementRule(), new UnstableDependencyVersionRule()),
                 (number, total, rule) -> {},
                 RuleSettings.empty());
 
@@ -279,7 +279,7 @@ class ScannerTest {
                 new FileSystemSourceLoader(),
                 new FileSystemConfigLoader(),
                 new FileSystemTextFileLoader(),
-                List.of(new CheckDdlAutoRule(), new CheckSqlDestructiveStatementRule()),
+                List.of(new DdlAutoRule(), new SqlDestructiveStatementRule()),
                 (number, total, rule) -> {},
                 RuleSettings.empty());
 
@@ -323,12 +323,12 @@ class ScannerTest {
                 new FileSystemConfigLoader(),
                 new FileSystemTextFileLoader(),
                 List.of(
-                        new CheckAutowiredOnStaticFieldRule(),
-                        new CheckTransactionalSelfInvocationRule(),
-                        new CheckTransactionOnPrivateMethodRule(),
-                        new CheckFieldInjectionRule(),
-                        new CheckDdlAutoRule(),
-                        new CheckSqlDestructiveStatementRule()),
+                        new AutowiredOnStaticFieldRule(),
+                        new TransactionalSelfInvocationRule(),
+                        new TransactionOnPrivateMethodRule(),
+                        new FieldInjectionRule(),
+                        new DdlAutoRule(),
+                        new SqlDestructiveStatementRule()),
                 (number, total, rule) -> {},
                 RuleSettings.empty());
 

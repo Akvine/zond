@@ -6,10 +6,10 @@ import ru.akvine.zond.models.ConfigProperty;
 import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.security.CheckSecretComparisonRule;
-import ru.akvine.zond.rules.security.CheckSecretInToStringRule;
-import ru.akvine.zond.rules.security.CheckSensitiveDataLoggingRule;
-import ru.akvine.zond.rules.security.CheckTrustAllSslRule;
+import ru.akvine.zond.rules.security.SecretComparisonRule;
+import ru.akvine.zond.rules.security.SecretInToStringRule;
+import ru.akvine.zond.rules.security.SensitiveDataLoggingRule;
+import ru.akvine.zond.rules.security.TrustAllSslRule;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -48,7 +48,7 @@ class SecurityContextTest {
 
     @Test
     void sensitiveDataLoggingLooksAtWhatIsWritten() {
-        assertThat(RuleTests.lines(new CheckSensitiveDataLoggingRule(), """
+        assertThat(RuleTests.lines(new SensitiveDataLoggingRule(), """
                 class Sample {
                     void run(String password, User user, Account account, String token) {
                         log.info("pwd {}", password);
@@ -96,15 +96,15 @@ class SecurityContextTest {
                         """);
 
         // В поле сущности кладут только результат encode(...): в логе и в toString() окажется хеш
-        assertThat(places(RuleTests.checkProject(new CheckSensitiveDataLoggingRule(), files)))
+        assertThat(places(RuleTests.checkProject(new SensitiveDataLoggingRule(), files)))
                 .containsExactly("UserService.java:7");
-        assertThat(places(RuleTests.checkProject(new CheckSecretInToStringRule(), files)))
+        assertThat(places(RuleTests.checkProject(new SecretInToStringRule(), files)))
                 .containsExactly("LoginRequest.java:3");
     }
 
     @Test
     void secretComparisonIgnoresLabelsAndProtectedValues() {
-        assertThat(RuleTests.lines(new CheckSecretComparisonRule(), """
+        assertThat(RuleTests.lines(new SecretComparisonRule(), """
                 class Sample {
                     private static final String SECRET = "Secret";
                     private static final String API_TOKEN = "f3a9c1e07b";
@@ -142,13 +142,13 @@ class SecurityContextTest {
     void sslMessageNamesTheSetting() {
         ScanContext context = context(List.of(config("application.properties", "http.client.verify-hostname", "false")));
 
-        assertThat(new CheckTrustAllSslRule().checkContext(context)).extracting(Violation::message)
+        assertThat(new TrustAllSslRule().checkContext(context)).extracting(Violation::message)
                 .anyMatch(message -> message.contains("'http.client.verify-hostname=false' (application.properties:1)"))
                 .anyMatch(message -> message.contains("флаг 'insecure' по умолчанию равен true"));
     }
 
     private List<Integer> lines(List<ConfigFile> configFiles) {
-        return new CheckTrustAllSslRule().checkContext(context(configFiles)).stream().map(Violation::line).toList();
+        return new TrustAllSslRule().checkContext(context(configFiles)).stream().map(Violation::line).toList();
     }
 
     private ScanContext context(List<ConfigFile> configFiles) {

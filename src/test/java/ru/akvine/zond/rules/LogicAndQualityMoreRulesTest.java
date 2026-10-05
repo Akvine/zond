@@ -2,17 +2,17 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckMutablePublicConstantRule;
-import ru.akvine.zond.rules.codesmell.CheckRawTypeRule;
-import ru.akvine.zond.rules.codesmell.CheckSizeComparedToZeroRule;
-import ru.akvine.zond.rules.logical.CheckDuplicateConditionRule;
-import ru.akvine.zond.rules.logical.CheckExceptionNotThrownRule;
-import ru.akvine.zond.rules.logical.CheckFormatArgumentsMismatchRule;
-import ru.akvine.zond.rules.logical.CheckIncompatibleTypesRule;
-import ru.akvine.zond.rules.logical.CheckIndexOfPositiveRule;
-import ru.akvine.zond.rules.logical.CheckNarrowingCastRule;
-import ru.akvine.zond.rules.logical.CheckNonShortCircuitLogicRule;
-import ru.akvine.zond.rules.logical.CheckNullCheckWrongOperatorRule;
+import ru.akvine.zond.rules.codesmell.MutablePublicConstantRule;
+import ru.akvine.zond.rules.codesmell.RawTypeRule;
+import ru.akvine.zond.rules.codesmell.SizeComparedToZeroRule;
+import ru.akvine.zond.rules.logical.DuplicateConditionRule;
+import ru.akvine.zond.rules.logical.ExceptionNotThrownRule;
+import ru.akvine.zond.rules.logical.FormatArgumentsMismatchRule;
+import ru.akvine.zond.rules.logical.IncompatibleTypesRule;
+import ru.akvine.zond.rules.logical.IndexOfPositiveRule;
+import ru.akvine.zond.rules.logical.NarrowingCastRule;
+import ru.akvine.zond.rules.logical.NonShortCircuitLogicRule;
+import ru.akvine.zond.rules.logical.NullCheckWrongOperatorRule;
 
 import java.util.List;
 
@@ -25,7 +25,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void nullCheckWrongOperator() {
-        assertThat(RuleTests.lines(new CheckNullCheckWrongOperatorRule(), """
+        assertThat(RuleTests.lines(new NullCheckWrongOperatorRule(), """
                 class Sample {
                     void run(String s, String t) {
                         if (s == null && s.isEmpty()) {}
@@ -41,7 +41,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void incompatibleTypes() {
-        List<Violation> found = RuleTests.check(new CheckIncompatibleTypesRule(), """
+        List<Violation> found = RuleTests.check(new IncompatibleTypesRule(), """
                 class Sample {
                     void run(List<Long> ids, Map<String, User> users, List<Integer> numbers, Set<String> names,
                              String name, Long id, Integer count, int index) {
@@ -67,7 +67,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void exceptionNotThrown() {
-        assertThat(RuleTests.lines(new CheckExceptionNotThrownRule(), """
+        assertThat(RuleTests.lines(new ExceptionNotThrownRule(), """
                 class Sample {
                     void run(int x) {
                         if (x < 0) {
@@ -86,7 +86,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void formatArgumentsMismatch() {
-        assertThat(RuleTests.lines(new CheckFormatArgumentsMismatchRule(), """
+        assertThat(RuleTests.lines(new FormatArgumentsMismatchRule(), """
                 class Sample {
                     private static final String ROW = "%s | %s";
                     void run(String name, int age, Object[] values) {
@@ -108,7 +108,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void duplicateCondition() {
-        assertThat(RuleTests.lines(new CheckDuplicateConditionRule(), """
+        assertThat(RuleTests.lines(new DuplicateConditionRule(), """
                 class Sample {
                     void run(int x) {
                         if (x > 0) {
@@ -126,7 +126,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void indexOfPositive() {
-        assertThat(RuleTests.lines(new CheckIndexOfPositiveRule(), """
+        assertThat(RuleTests.lines(new IndexOfPositiveRule(), """
                 class Sample {
                     void run(String text) {
                         if (text.indexOf("a") > 0) {}
@@ -140,7 +140,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void nonShortCircuitLogic() {
-        assertThat(RuleTests.lines(new CheckNonShortCircuitLogicRule(), """
+        assertThat(RuleTests.lines(new NonShortCircuitLogicRule(), """
                 class Sample {
                     void run(String s, int flags, boolean a, boolean b) {
                         if (s != null & s.isEmpty()) {}
@@ -154,7 +154,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void narrowingCast() {
-        assertThat(RuleTests.lines(new CheckNarrowingCastRule(), """
+        assertThat(RuleTests.lines(new NarrowingCastRule(), """
                 class Sample {
                     void run(long total, int small) {
                         int a = (int) total;
@@ -168,7 +168,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void mutablePublicConstant() {
-        assertThat(RuleTests.lines(new CheckMutablePublicConstantRule(), """
+        assertThat(RuleTests.lines(new MutablePublicConstantRule(), """
                 class Constants {
                     public static final List<String> NAMES = new ArrayList<>();
                     public static final String[] CODES = {"a", "b"};
@@ -186,7 +186,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void sizeComparedToZero() {
-        assertThat(RuleTests.lines(new CheckSizeComparedToZeroRule(), """
+        assertThat(RuleTests.lines(new SizeComparedToZeroRule(), """
                 class Sample {
                     void run(List<String> list, String text, StringBuilder builder) {
                         if (list.size() == 0) {}
@@ -206,7 +206,7 @@ class LogicAndQualityMoreRulesTest {
 
     @Test
     void rawType() {
-        assertThat(RuleTests.lines(new CheckRawTypeRule(), """
+        assertThat(RuleTests.lines(new RawTypeRule(), """
                 class Sample {
                     private List names = new ArrayList();
                     private List<String> typed = new ArrayList<>();

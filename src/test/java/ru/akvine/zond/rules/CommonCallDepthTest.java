@@ -3,8 +3,8 @@ package ru.akvine.zond.rules;
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.models.RuleParameter;
-import ru.akvine.zond.rules.logical.CheckWriteInReadOnlyTransactionRule;
-import ru.akvine.zond.rules.security.CheckSqlConcatenationRule;
+import ru.akvine.zond.rules.logical.WriteInReadOnlyTransactionRule;
+import ru.akvine.zond.rules.security.SqlConcatenationRule;
 import ru.akvine.zond.services.RuleCatalog;
 
 import java.util.List;
@@ -49,22 +49,22 @@ class CommonCallDepthTest {
     void commonDepthAppliesToEveryRuleWithThisParameter() {
         RuleSettings settings = RuleSettings.of(Map.of(), Map.of(DEPTH, "7"));
 
-        assertThat(depthOf(new CheckSqlConcatenationRule(), settings)).isEqualTo(7);
-        assertThat(depthOf(new CheckWriteInReadOnlyTransactionRule(), settings)).isEqualTo(7);
+        assertThat(depthOf(new SqlConcatenationRule(), settings)).isEqualTo(7);
+        assertThat(depthOf(new WriteInReadOnlyTransactionRule(), settings)).isEqualTo(7);
     }
 
     @Test
     void ruleOwnDepthIsMoreImportantThanCommon() {
         RuleSettings settings = RuleSettings.of(Map.of("jr-18." + DEPTH, "2"), Map.of(DEPTH, "7"));
 
-        assertThat(depthOf(new CheckSqlConcatenationRule(), settings)).isEqualTo(2);
-        assertThat(depthOf(new CheckWriteInReadOnlyTransactionRule(), settings)).isEqualTo(7);
+        assertThat(depthOf(new SqlConcatenationRule(), settings)).isEqualTo(2);
+        assertThat(depthOf(new WriteInReadOnlyTransactionRule(), settings)).isEqualTo(7);
     }
 
     @Test
     void defaultsStayWhenNothingIsConfigured() {
-        assertThat(depthOf(new CheckSqlConcatenationRule(), RuleSettings.empty())).isEqualTo(4);
-        assertThat(depthOf(new CheckWriteInReadOnlyTransactionRule(), RuleSettings.empty())).isEqualTo(3);
+        assertThat(depthOf(new SqlConcatenationRule(), RuleSettings.empty())).isEqualTo(4);
+        assertThat(depthOf(new WriteInReadOnlyTransactionRule(), RuleSettings.empty())).isEqualTo(3);
     }
 
     @Test
@@ -72,13 +72,13 @@ class CommonCallDepthTest {
         assertThat(lines(RuleSettings.empty())).isEmpty();
         assertThat(lines(RuleSettings.of(Map.of(), Map.of(DEPTH, "6")))).containsExactly(20);
         assertThat(lines(RuleSettings.of(Map.of("jr-18." + DEPTH, "2"), Map.of(DEPTH, "6")))).isEmpty();
-        assertThat(lines(RuleSettings.of(Map.of("CheckSqlConcatenationRule." + DEPTH, "6"), Map.of(DEPTH, "1"))))
+        assertThat(lines(RuleSettings.of(Map.of("SqlConcatenationRule." + DEPTH, "6"), Map.of(DEPTH, "1"))))
                 .containsExactly(20);
     }
 
     @Test
     void mistakeInCommonDepthIsReported() {
-        List<Rule> rules = List.of(new CheckSqlConcatenationRule());
+        List<Rule> rules = List.of(new SqlConcatenationRule());
 
         assertThat(new RuleCatalog(rules, RuleSettings.of(Map.of(), Map.of(DEPTH, "много"))).findSettingsProblems())
                 .singleElement()
@@ -97,7 +97,7 @@ class CommonCallDepthTest {
     }
 
     private List<Integer> lines(RuleSettings settings) {
-        CheckSqlConcatenationRule rule = new CheckSqlConcatenationRule();
+        SqlConcatenationRule rule = new SqlConcatenationRule();
         rule.setSettings(settings);
         return RuleTests.lines(rule, CHAIN);
     }

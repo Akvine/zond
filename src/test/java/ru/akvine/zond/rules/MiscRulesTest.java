@@ -2,9 +2,9 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckTooManyParametersRule;
-import ru.akvine.zond.rules.concurrency.CheckTransactionalWithAsyncRule;
-import ru.akvine.zond.rules.exceptions.CheckLostExceptionCauseRule;
+import ru.akvine.zond.rules.codesmell.TooManyParametersRule;
+import ru.akvine.zond.rules.concurrency.TransactionalWithAsyncRule;
+import ru.akvine.zond.rules.exceptions.LostExceptionCauseRule;
 
 import java.util.List;
 
@@ -17,7 +17,7 @@ class MiscRulesTest {
 
     @Test
     void transactionalWithAsync() {
-        List<Violation> violations = RuleTests.check(new CheckTransactionalWithAsyncRule(), """
+        List<Violation> violations = RuleTests.check(new TransactionalWithAsyncRule(), """
                 class Sample {
                     @Async
                     @Transactional
@@ -44,7 +44,7 @@ class MiscRulesTest {
 
     @Test
     void tooManyParameters() {
-        assertThat(RuleTests.lines(new CheckTooManyParametersRule(), """
+        assertThat(RuleTests.lines(new TooManyParametersRule(), """
                 class Sample {
                     void five(int a, int b, int c, int d, int e) {}
                     void four(int a, int b, int c, int d) {}
@@ -57,7 +57,7 @@ class MiscRulesTest {
 
     @Test
     void lostExceptionCause() {
-        assertThat(RuleTests.lines(new CheckLostExceptionCauseRule(), """
+        assertThat(RuleTests.lines(new LostExceptionCauseRule(), """
                 class Sample {
                     void run() {
                         try {

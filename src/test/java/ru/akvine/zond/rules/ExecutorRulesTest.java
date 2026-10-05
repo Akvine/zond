@@ -1,11 +1,11 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.codesmell.CheckExecutorWithoutMdcRule;
-import ru.akvine.zond.rules.concurrency.CheckFutureGetInLoopRule;
-import ru.akvine.zond.rules.resources.CheckExecutorNotShutdownRule;
-import ru.akvine.zond.rules.resources.CheckThreadLocalNotRemovedRule;
-import ru.akvine.zond.rules.resources.CheckUnboundedExecutorRule;
+import ru.akvine.zond.rules.codesmell.ExecutorWithoutMdcRule;
+import ru.akvine.zond.rules.concurrency.FutureGetInLoopRule;
+import ru.akvine.zond.rules.resources.ExecutorNotShutdownRule;
+import ru.akvine.zond.rules.resources.ThreadLocalNotRemovedRule;
+import ru.akvine.zond.rules.resources.UnboundedExecutorRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,7 +16,7 @@ class ExecutorRulesTest {
 
     @Test
     void threadLocalNotRemoved() {
-        assertThat(RuleTests.lines(new CheckThreadLocalNotRemovedRule(), """
+        assertThat(RuleTests.lines(new ThreadLocalNotRemovedRule(), """
                 class Sample {
                     private static final ThreadLocal<String> LEAKED = new ThreadLocal<>();
                     private static final ThreadLocal<String> CLEANED = new ThreadLocal<>();
@@ -36,7 +36,7 @@ class ExecutorRulesTest {
 
     @Test
     void unboundedExecutor() {
-        assertThat(RuleTests.lines(new CheckUnboundedExecutorRule(), """
+        assertThat(RuleTests.lines(new UnboundedExecutorRule(), """
                 class Sample {
                     ExecutorService a = Executors.newCachedThreadPool();
                     ExecutorService b = Executors.newFixedThreadPool(4);
@@ -50,7 +50,7 @@ class ExecutorRulesTest {
 
     @Test
     void executorNotShutdown() {
-        assertThat(RuleTests.lines(new CheckExecutorNotShutdownRule(), """
+        assertThat(RuleTests.lines(new ExecutorNotShutdownRule(), """
                 class Sample {
                     private final ExecutorService leaked = Executors.newFixedThreadPool(2);
                     private final ExecutorService managed = Executors.newFixedThreadPool(2);
@@ -78,7 +78,7 @@ class ExecutorRulesTest {
 
     @Test
     void futureGetInLoop() {
-        assertThat(RuleTests.lines(new CheckFutureGetInLoopRule(), """
+        assertThat(RuleTests.lines(new FutureGetInLoopRule(), """
                 class Sample {
                     void run(ExecutorService executor, List<Callable<String>> tasks, List<Future<String>> futures) throws Exception {
                         for (Callable<String> task : tasks) {
@@ -97,14 +97,14 @@ class ExecutorRulesTest {
 
     @Test
     void executorWithoutMdc() {
-        assertThat(RuleTests.lines(new CheckExecutorWithoutMdcRule(), """
+        assertThat(RuleTests.lines(new ExecutorWithoutMdcRule(), """
                 class Sample {
                     ExecutorService a = Executors.newFixedThreadPool(2);
                     ExecutorService b = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1));
                 }
                 """)).containsExactly(2, 3);
 
-        assertThat(RuleTests.lines(new CheckExecutorWithoutMdcRule(), """
+        assertThat(RuleTests.lines(new ExecutorWithoutMdcRule(), """
                 class Sample {
                     ExecutorService a = Executors.newFixedThreadPool(2);
                     void submit(Runnable task) {

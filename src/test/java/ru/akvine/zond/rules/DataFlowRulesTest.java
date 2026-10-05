@@ -6,13 +6,13 @@ import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckUnreachableCodeRule;
-import ru.akvine.zond.rules.logical.CheckAlwaysNullDereferenceRule;
-import ru.akvine.zond.rules.logical.CheckConstantConditionRule;
-import ru.akvine.zond.rules.logical.CheckDivisionByZeroRule;
-import ru.akvine.zond.rules.logical.CheckIndexOutOfBoundsRule;
-import ru.akvine.zond.rules.logical.CheckNullArgumentRule;
-import ru.akvine.zond.rules.logical.CheckPossibleNullDereferenceRule;
+import ru.akvine.zond.rules.codesmell.UnreachableCodeRule;
+import ru.akvine.zond.rules.logical.AlwaysNullDereferenceRule;
+import ru.akvine.zond.rules.logical.ConstantConditionRule;
+import ru.akvine.zond.rules.logical.DivisionByZeroRule;
+import ru.akvine.zond.rules.logical.IndexOutOfBoundsRule;
+import ru.akvine.zond.rules.logical.NullArgumentRule;
+import ru.akvine.zond.rules.logical.PossibleNullDereferenceRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -563,48 +563,48 @@ class DataFlowRulesTest {
 
     @Test
     void alwaysNullDereference() {
-        assertThat(found(new CheckAlwaysNullDereferenceRule())).isEqualTo(marked("@NULL"));
+        assertThat(found(new AlwaysNullDereferenceRule())).isEqualTo(marked("@NULL"));
     }
 
     @Test
     void possibleNullDereference() {
-        assertThat(found(new CheckPossibleNullDereferenceRule())).isEqualTo(marked("@MAYBE"));
+        assertThat(found(new PossibleNullDereferenceRule())).isEqualTo(marked("@MAYBE"));
     }
 
     @Test
     void nullArgument() {
-        assertThat(found(new CheckNullArgumentRule())).isEqualTo(marked("@ARG"));
+        assertThat(found(new NullArgumentRule())).isEqualTo(marked("@ARG"));
     }
 
     @Test
     void constantCondition() {
-        assertThat(found(new CheckConstantConditionRule())).isEqualTo(marked("@CONST"));
+        assertThat(found(new ConstantConditionRule())).isEqualTo(marked("@CONST"));
     }
 
     @Test
     void unreachableCode() {
-        assertThat(found(new CheckUnreachableCodeRule())).isEqualTo(marked("@DEAD"));
+        assertThat(found(new UnreachableCodeRule())).isEqualTo(marked("@DEAD"));
     }
 
     @Test
     void divisionByZero() {
-        assertThat(found(new CheckDivisionByZeroRule())).isEqualTo(marked("@ZERO"));
+        assertThat(found(new DivisionByZeroRule())).isEqualTo(marked("@ZERO"));
     }
 
     @Test
     void indexOutOfBounds() {
-        assertThat(found(new CheckIndexOutOfBoundsRule())).isEqualTo(marked("@INDEX"));
+        assertThat(found(new IndexOutOfBoundsRule())).isEqualTo(marked("@INDEX"));
     }
 
     @Test
     void messagesExplainWhereValueComesFrom() {
-        assertThat(new CheckPossibleNullDereferenceRule().checkProject(sources)).extracting(Violation::message)
+        assertThat(new PossibleNullDereferenceRule().checkProject(sources)).extracting(Violation::message)
                 .anyMatch(message -> message.contains("метод 'find' может вернуть null"))
                 .anyMatch(message -> message.contains("переменной присвоен null на строке"))
                 .anyMatch(message -> message.contains("orElse(null)"))
                 .anyMatch(message -> message.contains("поле помечено @Nullable"))
                 .anyMatch(message -> message.contains("метод 'lookup' помечен @Nullable"));
-        assertThat(new CheckUnreachableCodeRule().checkProject(sources)).extracting(Violation::message)
+        assertThat(new UnreachableCodeRule().checkProject(sources)).extracting(Violation::message)
                 .anyMatch(message -> message.contains("метод 'fail'"))
                 .anyMatch(message -> message.contains("условие 'text != null'"));
     }

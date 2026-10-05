@@ -19,8 +19,8 @@ import ru.akvine.zond.printers.ReportFormatter;
 import ru.akvine.zond.printers.RuleListFormatter;
 import ru.akvine.zond.printers.RuleListWriter;
 import ru.akvine.zond.rules.Rule;
-import ru.akvine.zond.rules.logical.CheckSqlDestructiveStatementRule;
-import ru.akvine.zond.rules.logical.CheckTransactionOnPrivateMethodRule;
+import ru.akvine.zond.rules.logical.SqlDestructiveStatementRule;
+import ru.akvine.zond.rules.logical.TransactionOnPrivateMethodRule;
 import ru.akvine.zond.services.RuleCatalog;
 import ru.akvine.zond.services.Scanner;
 
@@ -57,7 +57,7 @@ class ScanRunnerTest {
     // Настройки zond.scan.<вид файлов> из app.properties
     private final MockEnvironment environment = new MockEnvironment();
 
-    private List<Rule> rules = List.of(new CheckTransactionOnPrivateMethodRule());
+    private List<Rule> rules = List.of(new TransactionOnPrivateMethodRule());
 
     @BeforeEach
     void setUp() throws IOException {
@@ -174,7 +174,7 @@ class ScanRunnerTest {
         ScanRunner runner = runner("",
                 CANCEL,
                 SETTINGS,
-                "6", "1", "CheckTransactionOnPrivateMethodRule", "2", "jr:1", "4",
+                "6", "1", "TransactionOnPrivateMethodRule", "2", "jr:1", "4",
                 "9",
                 EXIT);
 
@@ -192,7 +192,7 @@ class ScanRunnerTest {
 
         assertThat(Files.readString(dir.resolve("zond-rules.txt")))
                 .contains("Всего правил: 1, активно: 0, отключено: 1")
-                .contains("jr:1  CheckTransactionOnPrivateMethodRule  [отключено]");
+                .contains("jr:1  TransactionOnPrivateMethodRule  [отключено]");
         try (InputStream input = Files.newInputStream(dir.resolve("zond-rules.xlsx"));
              Workbook workbook = new XSSFWorkbook(input)) {
             Sheet sheet = workbook.getSheetAt(0);
@@ -279,7 +279,7 @@ class ScanRunnerTest {
         // Правило для Java находок не даст: нарушение остается только в SQL-файле
         Files.delete(dir.resolve("Bad.java"));
         Files.writeString(dir.resolve("V1__init.sql"), "drop table old_table;\n");
-        rules = List.of(new CheckSqlDestructiveStatementRule());
+        rules = List.of(new SqlDestructiveStatementRule());
 
         ScanRunner everything = runner("");
         everything.run(new DefaultApplicationArguments("--path=" + dir));

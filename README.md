@@ -84,7 +84,7 @@ java -jar build/libs/zond-0.0.1-SNAPSHOT.jar --path=/projects/shop --report=repo
 | `--min-confidence=<уверенность>` | В отчет попадают находки с этой уверенностью и выше: `CONFIRMED`, `PROBABLE`, `SUSPICION`. См. [Уверенность находки](#уверенность-находки). |
 | `--zond.progress.percent=false` | Не показывать процент в ходе сканирования. |
 | `--zond.report.confidence=false` | Не показывать уверенность находок в отчете. |
-| `--disable=<правила>` | Правила, которые не запускать: коды или имена через запятую (`jr:40,CheckTodoCommentRule`). Добавляются к отключенным в настройках. |
+| `--disable=<правила>` | Правила, которые не запускать: коды или имена через запятую (`jr:40,TodoCommentRule`). Добавляются к отключенным в настройках. |
 | `--skip-tests` | Не проверять файлы из каталогов `test`. `--skip-tests=false` отменяет пропуск, заданный в настройках. |
 | `--classpath=<пути>` | Библиотеки проверяемого проекта: jar-файлы или папки с ними через `;`. См. [Разрешение типов](#разрешение-типов). |
 | `--auto-classpath=false` | Не искать библиотеки проекта по его `pom.xml`. См. [Разрешение типов](#разрешение-типов). |
@@ -124,7 +124,7 @@ java -jar build/libs/zond-0.0.1-SNAPSHOT.jar --path=/projects/shop --report=repo
 
 ```properties
 zond.report.path=reports/zond-report.xlsx
-zond.rules.disabled=jr:40, CheckTodoCommentRule
+zond.rules.disabled=jr:40, TodoCommentRule
 zond.rules.min-level=MAJOR
 zond.scan.skip-tests=true
 ```
@@ -328,14 +328,14 @@ int port = 8080; // zond:ignore jr:40        - на этой строке
 // zond:ignore-file jr:40                    - во всем файле
 ```
 
-Вместо кода можно писать имя правила (`CheckMagicNumberRule`). В файлах настроек то же самое пишется
+Вместо кода можно писать имя правила (`MagicNumberRule`). В файлах настроек то же самое пишется
 после `#`, в SQL — после `--`, в `pom.xml` — в `<!-- zond:ignore -->`. Число скрытых находок показывается в шапке отчета.
 
 ## Настройка отдельных правил
 
 ```properties
 zond.rule.jr-193.max-complexity=15
-zond.rule.CheckLongMethodRule.max-lines=80
+zond.rule.LongMethodRule.max-lines=80
 zond.rule.jr-36.level=INFO
 ```
 
@@ -638,7 +638,7 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
 **1. Заведите код** — следующую по номеру константу в `rules/RuleCodes.java`:
 
 ```java
-public final static String CHECK_THREAD_STOP_RULE_CODE = "jr:330";
+public final static String THREAD_STOP_RULE_CODE = "jr:330";
 ```
 
 **2. Напишите класс** в подпакете `ru.akvine.zond.rules`, который отвечает типу проблемы: правило с
@@ -648,13 +648,13 @@ public final static String CHECK_THREAD_STOP_RULE_CODE = "jr:330";
 
 ```java
 @Component
-public class CheckThreadStopRule extends AbstractRule {
+public class ThreadStopRule extends AbstractRule {
     private static final String STOP = "stop";
     private static final Set<String> THREAD_TYPES = Set.of("Thread");
 
     @Override
     public String code() {
-        return RuleCodes.CHECK_THREAD_STOP_RULE_CODE;
+        return RuleCodes.THREAD_STOP_RULE_CODE;
     }
 
     @Override
@@ -734,8 +734,8 @@ public List<RuleParameter> parameters() {
 **6. Напишите тест.** `RuleTests.lines` возвращает номера строк, на которых правило нашло проблемы:
 
 ```java
-class CheckThreadStopRuleTest {
-    private final CheckThreadStopRule rule = new CheckThreadStopRule();
+class ThreadStopRuleTest {
+    private final ThreadStopRule rule = new ThreadStopRule();
 
     @Test
     void findsThreadStop() {

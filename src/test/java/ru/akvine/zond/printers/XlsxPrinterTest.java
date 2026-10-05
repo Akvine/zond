@@ -33,11 +33,11 @@ class XlsxPrinterTest {
                 204,
                 3,
                 List.of(
-                        violation(ErrorLevel.CRITICAL, ErrorType.LOGICAL, "jr:1", "CheckFirstRule",
+                        violation(ErrorLevel.CRITICAL, ErrorType.LOGICAL, "jr:1", "FirstRule",
                                 root.resolve("src/main/java/Order.java"), 7, "Первая проблема"),
-                        violation(ErrorLevel.INFO, ErrorType.CODE_SMELL, "jr:40", "CheckMagicNumberRule",
+                        violation(ErrorLevel.INFO, ErrorType.CODE_SMELL, "jr:40", "MagicNumberRule",
                                 root.resolve("src/main/java/Order.java"), 9, "Магическое число 42"),
-                        violation(ErrorLevel.INFO, ErrorType.CODE_SMELL, "jr:40", "CheckMagicNumberRule",
+                        violation(ErrorLevel.INFO, ErrorType.CODE_SMELL, "jr:40", "MagicNumberRule",
                                 root.resolve("src/main/java/Item.java"), 3, "Магическое число 7")),
                 2,
                 true,
@@ -61,15 +61,15 @@ class XlsxPrinterTest {
                     "MAJOR|0",
                     "INFO|2");
             // Правило с наибольшим числом проблем идет первым
-            assertThat(summary).containsSubsequence("CheckMagicNumberRule|2|jr:40", "CheckFirstRule|1|jr:1");
+            assertThat(summary).containsSubsequence("MagicNumberRule|2|jr:40", "FirstRule|1|jr:1");
 
             assertThat(rows(workbook.getSheet("Проблемы"))).containsExactly(
                     "Уровень|Тип|Код|Правило|Файл|Строка|Сообщение|Уверенность",
-                    "CRITICAL|Логические ошибки|jr:1|CheckFirstRule|" + path("src/main/java/Order.java")
+                    "CRITICAL|Логические ошибки|jr:1|FirstRule|" + path("src/main/java/Order.java")
                             + "|7|Первая проблема|вероятно",
-                    "INFO|Качество кода|jr:40|CheckMagicNumberRule|" + path("src/main/java/Order.java")
+                    "INFO|Качество кода|jr:40|MagicNumberRule|" + path("src/main/java/Order.java")
                             + "|9|Магическое число 42|вероятно",
-                    "INFO|Качество кода|jr:40|CheckMagicNumberRule|" + path("src/main/java/Item.java")
+                    "INFO|Качество кода|jr:40|MagicNumberRule|" + path("src/main/java/Item.java")
                             + "|3|Магическое число 7|вероятно");
 
             assertThat(rows(workbook.getSheet("Не разобраны")))

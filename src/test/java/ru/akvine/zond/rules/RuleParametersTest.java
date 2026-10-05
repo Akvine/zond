@@ -5,7 +5,7 @@ import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.models.RuleInfo;
 import ru.akvine.zond.models.ScanOptions;
-import ru.akvine.zond.rules.codesmell.CheckTooManyParametersRule;
+import ru.akvine.zond.rules.codesmell.TooManyParametersRule;
 import ru.akvine.zond.services.RuleCatalog;
 
 import java.util.List;
@@ -22,7 +22,7 @@ class RuleParametersTest {
 
     @Test
     void thresholdComesFromSettings() {
-        CheckTooManyParametersRule rule = new CheckTooManyParametersRule();
+        TooManyParametersRule rule = new TooManyParametersRule();
         assertThat(RuleTests.lines(rule, THREE_PARAMETERS)).isEmpty();
 
         rule.setSettings(RuleSettings.of(Map.of("jr-104.max-parameters", "2")));
@@ -33,8 +33,8 @@ class RuleParametersTest {
 
     @Test
     void ruleIsFoundByCodeInAnyFormAndByName() {
-        for (String key : List.of("jr-104", "JR_104", "jr104", "jr:104", "CheckTooManyParametersRule")) {
-            CheckTooManyParametersRule rule = new CheckTooManyParametersRule();
+        for (String key : List.of("jr-104", "JR_104", "jr104", "jr:104", "TooManyParametersRule")) {
+            TooManyParametersRule rule = new TooManyParametersRule();
             rule.setSettings(RuleSettings.of(Map.of(key + ".max-parameters", "2")));
 
             assertThat(RuleTests.lines(rule, THREE_PARAMETERS)).as(key).containsExactly(2);
@@ -43,7 +43,7 @@ class RuleParametersTest {
 
     @Test
     void settingsOfOtherRuleAreIgnored() {
-        CheckTooManyParametersRule rule = new CheckTooManyParametersRule();
+        TooManyParametersRule rule = new TooManyParametersRule();
         rule.setSettings(RuleSettings.of(Map.of("jr-1.max-parameters", "2")));
 
         assertThat(RuleTests.lines(rule, THREE_PARAMETERS)).isEmpty();
@@ -54,7 +54,7 @@ class RuleParametersTest {
         RuleSettings settings = RuleSettings.of(Map.of(
                 "jr-104.max-parameters", "6",
                 "jr-104.level", "major"));
-        CheckTooManyParametersRule rule = new CheckTooManyParametersRule();
+        TooManyParametersRule rule = new TooManyParametersRule();
         rule.setSettings(settings);
 
         RuleInfo info = new RuleCatalog(List.of(rule), settings).describe(ScanOptions.defaults()).get(0);
@@ -77,7 +77,7 @@ class RuleParametersTest {
 
     @Test
     void correctSettingsHaveNoProblems() {
-        assertThat(catalog(Map.of("jr-104.max-parameters", "6", "CheckTooManyParametersRule.level", "INFO"))
+        assertThat(catalog(Map.of("jr-104.max-parameters", "6", "TooManyParametersRule.level", "INFO"))
                 .findSettingsProblems()).isEmpty();
     }
 
@@ -99,6 +99,6 @@ class RuleParametersTest {
     }
 
     private RuleCatalog catalog(Map<String, String> properties) {
-        return new RuleCatalog(List.of(new CheckTooManyParametersRule()), RuleSettings.of(properties));
+        return new RuleCatalog(List.of(new TooManyParametersRule()), RuleSettings.of(properties));
     }
 }

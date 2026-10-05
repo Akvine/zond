@@ -3,19 +3,19 @@ package ru.akvine.zond.rules;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
-import ru.akvine.zond.rules.codesmell.CheckBooleanLiteralComparisonRule;
-import ru.akvine.zond.rules.codesmell.CheckConstantInterfaceRule;
-import ru.akvine.zond.rules.codesmell.CheckHardcodedActiveProfileRule;
-import ru.akvine.zond.rules.codesmell.CheckNestedTernaryRule;
-import ru.akvine.zond.rules.codesmell.CheckUnusedMockRule;
-import ru.akvine.zond.rules.codesmell.CheckUtilityClassConstructorRule;
-import ru.akvine.zond.rules.logical.CheckConstantAssertionRule;
-import ru.akvine.zond.rules.logical.CheckCurrentTimeMillisForDurationRule;
-import ru.akvine.zond.rules.logical.CheckEqualsOnPossibleNullRule;
-import ru.akvine.zond.rules.logical.CheckNullInsteadOfEmptyCollectionRule;
-import ru.akvine.zond.rules.performance.CheckMissingLimitsInConfigRule;
-import ru.akvine.zond.rules.performance.CheckSpringBootTestWithoutContextRule;
-import ru.akvine.zond.rules.security.CheckDebugSettingsInConfigRule;
+import ru.akvine.zond.rules.codesmell.BooleanLiteralComparisonRule;
+import ru.akvine.zond.rules.codesmell.ConstantInterfaceRule;
+import ru.akvine.zond.rules.codesmell.HardcodedActiveProfileRule;
+import ru.akvine.zond.rules.codesmell.NestedTernaryRule;
+import ru.akvine.zond.rules.codesmell.UnusedMockRule;
+import ru.akvine.zond.rules.codesmell.UtilityClassConstructorRule;
+import ru.akvine.zond.rules.logical.ConstantAssertionRule;
+import ru.akvine.zond.rules.logical.CurrentTimeMillisForDurationRule;
+import ru.akvine.zond.rules.logical.EqualsOnPossibleNullRule;
+import ru.akvine.zond.rules.logical.NullInsteadOfEmptyCollectionRule;
+import ru.akvine.zond.rules.performance.MissingLimitsInConfigRule;
+import ru.akvine.zond.rules.performance.SpringBootTestWithoutContextRule;
+import ru.akvine.zond.rules.security.DebugSettingsInConfigRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -44,10 +44,10 @@ class QualityTestAndConfigRulesTest {
         // В профиле разработки отладочные режимы уместны
         Files.writeString(dir.resolve("application-dev.properties"), "spring.jpa.show-sql=true\n");
 
-        assertThat(check(new CheckDebugSettingsInConfigRule()))
+        assertThat(check(new DebugSettingsInConfigRule()))
                 .containsExactly("application.properties:1", "application.properties:2");
-        assertThat(check(new CheckHardcodedActiveProfileRule())).containsExactly("application.properties:4");
-        assertThat(check(new CheckMissingLimitsInConfigRule()))
+        assertThat(check(new HardcodedActiveProfileRule())).containsExactly("application.properties:4");
+        assertThat(check(new MissingLimitsInConfigRule()))
                 .containsExactly("application.properties:5", "application.properties:6");
     }
 
@@ -60,13 +60,13 @@ class QualityTestAndConfigRulesTest {
                 spring.servlet.multipart.max-file-size=10MB
                 """);
 
-        assertThat(check(new CheckHardcodedActiveProfileRule())).isEmpty();
-        assertThat(check(new CheckMissingLimitsInConfigRule())).isEmpty();
+        assertThat(check(new HardcodedActiveProfileRule())).isEmpty();
+        assertThat(check(new MissingLimitsInConfigRule())).isEmpty();
     }
 
     @Test
     void nullInsteadOfEmptyCollection() {
-        assertThat(RuleTests.lines(new CheckNullInsteadOfEmptyCollectionRule(), """
+        assertThat(RuleTests.lines(new NullInsteadOfEmptyCollectionRule(), """
                 class Sample {
                     List<String> names(boolean any) {
                         if (!any) {
@@ -86,7 +86,7 @@ class QualityTestAndConfigRulesTest {
 
     @Test
     void equalsOnPossibleNull() {
-        assertThat(RuleTests.lines(new CheckEqualsOnPossibleNullRule(), """
+        assertThat(RuleTests.lines(new EqualsOnPossibleNullRule(), """
                 class Sample {
                     boolean run(String status, Order order) {
                         boolean a = status.equals("NEW");
@@ -103,7 +103,7 @@ class QualityTestAndConfigRulesTest {
 
     @Test
     void nestedTernary() {
-        assertThat(RuleTests.lines(new CheckNestedTernaryRule(), """
+        assertThat(RuleTests.lines(new NestedTernaryRule(), """
                 class Sample {
                     void run(int x) {
                         int sign = x > 0 ? 1 : x < 0 ? -1 : 0;
@@ -115,7 +115,7 @@ class QualityTestAndConfigRulesTest {
 
     @Test
     void booleanLiteralComparison() {
-        assertThat(RuleTests.lines(new CheckBooleanLiteralComparisonRule(), """
+        assertThat(RuleTests.lines(new BooleanLiteralComparisonRule(), """
                 class Sample {
                     void run(boolean flag) {
                         if (flag == true) {}
@@ -128,7 +128,7 @@ class QualityTestAndConfigRulesTest {
 
     @Test
     void constantInterface() {
-        assertThat(RuleTests.lines(new CheckConstantInterfaceRule(), """
+        assertThat(RuleTests.lines(new ConstantInterfaceRule(), """
                 interface Codes {
                     String A = "a";
                     String B = "b";
@@ -144,7 +144,7 @@ class QualityTestAndConfigRulesTest {
 
     @Test
     void utilityClassConstructor() {
-        assertThat(RuleTests.lines(new CheckUtilityClassConstructorRule(), """
+        assertThat(RuleTests.lines(new UtilityClassConstructorRule(), """
                 class TextUtils {
                     static String trim(String value) { return value.trim(); }
                 }
@@ -167,7 +167,7 @@ class QualityTestAndConfigRulesTest {
 
     @Test
     void currentTimeMillisForDuration() {
-        assertThat(RuleTests.lines(new CheckCurrentTimeMillisForDurationRule(), """
+        assertThat(RuleTests.lines(new CurrentTimeMillisForDurationRule(), """
                 class Sample {
                     void run() {
                         long start = System.currentTimeMillis();
@@ -182,7 +182,7 @@ class QualityTestAndConfigRulesTest {
 
     @Test
     void unusedMock() {
-        assertThat(RuleTests.lines(new CheckUnusedMockRule(), """
+        assertThat(RuleTests.lines(new UnusedMockRule(), """
                 class OrdersTest {
                     @Mock
                     private OrderRepository orderRepository;
@@ -204,7 +204,7 @@ class QualityTestAndConfigRulesTest {
 
     @Test
     void springBootTestWithoutContext() {
-        assertThat(RuleTests.lines(new CheckSpringBootTestWithoutContextRule(), """
+        assertThat(RuleTests.lines(new SpringBootTestWithoutContextRule(), """
                 @SpringBootTest
                 class MathTest {
                     @Test
@@ -227,7 +227,7 @@ class QualityTestAndConfigRulesTest {
 
     @Test
     void constantAssertion() {
-        assertThat(RuleTests.lines(new CheckConstantAssertionRule(), """
+        assertThat(RuleTests.lines(new ConstantAssertionRule(), """
                 class SampleTest {
                     @Test
                     void run() {

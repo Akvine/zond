@@ -4,16 +4,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.models.SourceFile;
-import ru.akvine.zond.rules.codesmell.CheckManualServiceCreationRule;
-import ru.akvine.zond.rules.codesmell.CheckRepositoryInControllerRule;
-import ru.akvine.zond.rules.concurrency.CheckLockWithoutFinallyRule;
-import ru.akvine.zond.rules.logical.CheckLogPlaceholderMismatchRule;
-import ru.akvine.zond.rules.logical.CheckTransactionalRollbackForCheckedExceptionRule;
-import ru.akvine.zond.rules.logical.CheckTransactionalSelfInvocationRule;
-import ru.akvine.zond.rules.performance.CheckMissingBatchProcessingRule;
-import ru.akvine.zond.rules.resources.CheckTransactionalFileIoRule;
-import ru.akvine.zond.rules.resources.CheckTransactionalHttpCallRule;
-import ru.akvine.zond.rules.resources.CheckUnclosedResourceRule;
+import ru.akvine.zond.rules.codesmell.ManualServiceCreationRule;
+import ru.akvine.zond.rules.codesmell.RepositoryInControllerRule;
+import ru.akvine.zond.rules.concurrency.LockWithoutFinallyRule;
+import ru.akvine.zond.rules.logical.LogPlaceholderMismatchRule;
+import ru.akvine.zond.rules.logical.TransactionalRollbackForCheckedExceptionRule;
+import ru.akvine.zond.rules.logical.TransactionalSelfInvocationRule;
+import ru.akvine.zond.rules.performance.MissingBatchProcessingRule;
+import ru.akvine.zond.rules.resources.TransactionalFileIoRule;
+import ru.akvine.zond.rules.resources.TransactionalHttpCallRule;
+import ru.akvine.zond.rules.resources.UnclosedResourceRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -36,7 +36,7 @@ class TypeAwareRulesTest {
 
     @Test
     void selfInvocationTellsOverloadsApart() throws IOException {
-        List<String> found = check(new CheckTransactionalSelfInvocationRule(), Map.of("Orders", """
+        List<String> found = check(new TransactionalSelfInvocationRule(), Map.of("Orders", """
                 package demo;
 
                 public class Orders {
@@ -58,7 +58,7 @@ class TypeAwareRulesTest {
 
     @Test
     void uncheckedExceptionIsKnownByItsAncestors() throws IOException {
-        List<String> found = check(new CheckTransactionalRollbackForCheckedExceptionRule(), Map.of(
+        List<String> found = check(new TransactionalRollbackForCheckedExceptionRule(), Map.of(
                 "AppException", """
                         package demo;
 
@@ -88,7 +88,7 @@ class TypeAwareRulesTest {
 
     @Test
     void lockIsKnownByItsAncestors() throws IOException {
-        List<String> found = check(new CheckLockWithoutFinallyRule(), Map.of(
+        List<String> found = check(new LockWithoutFinallyRule(), Map.of(
                 "OrderLock", """
                         package demo;
 
@@ -114,7 +114,7 @@ class TypeAwareRulesTest {
 
     @Test
     void ownClassNamedLikeResourceIsNotResource() throws IOException {
-        List<String> found = check(new CheckUnclosedResourceRule(), Map.of(
+        List<String> found = check(new UnclosedResourceRule(), Map.of(
                 "Socket", """
                         package demo;
 
@@ -151,7 +151,7 @@ class TypeAwareRulesTest {
 
     @Test
     void httpClientIsKnownByType() throws IOException {
-        List<String> found = check(new CheckTransactionalHttpCallRule(), Map.of(
+        List<String> found = check(new TransactionalHttpCallRule(), Map.of(
                 "Billing", """
                         package demo;
 
@@ -185,7 +185,7 @@ class TypeAwareRulesTest {
 
     @Test
     void streamCopyIsNotFileOperation() throws IOException {
-        List<String> found = check(new CheckTransactionalFileIoRule(), Map.of("Uploads", """
+        List<String> found = check(new TransactionalFileIoRule(), Map.of("Uploads", """
                 package demo;
 
                 public class Uploads {
@@ -203,7 +203,7 @@ class TypeAwareRulesTest {
 
     @Test
     void manuallyCreatedBeanIsKnownByStereotype() throws IOException {
-        List<String> found = check(new CheckManualServiceCreationRule(), Map.of(
+        List<String> found = check(new ManualServiceCreationRule(), Map.of(
                 "ReportService", """
                         package demo;
 
@@ -233,7 +233,7 @@ class TypeAwareRulesTest {
 
     @Test
     void repositoryDependencyIsKnownByAncestors() throws IOException {
-        List<String> found = check(new CheckRepositoryInControllerRule(), Map.of(
+        List<String> found = check(new RepositoryInControllerRule(), Map.of(
                 "Users", """
                         package demo;
 
@@ -258,7 +258,7 @@ class TypeAwareRulesTest {
 
     @Test
     void exceptionArgumentOfLogIsKnownByType() throws IOException {
-        List<String> found = check(new CheckLogPlaceholderMismatchRule(), Map.of("Sample", """
+        List<String> found = check(new LogPlaceholderMismatchRule(), Map.of("Sample", """
                 package demo;
 
                 class Sample {
@@ -274,7 +274,7 @@ class TypeAwareRulesTest {
 
     @Test
     void jdbcWriteInLoopIsKnownByType() throws IOException {
-        List<String> found = check(new CheckMissingBatchProcessingRule(), Map.of(
+        List<String> found = check(new MissingBatchProcessingRule(), Map.of(
                 "Counter", """
                         package demo;
 

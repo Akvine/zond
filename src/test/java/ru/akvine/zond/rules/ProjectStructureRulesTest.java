@@ -3,16 +3,16 @@ package ru.akvine.zond.rules;
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckDuplicateCodeRule;
-import ru.akvine.zond.rules.codesmell.CheckLayerViolationRule;
-import ru.akvine.zond.rules.codesmell.CheckPackageCycleRule;
-import ru.akvine.zond.rules.logical.CheckDuplicateEndpointRule;
-import ru.akvine.zond.rules.logical.CheckLazyAccessOutsideTransactionRule;
-import ru.akvine.zond.rules.logical.CheckMissingEnableAnnotationRule;
-import ru.akvine.zond.rules.logical.CheckMultipleWritesWithoutTransactionRule;
-import ru.akvine.zond.rules.logical.CheckPrototypeInSingletonRule;
-import ru.akvine.zond.rules.performance.CheckRequiresNewInLoopRule;
-import ru.akvine.zond.rules.security.CheckEntityAsRequestBodyRule;
+import ru.akvine.zond.rules.codesmell.DuplicateCodeRule;
+import ru.akvine.zond.rules.codesmell.LayerViolationRule;
+import ru.akvine.zond.rules.codesmell.PackageCycleRule;
+import ru.akvine.zond.rules.logical.DuplicateEndpointRule;
+import ru.akvine.zond.rules.logical.LazyAccessOutsideTransactionRule;
+import ru.akvine.zond.rules.logical.MissingEnableAnnotationRule;
+import ru.akvine.zond.rules.logical.MultipleWritesWithoutTransactionRule;
+import ru.akvine.zond.rules.logical.PrototypeInSingletonRule;
+import ru.akvine.zond.rules.performance.RequiresNewInLoopRule;
+import ru.akvine.zond.rules.security.EntityAsRequestBodyRule;
 
 import java.util.List;
 import java.util.Map;
@@ -40,7 +40,7 @@ class ProjectStructureRulesTest {
 
     @Test
     void multipleWritesWithoutTransaction() {
-        List<Violation> found = RuleTests.check(new CheckMultipleWritesWithoutTransactionRule(), """
+        List<Violation> found = RuleTests.check(new MultipleWritesWithoutTransactionRule(), """
                 @Service
                 class Orders {
                     void place(Order order) {
@@ -70,7 +70,7 @@ class ProjectStructureRulesTest {
 
     @Test
     void requiresNewInLoop() {
-        assertThat(RuleTests.lines(new CheckRequiresNewInLoopRule(), """
+        assertThat(RuleTests.lines(new RequiresNewInLoopRule(), """
                 class Batch {
                     void run(List<Order> orders) {
                         for (Order order : orders) {
@@ -86,7 +86,7 @@ class ProjectStructureRulesTest {
 
     @Test
     void lazyAccessInCalledMethod() {
-        assertThat(RuleTests.lines(new CheckLazyAccessOutsideTransactionRule(), """
+        assertThat(RuleTests.lines(new LazyAccessOutsideTransactionRule(), """
                 class Reports {
                     void print(Long id) {
                         Order order = orderRepository.findById(id).orElseThrow();
@@ -101,7 +101,7 @@ class ProjectStructureRulesTest {
 
     @Test
     void packageCycle() {
-        List<Violation> found = RuleTests.checkProject(new CheckPackageCycleRule(), Map.of(
+        List<Violation> found = RuleTests.checkProject(new PackageCycleRule(), Map.of(
                 "a/Foo.java", "package app.a;\nimport app.b.Bar;\nclass Foo {}",
                 "b/Bar.java", "package app.b;\nimport app.a.Foo;\nclass Bar {}",
                 "c/Baz.java", "package app.c;\nimport app.a.Foo;\nclass Baz {}",
@@ -115,7 +115,7 @@ class ProjectStructureRulesTest {
 
     @Test
     void layerViolation() {
-        List<Violation> found = RuleTests.checkProject(new CheckLayerViolationRule(), Map.of(
+        List<Violation> found = RuleTests.checkProject(new LayerViolationRule(), Map.of(
                 "OrderController.java", """
                         @RestController
                         class OrderController {
@@ -137,7 +137,7 @@ class ProjectStructureRulesTest {
 
     @Test
     void duplicateEndpoint() {
-        assertThat(RuleTests.lines(new CheckDuplicateEndpointRule(), """
+        assertThat(RuleTests.lines(new DuplicateEndpointRule(), """
                 @RestController
                 @RequestMapping("/users")
                 class Users {
@@ -155,7 +155,7 @@ class ProjectStructureRulesTest {
 
     @Test
     void missingEnableAnnotation() {
-        List<Violation> found = RuleTests.checkProject(new CheckMissingEnableAnnotationRule(), Map.of(
+        List<Violation> found = RuleTests.checkProject(new MissingEnableAnnotationRule(), Map.of(
                 "App.java", "@SpringBootApplication\nclass App {}",
                 "Config.java", "@Configuration\n@EnableScheduling\nclass Config {}",
                 "Jobs.java", """
@@ -179,13 +179,13 @@ class ProjectStructureRulesTest {
     @Test
     void missingEnableAnnotationNeedsConfigurationInScope() {
         // Настроек приложения среди проверенных файлов нет - судить об отсутствии @Enable... нельзя
-        assertThat(RuleTests.check(new CheckMissingEnableAnnotationRule(),
+        assertThat(RuleTests.check(new MissingEnableAnnotationRule(),
                 "class Jobs { @Async void first() {} }")).isEmpty();
     }
 
     @Test
     void prototypeInSingleton() {
-        List<Violation> found = RuleTests.checkProject(new CheckPrototypeInSingletonRule(), Map.of(
+        List<Violation> found = RuleTests.checkProject(new PrototypeInSingletonRule(), Map.of(
                 "Report.java", "@Component\n@Scope(\"prototype\")\nclass Report {}",
                 "Printer.java", """
                         @Service
@@ -208,7 +208,7 @@ class ProjectStructureRulesTest {
 
     @Test
     void entityAsRequestBody() {
-        List<Violation> found = RuleTests.checkProject(new CheckEntityAsRequestBodyRule(), Map.of(
+        List<Violation> found = RuleTests.checkProject(new EntityAsRequestBodyRule(), Map.of(
                 "User.java", "@Entity\nclass User { @Id Long id; }",
                 "Users.java", """
                         @RestController
@@ -230,12 +230,12 @@ class ProjectStructureRulesTest {
                 "Second.java", "class Second {\n" + LONG_BODY.formatted("total", "копия с другим комментарием") + "}",
                 "Short.java", "class Short { void a() { run(); } void b() { run(); } }");
 
-        List<Violation> found = RuleTests.checkProject(new CheckDuplicateCodeRule(), files);
+        List<Violation> found = RuleTests.checkProject(new DuplicateCodeRule(), files);
         assertThat(found).singleElement()
                 .satisfies(violation -> assertThat(violation.message()).contains("дословно повторяет"));
 
         // Порог длины настраивается: при большем значении эти тела копиями не считаются
-        CheckDuplicateCodeRule strict = new CheckDuplicateCodeRule();
+        DuplicateCodeRule strict = new DuplicateCodeRule();
         strict.setSettings(RuleSettings.of(Map.of("jr-256.min-lines", "50")));
         assertThat(RuleTests.checkProject(strict, files)).isEmpty();
     }

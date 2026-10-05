@@ -12,17 +12,17 @@ class ScanOptionsTest {
     void defaultsAllowEverything() {
         ScanOptions options = ScanOptions.defaults();
 
-        assertThat(options.allows("jr:40", "CheckMagicNumberRule", ErrorLevel.INFO)).isTrue();
-        assertThat(options.allows("jr:1", "CheckTransactionOnPrivateMethodRule", ErrorLevel.CRITICAL)).isTrue();
+        assertThat(options.allows("jr:40", "MagicNumberRule", ErrorLevel.INFO)).isTrue();
+        assertThat(options.allows("jr:1", "TransactionOnPrivateMethodRule", ErrorLevel.CRITICAL)).isTrue();
     }
 
     @Test
     void disablesRulesByCodeAndByName() {
         ScanOptions options = ScanOptions.parse(" JR:40, checkTodoCommentRule ;jr:41", "");
 
-        assertThat(options.allows("jr:40", "CheckMagicNumberRule", ErrorLevel.INFO)).isFalse();
-        assertThat(options.allows("jr:41", "CheckTodoCommentRule", ErrorLevel.INFO)).isFalse();
-        assertThat(options.allows("jr:42", "CheckNamingConventionRule", ErrorLevel.INFO)).isTrue();
+        assertThat(options.allows("jr:40", "MagicNumberRule", ErrorLevel.INFO)).isFalse();
+        assertThat(options.allows("jr:41", "TodoCommentRule", ErrorLevel.INFO)).isFalse();
+        assertThat(options.allows("jr:42", "NamingConventionRule", ErrorLevel.INFO)).isTrue();
     }
 
     @Test

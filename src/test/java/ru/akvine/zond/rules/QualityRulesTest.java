@@ -2,18 +2,18 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.codesmell.CheckBooleanFlagParameterRule;
-import ru.akvine.zond.rules.codesmell.CheckDeepNestingRule;
-import ru.akvine.zond.rules.codesmell.CheckDisabledTestWithoutReasonRule;
-import ru.akvine.zond.rules.codesmell.CheckLargeClassRule;
-import ru.akvine.zond.rules.codesmell.CheckLongMethodRule;
-import ru.akvine.zond.rules.codesmell.CheckSleepInTestRule;
-import ru.akvine.zond.rules.codesmell.CheckTestWithoutAssertionRule;
-import ru.akvine.zond.rules.codesmell.CheckTooManyDependenciesRule;
-import ru.akvine.zond.rules.codesmell.CheckValueWithoutDefaultRule;
-import ru.akvine.zond.rules.concurrency.CheckAsyncReturnTypeRule;
-import ru.akvine.zond.rules.logical.CheckProxyAnnotationOnPrivateMethodRule;
-import ru.akvine.zond.rules.logical.CheckScheduledWithParametersRule;
+import ru.akvine.zond.rules.codesmell.BooleanFlagParameterRule;
+import ru.akvine.zond.rules.codesmell.DeepNestingRule;
+import ru.akvine.zond.rules.codesmell.DisabledTestWithoutReasonRule;
+import ru.akvine.zond.rules.codesmell.LargeClassRule;
+import ru.akvine.zond.rules.codesmell.LongMethodRule;
+import ru.akvine.zond.rules.codesmell.SleepInTestRule;
+import ru.akvine.zond.rules.codesmell.TestWithoutAssertionRule;
+import ru.akvine.zond.rules.codesmell.TooManyDependenciesRule;
+import ru.akvine.zond.rules.codesmell.ValueWithoutDefaultRule;
+import ru.akvine.zond.rules.concurrency.AsyncReturnTypeRule;
+import ru.akvine.zond.rules.logical.ProxyAnnotationOnPrivateMethodRule;
+import ru.akvine.zond.rules.logical.ScheduledWithParametersRule;
 
 import java.util.List;
 
@@ -35,7 +35,7 @@ class QualityRulesTest {
                 + "    }\n"
                 + "}\n";
 
-        List<Violation> violations = RuleTests.check(new CheckLongMethodRule(), code);
+        List<Violation> violations = RuleTests.check(new LongMethodRule(), code);
 
         assertThat(violations).extracting(Violation::line).containsExactly(2);
         assertThat(violations.get(0).message()).contains("'big'", "57 строк");
@@ -43,7 +43,7 @@ class QualityRulesTest {
 
     @Test
     void deepNesting() {
-        assertThat(RuleTests.lines(new CheckDeepNestingRule(), """
+        assertThat(RuleTests.lines(new DeepNestingRule(), """
                 class Sample {
                     void run(List<String> items, boolean a) {
                         for (String item : items) {
@@ -72,7 +72,7 @@ class QualityRulesTest {
     void largeClass() {
         String code = "class Big {\n" + "    void method() {}\n".repeat(31) + "}\nclass Small {\n    void method() {}\n}\n";
 
-        List<Violation> violations = RuleTests.check(new CheckLargeClassRule(), code);
+        List<Violation> violations = RuleTests.check(new LargeClassRule(), code);
 
         assertThat(violations).extracting(Violation::line).containsExactly(1);
         assertThat(violations.get(0).message()).contains("'Big'", "31 методов");
@@ -80,7 +80,7 @@ class QualityRulesTest {
 
     @Test
     void tooManyDependencies() {
-        assertThat(RuleTests.lines(new CheckTooManyDependenciesRule(), """
+        assertThat(RuleTests.lines(new TooManyDependenciesRule(), """
                 @Service
                 class Big {
                     Big(A a, B b, C c, D d, E e, F f, G g, H h) {}
@@ -99,7 +99,7 @@ class QualityRulesTest {
 
     @Test
     void booleanFlagParameter() {
-        assertThat(RuleTests.lines(new CheckBooleanFlagParameterRule(), """
+        assertThat(RuleTests.lines(new BooleanFlagParameterRule(), """
                 class Sample {
                     public void process(Order order, boolean notify) {}
                     public void setActive(boolean active) {}
@@ -112,7 +112,7 @@ class QualityRulesTest {
 
     @Test
     void proxyAnnotationOnPrivateMethod() {
-        assertThat(RuleTests.lines(new CheckProxyAnnotationOnPrivateMethodRule(), """
+        assertThat(RuleTests.lines(new ProxyAnnotationOnPrivateMethodRule(), """
                 class Sample {
                     @Async
                     private void send() {}
@@ -128,7 +128,7 @@ class QualityRulesTest {
 
     @Test
     void scheduledWithParameters() {
-        assertThat(RuleTests.lines(new CheckScheduledWithParametersRule(), """
+        assertThat(RuleTests.lines(new ScheduledWithParametersRule(), """
                 class Sample {
                     @Scheduled(fixedRate = 1000)
                     public void bad(String name) {}
@@ -140,7 +140,7 @@ class QualityRulesTest {
 
     @Test
     void asyncReturnType() {
-        assertThat(RuleTests.lines(new CheckAsyncReturnTypeRule(), """
+        assertThat(RuleTests.lines(new AsyncReturnTypeRule(), """
                 class Sample {
                     @Async
                     public String bad() { return ""; }
@@ -155,7 +155,7 @@ class QualityRulesTest {
 
     @Test
     void valueWithoutDefault() {
-        assertThat(RuleTests.lines(new CheckValueWithoutDefaultRule(), """
+        assertThat(RuleTests.lines(new ValueWithoutDefaultRule(), """
                 class Sample {
                     @Value("${app.name}")
                     private String name;
@@ -171,7 +171,7 @@ class QualityRulesTest {
 
     @Test
     void testWithoutAssertion() {
-        assertThat(RuleTests.lines(new CheckTestWithoutAssertionRule(), """
+        assertThat(RuleTests.lines(new TestWithoutAssertionRule(), """
                 class SampleTest {
                     @Test
                     void empty() {
@@ -198,7 +198,7 @@ class QualityRulesTest {
 
     @Test
     void disabledTestWithoutReason() {
-        assertThat(RuleTests.lines(new CheckDisabledTestWithoutReasonRule(), """
+        assertThat(RuleTests.lines(new DisabledTestWithoutReasonRule(), """
                 class SampleTest {
                     @Disabled
                     @Test
@@ -215,7 +215,7 @@ class QualityRulesTest {
 
     @Test
     void sleepInTest() {
-        assertThat(RuleTests.lines(new CheckSleepInTestRule(), """
+        assertThat(RuleTests.lines(new SleepInTestRule(), """
                 class SampleTest {
                     @Test
                     void waits() throws Exception {

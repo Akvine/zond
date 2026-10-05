@@ -1,16 +1,16 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.codesmell.CheckInternalCollectionExposureRule;
-import ru.akvine.zond.rules.datetime.CheckInstantUnsupportedUnitRule;
-import ru.akvine.zond.rules.logical.CheckAbsOfHashCodeRule;
-import ru.akvine.zond.rules.logical.CheckBigDecimalDivideRule;
-import ru.akvine.zond.rules.logical.CheckBuilderDefaultRule;
-import ru.akvine.zond.rules.logical.CheckCaseWithoutLocaleRule;
-import ru.akvine.zond.rules.logical.CheckDefaultCharsetRule;
-import ru.akvine.zond.rules.logical.CheckEqualsWrongSignatureRule;
-import ru.akvine.zond.rules.logical.CheckIgnoredBooleanResultRule;
-import ru.akvine.zond.rules.streams.CheckStreamReuseRule;
+import ru.akvine.zond.rules.codesmell.InternalCollectionExposureRule;
+import ru.akvine.zond.rules.datetime.InstantUnsupportedUnitRule;
+import ru.akvine.zond.rules.logical.AbsOfHashCodeRule;
+import ru.akvine.zond.rules.logical.BigDecimalDivideRule;
+import ru.akvine.zond.rules.logical.BuilderDefaultRule;
+import ru.akvine.zond.rules.logical.CaseWithoutLocaleRule;
+import ru.akvine.zond.rules.logical.DefaultCharsetRule;
+import ru.akvine.zond.rules.logical.EqualsWrongSignatureRule;
+import ru.akvine.zond.rules.logical.IgnoredBooleanResultRule;
+import ru.akvine.zond.rules.streams.StreamReuseRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,7 +21,7 @@ class JavaCoreRulesTest {
 
     @Test
     void defaultCharset() {
-        assertThat(RuleTests.lines(new CheckDefaultCharsetRule(), """
+        assertThat(RuleTests.lines(new DefaultCharsetRule(), """
                 class Sample {
                     void run(String text, byte[] data, File file, MultipartFile upload) throws IOException {
                         byte[] a = text.getBytes();
@@ -38,7 +38,7 @@ class JavaCoreRulesTest {
 
     @Test
     void bigDecimalDivide() {
-        assertThat(RuleTests.lines(new CheckBigDecimalDivideRule(), """
+        assertThat(RuleTests.lines(new BigDecimalDivideRule(), """
                 class Sample {
                     void run(BigDecimal total, BigDecimal count, int parts) {
                         BigDecimal a = total.divide(count);
@@ -53,7 +53,7 @@ class JavaCoreRulesTest {
 
     @Test
     void streamReuse() {
-        assertThat(RuleTests.lines(new CheckStreamReuseRule(), """
+        assertThat(RuleTests.lines(new StreamReuseRule(), """
                 class Sample {
                     void run(List<String> items) {
                         Stream<String> stream = items.stream();
@@ -71,7 +71,7 @@ class JavaCoreRulesTest {
 
     @Test
     void ignoredBooleanResult() {
-        assertThat(RuleTests.lines(new CheckIgnoredBooleanResultRule(), """
+        assertThat(RuleTests.lines(new IgnoredBooleanResultRule(), """
                 class Sample {
                     void run(File file, Lock lock, BlockingQueue<String> queue, List<String> list) throws Exception {
                         file.delete();
@@ -91,7 +91,7 @@ class JavaCoreRulesTest {
 
     @Test
     void equalsWrongSignature() {
-        assertThat(RuleTests.lines(new CheckEqualsWrongSignatureRule(), """
+        assertThat(RuleTests.lines(new EqualsWrongSignatureRule(), """
                 class Order {
                     public boolean equals(Order other) { return true; }
                     public int hashcode() { return 1; }
@@ -107,7 +107,7 @@ class JavaCoreRulesTest {
 
     @Test
     void internalCollectionExposure() {
-        assertThat(RuleTests.lines(new CheckInternalCollectionExposureRule(), """
+        assertThat(RuleTests.lines(new InternalCollectionExposureRule(), """
                 class Registry {
                     private final List<String> names = new ArrayList<>();
                     private final List<String> fixed = List.of("a");
@@ -129,7 +129,7 @@ class JavaCoreRulesTest {
 
     @Test
     void caseWithoutLocale() {
-        assertThat(RuleTests.lines(new CheckCaseWithoutLocaleRule(), """
+        assertThat(RuleTests.lines(new CaseWithoutLocaleRule(), """
                 class Sample {
                     void run(String text) {
                         String a = text.toLowerCase();
@@ -142,7 +142,7 @@ class JavaCoreRulesTest {
 
     @Test
     void instantUnsupportedUnit() {
-        assertThat(RuleTests.lines(new CheckInstantUnsupportedUnitRule(), """
+        assertThat(RuleTests.lines(new InstantUnsupportedUnitRule(), """
                 class Sample {
                     void run(Instant moment) {
                         Instant a = moment.plus(1, ChronoUnit.MONTHS);
@@ -156,7 +156,7 @@ class JavaCoreRulesTest {
 
     @Test
     void absOfHashCode() {
-        assertThat(RuleTests.lines(new CheckAbsOfHashCodeRule(), """
+        assertThat(RuleTests.lines(new AbsOfHashCodeRule(), """
                 class Sample {
                     int run(String key, Random random, int buckets) {
                         int a = Math.abs(key.hashCode()) % buckets;
@@ -171,7 +171,7 @@ class JavaCoreRulesTest {
 
     @Test
     void builderDefault() {
-        assertThat(RuleTests.lines(new CheckBuilderDefaultRule(), """
+        assertThat(RuleTests.lines(new BuilderDefaultRule(), """
                 @Builder
                 class Settings {
                     private int retries = 3;

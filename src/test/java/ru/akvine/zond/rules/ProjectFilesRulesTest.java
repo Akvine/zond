@@ -9,27 +9,27 @@ import ru.akvine.zond.models.ConfigFile;
 import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.models.TextFile;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.logical.CheckCiTestsSkippedRule;
-import ru.akvine.zond.rules.logical.CheckComposeUnpinnedImageRule;
-import ru.akvine.zond.rules.logical.CheckKubernetesNoProbesRule;
-import ru.akvine.zond.rules.logical.CheckKubernetesUnpinnedImageRule;
-import ru.akvine.zond.rules.logical.CheckLogUnusedAppenderRule;
-import ru.akvine.zond.rules.logical.CheckSqlChangeWithoutWhereRule;
-import ru.akvine.zond.rules.logical.CheckSqlDestructiveStatementRule;
-import ru.akvine.zond.rules.logical.CheckSqlNotNullWithoutDefaultRule;
-import ru.akvine.zond.rules.logical.CheckUnstableDependencyVersionRule;
-import ru.akvine.zond.rules.performance.CheckLogCallerDataInPatternRule;
-import ru.akvine.zond.rules.performance.CheckLogRootLevelDebugRule;
-import ru.akvine.zond.rules.performance.CheckSqlForeignKeyWithoutIndexRule;
-import ru.akvine.zond.rules.resources.CheckKubernetesNoResourceLimitsRule;
-import ru.akvine.zond.rules.resources.CheckLogFileWithoutRotationRule;
-import ru.akvine.zond.rules.security.CheckCiSecretInVariablesRule;
-import ru.akvine.zond.rules.security.CheckCiUnpinnedReferenceRule;
-import ru.akvine.zond.rules.security.CheckComposeDatabasePortExposedRule;
-import ru.akvine.zond.rules.security.CheckComposePrivilegedServiceRule;
-import ru.akvine.zond.rules.security.CheckComposeSecretInEnvironmentRule;
-import ru.akvine.zond.rules.security.CheckKubernetesPrivilegedContainerRule;
-import ru.akvine.zond.rules.security.CheckKubernetesSecretInManifestRule;
+import ru.akvine.zond.rules.logical.CiTestsSkippedRule;
+import ru.akvine.zond.rules.logical.ComposeUnpinnedImageRule;
+import ru.akvine.zond.rules.logical.KubernetesNoProbesRule;
+import ru.akvine.zond.rules.logical.KubernetesUnpinnedImageRule;
+import ru.akvine.zond.rules.logical.LogUnusedAppenderRule;
+import ru.akvine.zond.rules.logical.SqlChangeWithoutWhereRule;
+import ru.akvine.zond.rules.logical.SqlDestructiveStatementRule;
+import ru.akvine.zond.rules.logical.SqlNotNullWithoutDefaultRule;
+import ru.akvine.zond.rules.logical.UnstableDependencyVersionRule;
+import ru.akvine.zond.rules.performance.LogCallerDataInPatternRule;
+import ru.akvine.zond.rules.performance.LogRootLevelDebugRule;
+import ru.akvine.zond.rules.performance.SqlForeignKeyWithoutIndexRule;
+import ru.akvine.zond.rules.resources.KubernetesNoResourceLimitsRule;
+import ru.akvine.zond.rules.resources.LogFileWithoutRotationRule;
+import ru.akvine.zond.rules.security.CiSecretInVariablesRule;
+import ru.akvine.zond.rules.security.CiUnpinnedReferenceRule;
+import ru.akvine.zond.rules.security.ComposeDatabasePortExposedRule;
+import ru.akvine.zond.rules.security.ComposePrivilegedServiceRule;
+import ru.akvine.zond.rules.security.ComposeSecretInEnvironmentRule;
+import ru.akvine.zond.rules.security.KubernetesPrivilegedContainerRule;
+import ru.akvine.zond.rules.security.KubernetesSecretInManifestRule;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -107,13 +107,13 @@ class ProjectFilesRulesTest {
         assertThat(context.textFiles()).extracting(TextFile::type)
                 .containsExactly(TextFileType.LIQUIBASE_XML, TextFileType.LIQUIBASE_YAML);
         // Откат (rollback) миграцией не считается
-        assertThat(check(new CheckSqlDestructiveStatementRule(), context))
+        assertThat(check(new SqlDestructiveStatementRule(), context))
                 .containsExactly("changelog.xml:17", "changelog.xml:18", "changelog.xml:21", "changes.yaml:14");
-        assertThat(check(new CheckSqlNotNullWithoutDefaultRule(), context))
+        assertThat(check(new SqlNotNullWithoutDefaultRule(), context))
                 .containsExactly("changelog.xml:14", "changes.yaml:9");
         // Индекс по manager_id создан отдельным изменением
-        assertThat(check(new CheckSqlForeignKeyWithoutIndexRule(), context)).containsExactly("changelog.xml:4");
-        assertThat(check(new CheckSqlChangeWithoutWhereRule(), context))
+        assertThat(check(new SqlForeignKeyWithoutIndexRule(), context)).containsExactly("changelog.xml:4");
+        assertThat(check(new SqlChangeWithoutWhereRule(), context))
                 .containsExactly("changelog.xml:19", "changelog.xml:22", "changes.yaml:18");
     }
 
@@ -158,7 +158,7 @@ class ProjectFilesRulesTest {
 
         // core.version задана в родителе, api.version переопределена в модуле и сама ссылается на revision;
         // версия модуля унаследована от родителя; зависимости плагина сборки в приложение не попадают
-        List<Violation> violations = new CheckUnstableDependencyVersionRule().checkContext(context);
+        List<Violation> violations = new UnstableDependencyVersionRule().checkContext(context);
         assertThat(violations).extracting(this::place).containsExactly("pom.xml:14", "pom.xml:15");
         assertThat(violations).extracting(Violation::message)
                 .anyMatch(message -> message.contains("com.example:core:2.0-SNAPSHOT"))
@@ -250,14 +250,14 @@ class ProjectFilesRulesTest {
         ScanContext context = context();
 
         // Профиль dev в рабочую среду не попадает
-        assertThat(check(new CheckLogRootLevelDebugRule(), context))
+        assertThat(check(new LogRootLevelDebugRule(), context))
                 .containsExactly("log4j2.xml:7", "logback-spring.xml:22");
-        assertThat(check(new CheckLogFileWithoutRotationRule(), context))
+        assertThat(check(new LogFileWithoutRotationRule(), context))
                 .containsExactly("log4j2.xml:4", "logback-spring.xml:5", "logback-spring.xml:9");
-        assertThat(check(new CheckLogUnusedAppenderRule(), context))
+        assertThat(check(new LogUnusedAppenderRule(), context))
                 .containsExactly("log4j2.xml:4", "logback-spring.xml:9");
         // %logger, %level, %c и %m места вызова не требуют
-        assertThat(check(new CheckLogCallerDataInPatternRule(), context))
+        assertThat(check(new LogCallerDataInPatternRule(), context))
                 .containsExactly("log4j2.xml:4", "logback-spring.xml:3");
     }
 
@@ -292,15 +292,15 @@ class ProjectFilesRulesTest {
                 """);
         ScanContext context = context();
 
-        assertThat(check(new CheckComposeUnpinnedImageRule(), context))
+        assertThat(check(new ComposeUnpinnedImageRule(), context))
                 .containsExactly("docker-compose.yml:15", "docker-compose.yml:3");
         // Значение из окружения (${...}) секретом в файле не является
-        assertThat(check(new CheckComposeSecretInEnvironmentRule(), context))
+        assertThat(check(new ComposeSecretInEnvironmentRule(), context))
                 .containsExactly("docker-compose.yml:19", "docker-compose.yml:5");
-        assertThat(check(new CheckComposePrivilegedServiceRule(), context))
+        assertThat(check(new ComposePrivilegedServiceRule(), context))
                 .containsExactly("docker-compose.yml:16", "docker-compose.yml:17", "docker-compose.yml:23");
         // Порт, привязанный к 127.0.0.1, снаружи недоступен; 8080 - порт самого приложения
-        assertThat(check(new CheckComposeDatabasePortExposedRule(), context)).containsExactly("docker-compose.yml:9");
+        assertThat(check(new ComposeDatabasePortExposedRule(), context)).containsExactly("docker-compose.yml:9");
     }
 
     @Test
@@ -365,14 +365,14 @@ class ProjectFilesRulesTest {
                 """);
         ScanContext context = context();
 
-        assertThat(check(new CheckKubernetesNoResourceLimitsRule(), context)).containsExactly("app.yaml:10");
+        assertThat(check(new KubernetesNoResourceLimitsRule(), context)).containsExactly("app.yaml:10");
         // Задаче (Job) проверки готовности не нужны
-        assertThat(check(new CheckKubernetesNoProbesRule(), context)).containsExactly("app.yaml:10");
+        assertThat(check(new KubernetesNoProbesRule(), context)).containsExactly("app.yaml:10");
         // registry.local:5000 - порт реестра, а не тег
-        assertThat(check(new CheckKubernetesUnpinnedImageRule(), context)).containsExactly("app.yaml:11");
-        assertThat(check(new CheckKubernetesPrivilegedContainerRule(), context))
+        assertThat(check(new KubernetesUnpinnedImageRule(), context)).containsExactly("app.yaml:11");
+        assertThat(check(new KubernetesPrivilegedContainerRule(), context))
                 .containsExactly("app.yaml:21", "app.yaml:8");
-        assertThat(check(new CheckKubernetesSecretInManifestRule(), context))
+        assertThat(check(new KubernetesSecretInManifestRule(), context))
                 .containsExactly("app.yaml:14", "app.yaml:35");
     }
 
@@ -412,12 +412,12 @@ class ProjectFilesRulesTest {
 
         assertThat(context.textFiles()).extracting(TextFile::type)
                 .containsExactlyInAnyOrder(TextFileType.GITLAB_CI, TextFileType.GITHUB_WORKFLOW);
-        assertThat(check(new CheckCiSecretInVariablesRule(), context))
+        assertThat(check(new CiSecretInVariablesRule(), context))
                 .containsExactly(".gitlab-ci.yml:3", "build.yml:17");
-        assertThat(check(new CheckCiUnpinnedReferenceRule(), context))
+        assertThat(check(new CiUnpinnedReferenceRule(), context))
                 .containsExactly(".gitlab-ci.yml:1", "build.yml:10");
         // В build.yml тесты идут отдельной командой - сборка без них там допустима
-        assertThat(check(new CheckCiTestsSkippedRule(), context)).containsExactly(".gitlab-ci.yml:8");
+        assertThat(check(new CiTestsSkippedRule(), context)).containsExactly(".gitlab-ci.yml:8");
     }
 
     private ScanContext context() {

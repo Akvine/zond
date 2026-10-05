@@ -1,11 +1,11 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.logical.CheckCastWithoutInstanceofRule;
-import ru.akvine.zond.rules.logical.CheckDivisionBySizeRule;
-import ru.akvine.zond.rules.logical.CheckIndexWithoutLengthCheckRule;
-import ru.akvine.zond.rules.logical.CheckNullUnboxingRule;
-import ru.akvine.zond.rules.logical.CheckNullableDereferenceRule;
+import ru.akvine.zond.rules.logical.CastWithoutInstanceofRule;
+import ru.akvine.zond.rules.logical.DivisionBySizeRule;
+import ru.akvine.zond.rules.logical.IndexWithoutLengthCheckRule;
+import ru.akvine.zond.rules.logical.NullUnboxingRule;
+import ru.akvine.zond.rules.logical.NullableDereferenceRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,7 +16,7 @@ class FlowCheckRulesTest {
 
     @Test
     void nullableDereference() {
-        assertThat(RuleTests.lines(new CheckNullableDereferenceRule(), """
+        assertThat(RuleTests.lines(new NullableDereferenceRule(), """
                 class Sample {
                     void run(Map<String, Handler> handlers, String key, Optional<User> user) {
                         Handler handler = handlers.get(key);
@@ -44,7 +44,7 @@ class FlowCheckRulesTest {
 
     @Test
     void nullUnboxing() {
-        assertThat(RuleTests.lines(new CheckNullUnboxingRule(), """
+        assertThat(RuleTests.lines(new NullUnboxingRule(), """
                 class Sample {
                     void run(Boolean active, boolean plain, Boolean checked) {
                         if (active) {}
@@ -58,7 +58,7 @@ class FlowCheckRulesTest {
 
     @Test
     void castWithoutInstanceof() {
-        assertThat(RuleTests.lines(new CheckCastWithoutInstanceofRule(), """
+        assertThat(RuleTests.lines(new CastWithoutInstanceofRule(), """
                 class Sample {
                     void run(Object value, Object other) {
                         String text = (String) value;
@@ -77,7 +77,7 @@ class FlowCheckRulesTest {
 
     @Test
     void indexWithoutLengthCheck() {
-        assertThat(RuleTests.lines(new CheckIndexWithoutLengthCheckRule(), """
+        assertThat(RuleTests.lines(new IndexWithoutLengthCheckRule(), """
                 class Sample {
                     void run(String text, String line) {
                         text.charAt(0);
@@ -97,7 +97,7 @@ class FlowCheckRulesTest {
 
     @Test
     void divisionBySize() {
-        assertThat(RuleTests.lines(new CheckDivisionBySizeRule(), """
+        assertThat(RuleTests.lines(new DivisionBySizeRule(), """
                 class Sample {
                     double average(List<Integer> items, int total) {
                         return total / items.size();

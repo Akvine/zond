@@ -35,6 +35,7 @@ public record ScanOptions(
     private static final int SINGLE_THREAD = 1;
     private static final String SEPARATOR = "[,;\\s]+";
     private static final String TEST_DIRECTORY = "test";
+    private static final String OLD_NAME_PREFIX = "Check";
 
     /**
      * @return настройки по умолчанию: все правила, все уровни, все файлы
@@ -100,7 +101,7 @@ public record ScanOptions(
     }
 
     /**
-     * @param disabledRules список правил через запятую: "jr:40, jr:41, CheckTodoCommentRule"; может быть пустым
+     * @param disabledRules список правил через запятую: "jr:40, jr:41, TodoCommentRule"; может быть пустым
      * @param minLevel      имя уровня: BLOCKER, CRITICAL, MAJOR, MINOR, INFO; пустая строка - без порога
      */
     public static ScanOptions parse(String disabledRules, String minLevel) {
@@ -126,7 +127,9 @@ public record ScanOptions(
         // Уровни в ErrorLevel объявлены от самого строгого к самому мягкому
         return level.ordinal() <= minLevel.ordinal()
                 && !disabledRules.contains(normalize(ruleCode))
-                && !disabledRules.contains(normalize(ruleName));
+                && !disabledRules.contains(normalize(ruleName))
+                // Имя из настроек, написанных до переименования правил: CheckTodoCommentRule
+                && !disabledRules.contains(normalize(OLD_NAME_PREFIX + ruleName));
     }
 
     private static ErrorLevel parseLevel(String level) {

@@ -1,10 +1,10 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
-import ru.akvine.zond.rules.performance.CheckStreamInLoopRule;
-import ru.akvine.zond.rules.streams.CheckFindFirstIsPresentRule;
-import ru.akvine.zond.rules.streams.CheckSortedFindFirstRule;
-import ru.akvine.zond.rules.streams.CheckStreamCountForExistenceRule;
+import ru.akvine.zond.rules.performance.StreamInLoopRule;
+import ru.akvine.zond.rules.streams.FindFirstIsPresentRule;
+import ru.akvine.zond.rules.streams.SortedFindFirstRule;
+import ru.akvine.zond.rules.streams.StreamCountForExistenceRule;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -15,7 +15,7 @@ class StreamUsageRulesTest {
 
     @Test
     void streamCountForExistence() {
-        assertThat(RuleTests.lines(new CheckStreamCountForExistenceRule(), """
+        assertThat(RuleTests.lines(new StreamCountForExistenceRule(), """
                 class Sample {
                     boolean run(List<String> items) {
                         boolean a = items.stream().filter(String::isEmpty).count() > 0;
@@ -32,7 +32,7 @@ class StreamUsageRulesTest {
 
     @Test
     void findFirstIsPresent() {
-        assertThat(RuleTests.lines(new CheckFindFirstIsPresentRule(), """
+        assertThat(RuleTests.lines(new FindFirstIsPresentRule(), """
                 class Sample {
                     boolean run(List<String> items) {
                         boolean a = items.stream().filter(String::isEmpty).findFirst().isPresent();
@@ -48,7 +48,7 @@ class StreamUsageRulesTest {
 
     @Test
     void sortedFindFirst() {
-        assertThat(RuleTests.lines(new CheckSortedFindFirstRule(), """
+        assertThat(RuleTests.lines(new SortedFindFirstRule(), """
                 class Sample {
                     void run(List<Integer> items) {
                         Optional<Integer> a = items.stream().sorted().findFirst();
@@ -63,7 +63,7 @@ class StreamUsageRulesTest {
 
     @Test
     void streamInLoop() {
-        assertThat(RuleTests.lines(new CheckStreamInLoopRule(), """
+        assertThat(RuleTests.lines(new StreamInLoopRule(), """
                 class Sample {
                     void run(List<Order> orders, List<Item> items) {
                         for (Order order : orders) {
