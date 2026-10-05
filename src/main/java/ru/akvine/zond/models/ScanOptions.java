@@ -102,7 +102,7 @@ public record ScanOptions(
 
     /**
      * @param disabledRules список правил через запятую: "jr:40, jr:41, TodoCommentRule"; может быть пустым
-     * @param minLevel      имя уровня: BLOCKER, CRITICAL, MAJOR, MINOR, INFO; пустая строка - без порога
+     * @param minLevel      имя уровня: CRITICAL, MAJOR, MINOR, INFO; пустая строка - без порога
      */
     public static ScanOptions parse(String disabledRules, String minLevel) {
         Set<String> disabled = Arrays.stream(disabledRules.split(SEPARATOR))
@@ -137,7 +137,7 @@ public record ScanOptions(
             return ErrorLevel.INFO;
         }
         try {
-            return ErrorLevel.valueOf(level.trim().toUpperCase(Locale.ROOT));
+            return ErrorLevel.parse(level);
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("Неизвестный уровень '" + level.trim() + "'. Допустимые значения: "
                     + Arrays.stream(ErrorLevel.values()).map(Enum::name).collect(Collectors.joining(", ")));

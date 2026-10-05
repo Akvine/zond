@@ -80,7 +80,7 @@ java -jar build/libs/zond-0.0.1-SNAPSHOT.jar --path=/projects/shop --report=repo
 |---|---|
 | `--path=<путь>` | Что проверять: папка или `.java`-файл. Можно передать и просто первым аргументом без имени. |
 | `--report=<файл>` | Куда писать отчет. Формат задает расширение: `.xlsx` — Excel, `.html` — веб-страница, `.sarif` — SARIF, любое другое — текст. Без аргумента и без настройки отчет выводится в консоль. |
-| `--min-level=<уровень>` | В отчет попадают проблемы этого уровня и строже: `BLOCKER`, `CRITICAL`, `MAJOR`, `MINOR`, `INFO`. |
+| `--min-level=<уровень>` | В отчет попадают проблемы этого уровня и строже: `CRITICAL`, `MAJOR`, `MINOR`, `INFO`. |
 | `--min-confidence=<уверенность>` | В отчет попадают находки с этой уверенностью и выше: `CONFIRMED`, `PROBABLE`, `SUSPICION`. См. [Уверенность находки](#уверенность-находки). |
 | `--zond.progress.percent=false` | Не показывать процент в ходе сканирования. |
 | `--zond.report.confidence=false` | Не показывать уверенность находок в отчете. |
@@ -138,7 +138,7 @@ zond.scan.skip-tests=true
 [CRITICAL] [LOGICAL] [jr:1] src\main\java\shop\OrderService.java:42 - @Transactional над приватным методом ...
 ```
 
-Уровни от самого строгого: `BLOCKER`, `CRITICAL`, `MAJOR`, `MINOR`, `INFO`.
+Уровни от самого строгого: `CRITICAL`, `MAJOR`, `MINOR`, `INFO`.
 
 В Excel-отчете три листа: «Сводка» (числа по уровням и правилам), «Проблемы» (все находки с фильтром
 по любой колонке) и «Не разобраны» (файлы, которые не удалось прочитать как Java-код).
@@ -147,7 +147,7 @@ HTML-отчет — одна самодостаточная страница: с
 по файлу, коду правила и тексту. Ее можно переслать или приложить к сборке.
 
 SARIF (версия 2.1.0) понимают GitHub Code Scanning, GitLab, Azure DevOps и IDE: находки показываются
-прямо в коде и в pull request. `BLOCKER` и `CRITICAL` передаются как `error`, `MAJOR` — как `warning`,
+прямо в коде и в pull request. `CRITICAL` передается как `error`, `MAJOR` — как `warning`,
 остальные — как `note`; пути записаны от корня сканирования.
 
 Помимо `.java`-файлов проверяются файлы настроек Spring, SQL-миграции, файлы сборки и Dockerfile —
@@ -611,6 +611,10 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
 - **Связанные условия понимаются.** Если переменная задана под условием `if (flag)`, под тем же условием
   ниже она не `null`. То же с флагом: `found = true` в той же ветке и `boolean ok = x != null` с
   последующим `if (ok)`.
+- **Связи между переменными понимаются.** После `if (a == null && b == null) return;` известно, что `null`
+  не обе сразу. Поэтому в ветке `if (a == null)` переменная `b` не `null`, и `b.length()` — не находка.
+  То же для `if (a != null || b != null) { ... }` и проверок через `Objects.isNull` / `nonNull`. Связь
+  теряет силу, когда одной из переменных присваивают новое значение.
 - **Повторный вызов считается тем же значением:** после `if (user.getName() != null)` вызов
   `user.getName()` не `null`.
 - **О булевых флагах не сообщается:** `boolean debug = false; if (debug)` и `valid = valid && check()`

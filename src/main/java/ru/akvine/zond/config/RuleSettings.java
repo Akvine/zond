@@ -128,7 +128,7 @@ public class RuleSettings {
             return Optional.empty();
         }
         try {
-            return Optional.of(ErrorLevel.valueOf(value.get().toUpperCase(Locale.ROOT)));
+            return Optional.of(ErrorLevel.parse(value.get()));
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("Неизвестный уровень '" + value.get() + "' у правила " + ruleCode
                     + ". Допустимые значения: "

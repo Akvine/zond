@@ -29,7 +29,6 @@ class ScanOptionsTest {
     void keepsOnlyLevelsAtOrAboveThreshold() {
         ScanOptions options = ScanOptions.parse("", "major");
 
-        assertThat(options.allows("jr:1", "A", ErrorLevel.BLOCKER)).isTrue();
         assertThat(options.allows("jr:1", "A", ErrorLevel.CRITICAL)).isTrue();
         assertThat(options.allows("jr:1", "A", ErrorLevel.MAJOR)).isTrue();
         assertThat(options.allows("jr:1", "A", ErrorLevel.MINOR)).isFalse();
@@ -41,6 +40,6 @@ class ScanOptionsTest {
         assertThatThrownBy(() -> ScanOptions.parse("", "HIGH"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("'HIGH'")
-                .hasMessageContaining("BLOCKER, CRITICAL, MAJOR, MINOR, INFO");
+                .hasMessageContaining("CRITICAL, MAJOR, MINOR, INFO");
     }
 }

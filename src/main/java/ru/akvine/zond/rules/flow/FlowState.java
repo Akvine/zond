@@ -13,6 +13,7 @@ import java.util.Set;
 public final class FlowState {
     private final Map<String, FlowValue> values = new HashMap<>();
     private final List<Correlation> correlations = new ArrayList<>();
+    private final List<Implication> implications = new ArrayList<>();
     // Текст выражения -> что о нем известно: после if (user.getName() != null) вызов user.getName() не null
     private final Map<String, Fact> facts = new HashMap<>();
 
@@ -34,12 +35,41 @@ public final class FlowState {
     public record Fact(FlowValue value, Set<String> names) {
     }
 
+    /**
+     * Связь двух переменных: "если variable равна null (либо не равна), то target имеет значение value"
+     *
+     * @param whenNull true - связь действует, когда variable равна null; false - когда не равна
+     */
+    public record Implication(String variable, boolean whenNull, String target, FlowValue value) {
+    }
+
+    // Связей между переменными одного метода много не бывает; предел - защита от разрастания
+    private static final int MAX_IMPLICATIONS = 64;
+
     public FlowState copy() {
         FlowState copy = new FlowState();
         copy.values.putAll(values);
         copy.correlations.addAll(correlations);
         copy.facts.putAll(facts);
+        copy.implications.addAll(implications);
         return copy;
+    }
+
+    /**
+     * Принимает все, что известно в другом состоянии, оставаясь тем же объектом
+     */
+    public void adopt(FlowState other) {
+        if (other == this) {
+            return;
+        }
+        values.clear();
+        values.putAll(other.values);
+        correlations.clear();
+        correlations.addAll(other.correlations);
+        facts.clear();
+        facts.putAll(other.facts);
+        implications.clear();
+        implications.addAll(other.implications);
     }
 
     /**
@@ -64,6 +94,7 @@ public final class FlowState {
         values.put(name, value);
         correlations.removeIf(correlation -> correlation.variable().equals(name) || correlation.names().contains(name));
         facts.values().removeIf(fact -> fact.names().contains(name));
+        implications.removeIf(implication -> implication.variable().equals(name) || implication.target().equals(name));
     }
 
     /**
@@ -83,6 +114,16 @@ public final class FlowState {
      */
     public void refine(String name, FlowValue value) {
         values.put(name, value);
+        if (!value.isNull() && !value.isNotNull()) {
+            return;
+        }
+        // Стало известно, null переменная или нет: применяем все, что из этого следует для других
+        for (Implication implication : implications) {
+            if (implication.variable().equals(name) && implication.whenNull() == value.isNull()
+                    && values.containsKey(implication.target())) {
+                values.put(implication.target(), implication.value());
+            }
+        }
     }
 
     public void correlate(Correlation correlation) {
@@ -183,6 +224,45 @@ public final class FlowState {
                 joined.correlations.add(correlation);
             }
         }
+        for (Implication implication : first.implications) {
+            if (second.implications.contains(implication)) {
+                joined.implications.add(implication);
+            }
+        }
+        relate(first, second, joined);
         return joined;
+    }
+
+    // Два пути сошлись, и на одном переменная точно null, а на другом точно нет. Значит, проверив ее ниже,
+    // мы узнаем, каким путем пришли, - а с ним и то, что на этом пути было известно об остальных переменных.
+    // Так понимается код: if (a == null && b == null) return; if (a == null) b.use();
+    private static void relate(FlowState first, FlowState second, FlowState joined) {
+        for (Map.Entry<String, FlowValue> entry : first.values.entrySet()) {
+            String variable = entry.getKey();
+            FlowValue inFirst = entry.getValue();
+            FlowValue inSecond = second.values.get(variable);
+            boolean distinguishes = inSecond != null
+                    && (inFirst.isNull() && inSecond.isNotNull() || inFirst.isNotNull() && inSecond.isNull());
+            if (!distinguishes) {
+                continue;
+            }
+            for (Map.Entry<String, FlowValue> other : first.values.entrySet()) {
+                String target = other.getKey();
+                FlowValue targetInSecond = second.values.get(target);
+                boolean differs = targetInSecond != null && other.getValue().nullness() != targetInSecond.nullness();
+                if (target.equals(variable) || !differs || joined.implications.size() >= MAX_IMPLICATIONS) {
+                    continue;
+                }
+                joined.imply(new Implication(variable, inFirst.isNull(), target, other.getValue()));
+                joined.imply(new Implication(variable, inSecond.isNull(), target, targetInSecond));
+            }
+        }
+    }
+
+    private void imply(Implication implication) {
+        // Прежнее следствие для той же пары и того же случая заменяется новым
+        implications.removeIf(known -> known.variable().equals(implication.variable())
+                && known.whenNull() == implication.whenNull() && known.target().equals(implication.target()));
+        implications.add(implication);
     }
 }

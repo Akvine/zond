@@ -53,7 +53,6 @@ public class XlsxPrinter implements Printer {
     private static final int ROWS_IN_MEMORY = 200;
 
     private static final Map<ErrorLevel, IndexedColors> LEVEL_COLORS = new EnumMap<>(Map.of(
-            ErrorLevel.BLOCKER, IndexedColors.RED,
             ErrorLevel.CRITICAL, IndexedColors.CORAL,
             ErrorLevel.MAJOR, IndexedColors.LIGHT_ORANGE,
             ErrorLevel.MINOR, IndexedColors.LIGHT_YELLOW));

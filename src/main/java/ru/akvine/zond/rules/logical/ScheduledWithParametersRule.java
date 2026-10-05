@@ -40,7 +40,7 @@ public class ScheduledWithParametersRule extends AbstractRule {
 
     @Override
     public ErrorLevel errorLevel() {
-        return ErrorLevel.BLOCKER;
+        return ErrorLevel.CRITICAL;
     }
 
     @Override

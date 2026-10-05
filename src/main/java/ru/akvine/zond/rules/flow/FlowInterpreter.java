@@ -970,7 +970,7 @@ public final class FlowInterpreter {
         lastCondition = branches;
         FlowState joined = FlowState.join(branches.whenTrue(), branches.whenFalse());
         if (joined != null) {
-            joined.names().forEach(name -> state.refine(name, joined.get(name)));
+            state.adopt(joined);
         }
         if (branches.whenFalse() == null) {
             return FlowValue.number(1, 1);
@@ -1069,7 +1069,7 @@ public final class FlowInterpreter {
 
         FlowState joined = FlowState.join(branches.whenTrue(), branches.whenFalse());
         if (joined != null) {
-            joined.names().forEach(name -> state.refine(name, joined.get(name)));
+            state.adopt(joined);
         }
         if (thenValue == null) {
             return elseValue == null ? FlowValue.unknown() : elseValue;

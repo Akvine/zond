@@ -22,12 +22,12 @@ public class HtmlPrinter implements Printer {
     private static final String STYLE = """
             :root {
               --bg: #f6f7f9; --panel: #ffffff; --text: #1c2330; --muted: #5f6b7c; --border: #d9dee6;
-              --blocker: #b3261e; --critical: #c2410c; --major: #b45309; --minor: #6b7280; --info: #2563eb;
+              --critical: #c2410c; --major: #b45309; --minor: #6b7280; --info: #2563eb;
             }
             @media (prefers-color-scheme: dark) {
               :root {
                 --bg: #14171c; --panel: #1d2128; --text: #e6e9ee; --muted: #9aa4b2; --border: #313743;
-                --blocker: #f2857d; --critical: #fb923c; --major: #fbbf24; --minor: #a8b0bd; --info: #7aa7ff;
+                --critical: #fb923c; --major: #fbbf24; --minor: #a8b0bd; --info: #7aa7ff;
               }
             }
             * { box-sizing: border-box; }
@@ -59,7 +59,7 @@ public class HtmlPrinter implements Printer {
             .line, .code { color: var(--muted); font-variant-numeric: tabular-nums; }
             .text { min-width: 0; overflow-wrap: anywhere; }
             .rule { color: var(--muted); font-size: 12px; }
-            .BLOCKER { --color: var(--blocker); } .CRITICAL { --color: var(--critical); } .MAJOR { --color: var(--major); }
+            .CRITICAL { --color: var(--critical); } .MAJOR { --color: var(--major); }
             .MINOR { --color: var(--minor); } .INFO { --color: var(--info); }
             .empty { padding: 32px; text-align: center; color: var(--muted); }
             [hidden] { display: none !important; }

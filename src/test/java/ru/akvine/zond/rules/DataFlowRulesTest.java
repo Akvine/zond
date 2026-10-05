@@ -243,6 +243,52 @@ class DataFlowRulesTest {
                     return total;
                 }
 
+                int bothNullExcluded(int id) {
+                    String first = find(id);
+                    String second = find(id + 1);
+                    if (first == null && second == null) {
+                        return 0;
+                    }
+                    if (first == null) {
+                        return second.length();
+                    }
+                    return first.length();
+                }
+
+                int eitherPresent(int id) {
+                    String first = find(id);
+                    String second = find(id + 1);
+                    if (Objects.nonNull(first) || Objects.nonNull(second)) {
+                        return first == null ? second.length() : first.length();
+                    }
+                    return 0;
+                }
+
+                int relationDoesNotCoverOtherBranch(int id) {
+                    String first = find(id);
+                    String second = find(id + 1);
+                    if (first == null && second == null) {
+                        return 0;
+                    }
+                    if (first != null) {
+                        return second.length(); // @MAYBE
+                    }
+                    return 0;
+                }
+
+                int relationEndsWhenVariableIsReassigned(int id) {
+                    String first = find(id);
+                    String second = find(id + 1);
+                    if (first == null && second == null) {
+                        return 0;
+                    }
+                    second = find(id + 2);
+                    if (first == null) {
+                        return second.length(); // @MAYBE
+                    }
+                    return 0;
+                }
+
                 int passNull() {
                     return size(null); // @ARG
                 }

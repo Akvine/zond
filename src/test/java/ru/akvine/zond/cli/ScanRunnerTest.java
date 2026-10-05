@@ -137,7 +137,7 @@ class ScanRunnerTest {
                 "1", reports.toString(),       // папка для отчета
                 "2", "3",                      // формат: xlsx
                 "3",                           // тесты: не сканировать
-                "4", "2",                      // минимальный уровень: CRITICAL
+                "4", "1",                      // минимальный уровень: CRITICAL
                 "5", "2",                      // минимальная уверенность: PROBABLE
                 "6", "1", "jr:1, jr:999", "4", // отключить правило, неизвестное пропускается
                 "7", "generated, *Dto.java",   // исключенные пути
@@ -204,12 +204,16 @@ class ScanRunnerTest {
 
     @Test
     void minLevelArgumentHidesLessSevereRules() {
+        // Единственное правило понижено до MAJOR - при пороге CRITICAL оно не запускается
+        ruleSettings = RuleSettings.of(Map.of("jr-1.level", "MAJOR"));
         ScanRunner runner = runner("");
-
-        // Единственное правило имеет уровень CRITICAL - при пороге BLOCKER оно не запускается
-        runner.run(new DefaultApplicationArguments("--path=" + dir, "--min-level=BLOCKER"));
-
+        runner.run(new DefaultApplicationArguments("--path=" + dir, "--min-level=CRITICAL"));
         assertThat(runner.getExitCode()).isZero();
+
+        // Уровня BLOCKER больше нет: старая настройка читается как CRITICAL, а не как ошибка
+        ScanRunner oldSetting = runner("");
+        oldSetting.run(new DefaultApplicationArguments("--path=" + dir, "--min-level=BLOCKER"));
+        assertThat(oldSetting.getExitCode()).isZero();
     }
 
     @Test

@@ -101,7 +101,7 @@ public class SarifPrinter implements Printer {
 
     private String levelOf(ErrorLevel level) {
         return switch (level) {
-            case BLOCKER, CRITICAL -> ERROR;
+            case CRITICAL -> ERROR;
             case MAJOR -> WARNING;
             default -> NOTE;
         };
