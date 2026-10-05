@@ -63,6 +63,7 @@ public class SecretInConfigRule extends AbstractConfigRule {
         String value = property.value().trim();
         return Secrets.isSecretName(lastSegment(property.key()))
                 && !NOT_SECRET_VALUES.contains(value.toLowerCase())
+                && !Secrets.isStub(value)
                 && !PLACEHOLDER.matcher(value).matches()
                 && !ENCRYPTED.matcher(value).matches();
     }

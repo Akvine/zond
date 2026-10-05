@@ -4,6 +4,7 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.RuleParameter;
@@ -56,10 +57,10 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
                 }
                 describe(call, graph)
                         .filter(problem -> reportedLines.add(call.getBegin().map(position -> position.line).orElse(0)))
-                        .ifPresent(problem -> violations.add(violation(sourceFile, call, problem
+                        .ifPresent(problem -> violations.add(violation(sourceFile, call, problem.text()
                                 + ": на каждый элемент уходит отдельный запрос к БД (проблема N+1);"
                                 + " загрузите или сохраните данные одним запросом: findAllById, saveAll,"
-                                + " запрос с IN")));
+                                + " запрос с IN").withConfidence(problem.confidence())));
             }
         }
         return violations;
@@ -75,9 +76,19 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
         return ErrorType.PERFORMANCE;
     }
 
-    private Optional<String> describe(MethodCallExpr call, CallGraph graph) {
+    /**
+     * Найденное обращение к репозиторию
+     *
+     * @param confidence обращение стоит прямо в цикле - это видно в коде; путь через вызовы установлен точно,
+     *                   только если каждый вызов в нем найден по типам, а не по именам
+     */
+    private record Problem(String text, Confidence confidence) {
+    }
+
+    private Optional<Problem> describe(MethodCallExpr call, CallGraph graph) {
         if (Repositories.isRepositoryCall(call)) {
-            return Optional.of("Обращение к репозиторию '" + describeCall(call) + "' в цикле");
+            return Optional.of(new Problem(
+                    "Обращение к репозиторию '" + describeCall(call) + "' в цикле", Confidence.CONFIRMED));
         }
 
         // enrich(order) в цикле, а запрос к БД - внутри enrich или еще глубже
@@ -85,8 +96,10 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
             Optional<CallChains.Found> found = CallChains.find(
                     graph, target, value(MAX_CALL_DEPTH), method -> false, this::describeRepositoryCall);
             if (found.isPresent()) {
-                return Optional.of("Вызов '" + call.getNameAsString() + "(...)' в цикле обращается к репозиторию '"
-                        + found.get().operation() + "' (через вызов " + found.get().chain() + ")");
+                return Optional.of(new Problem(
+                        "Вызов '" + call.getNameAsString() + "(...)' в цикле обращается к репозиторию '"
+                                + found.get().operation() + "' (через вызов " + found.get().chain() + ")",
+                        found.get().confidence(graph.isExact(call))));
             }
         }
         return Optional.empty();

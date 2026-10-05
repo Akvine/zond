@@ -333,4 +333,5 @@ public class RuleCodes {
     public final static String UNREACHABLE_CODE_RULE_CODE = "jr:327";
     public final static String DIVISION_BY_ZERO_RULE_CODE = "jr:328";
     public final static String INDEX_OUT_OF_BOUNDS_RULE_CODE = "jr:329";
+    public final static String EMPTY_OPTIONAL_ACCESS_RULE_CODE = "jr:330";
 }

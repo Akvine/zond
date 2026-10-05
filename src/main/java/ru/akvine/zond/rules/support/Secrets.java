@@ -62,6 +62,13 @@ public class Secrets {
     private final static Pattern PLACEHOLDER_VALUE = Pattern.compile("^[$#]\\{.*");
 
     private final static Pattern WHITESPACE = Pattern.compile("\\s");
+
+    // Заглушки: их ставят в примерах и шаблонах настроек вместо настоящего значения.
+    // Слабые, но настоящие пароли (password, admin, 123456) сюда не входят - о них сообщать нужно
+    private final static Pattern STUB_VALUE = Pattern.compile(
+            "change[_-]?(me|it)|replace[_-]?(me|this)|to[_-]?do|placeholder|dummy|sample|example|undefined|n/a"
+                    + "|x{3,}|\\*{3,}|\\.{3,}|<[^>]*>|\\[[^\\]]*]|your[_-].*|.*[_-]here|.*_placeholder",
+            Pattern.CASE_INSENSITIVE);
     private final static Pattern NON_ASCII_LETTER = Pattern.compile("[^\\p{ASCII}]");
     private final static Pattern TRAILING_DIGITS = Pattern.compile("\\d+$");
 
@@ -88,7 +95,7 @@ public class Secrets {
      * на подпись, сообщение, адрес или название параметра
      */
     public boolean isSecretValue(String text) {
-        if (text.isBlank() || PLACEHOLDER_VALUE.matcher(text).matches()) {
+        if (text.isBlank() || PLACEHOLDER_VALUE.matcher(text).matches() || isStub(text)) {
             return false;
         }
         if (AUTHORIZATION_VALUE.matcher(text).matches()) {
@@ -103,6 +110,13 @@ public class Secrets {
             return false;
         }
         return !KEY_LIKE_VALUE.matcher(text).matches() && !PATH_LIKE_VALUE.matcher(text).matches();
+    }
+
+    /**
+     * @return true для значения-заглушки, которое ставят вместо настоящего секрета: changeme, <your-token>, xxx
+     */
+    public boolean isStub(String text) {
+        return STUB_VALUE.matcher(text.trim()).matches();
     }
 
     /**

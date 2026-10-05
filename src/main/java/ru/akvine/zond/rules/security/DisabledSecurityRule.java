@@ -1,7 +1,5 @@
 package ru.akvine.zond.rules.security;
 
-import com.github.javaparser.ast.Node;
-import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
@@ -16,18 +14,18 @@ import ru.akvine.zond.rules.support.Nodes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class DisabledSecurityRule extends AbstractRule {
     private static final String CSRF = "csrf";
+
+    // Признаки API без cookie-сессий в той же конфигурации
+    private static final Pattern STATELESS = Pattern.compile(
+            "SessionCreationPolicy\\.STATELESS|oauth2ResourceServer|BearerToken|\\bjwt\\b|Jwt[A-Z]\\w*Filter", Pattern.CASE_INSENSITIVE);
     private static final String DISABLE = "disable";
     private static final String PERMIT_ALL = "permitAll";
     private static final String ANY_REQUEST = "anyRequest";
-    private static final String CROSS_ORIGIN = "CrossOrigin";
-    private static final String ANY_ORIGIN = "\"*\"";
-    private static final Set<String> ORIGIN_METHODS =
-            Set.of("allowedOrigins", "allowedOriginPatterns", "addAllowedOrigin", "addAllowedOriginPattern");
 
     @Override
     public String code() {
@@ -36,17 +34,18 @@ public class DisabledSecurityRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет отключенную защиту Spring Security: CSRF, доступ без аутентификации,"
-                + " CORS для любых источников";
+        return "Сканирует код и ищет отключенную защиту Spring Security: CSRF и доступ без аутентификации";
     }
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
+        boolean isStateless = STATELESS.matcher(sourceFile.unit().toString()).find();
         for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
             String name = call.getNameAsString();
 
-            if (isCsrfDisabled(call)) {
+            // Для API без сессий (токен в заголовке, STATELESS) защита от CSRF не нужна: подделывать нечего
+            if (isCsrfDisabled(call) && !isStateless) {
                 violations.add(violation(sourceFile, call,
                         "Защита от CSRF отключена: для API без cookie-сессий это допустимо, но при"
                                 + " аутентификации через cookie чужой сайт сможет выполнять запросы от имени"
@@ -59,18 +58,6 @@ public class DisabledSecurityRule extends AbstractRule {
                                 + " откройте только нужные пути, для остальных требуйте authenticated()"));
             }
 
-            if (ORIGIN_METHODS.contains(name)
-                    && call.getArguments().stream().anyMatch(argument -> ANY_ORIGIN.equals(argument.toString()))) {
-                violations.add(reportAnyOrigin(sourceFile, call, name + "(\"*\")"));
-            }
-        }
-
-        // @CrossOrigin без origins разрешает запросы с любого сайта
-        for (AnnotationExpr annotation : sourceFile.unit().findAll(AnnotationExpr.class)) {
-            if (CROSS_ORIGIN.equals(annotation.getName().getIdentifier())
-                    && (annotation.isMarkerAnnotationExpr() || annotation.toString().contains(ANY_ORIGIN))) {
-                violations.add(reportAnyOrigin(sourceFile, annotation, annotation.toString()));
-            }
         }
 
         violations.sort(Comparator.comparingInt(Violation::line));
@@ -85,12 +72,6 @@ public class DisabledSecurityRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.SECURITY;
-    }
-
-    private Violation reportAnyOrigin(SourceFile sourceFile, Node node, String source) {
-        return violation(sourceFile, node,
-                "CORS для любых источников в '" + source + "': запросы к API сможет выполнять скрипт с любого"
-                        + " сайта; перечислите разрешенные источники явно");
     }
 
     // http.csrf(AbstractHttpConfigurer::disable), http.csrf(csrf -> csrf.disable()), http.csrf().disable()

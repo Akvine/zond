@@ -22,7 +22,8 @@ public abstract class AbstractFlowRule extends AbstractRule implements ProjectRu
     // Значение, вычисленное по всем путям, - факт; "на одном из путей" - только вероятность
     private static final Set<FlowAnalysis.Kind> CERTAIN = Set.of(
             FlowAnalysis.Kind.NULL_DEREFERENCE, FlowAnalysis.Kind.CONSTANT_CONDITION,
-            FlowAnalysis.Kind.UNREACHABLE_CODE, FlowAnalysis.Kind.DIVISION_BY_ZERO);
+            FlowAnalysis.Kind.UNREACHABLE_CODE, FlowAnalysis.Kind.DIVISION_BY_ZERO,
+            FlowAnalysis.Kind.EMPTY_OPTIONAL);
 
     @Override
     public Confidence confidence() {
@@ -32,7 +33,12 @@ public abstract class AbstractFlowRule extends AbstractRule implements ProjectRu
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         return FlowAnalysis.of(sourceFiles).findings(kinds()).stream()
-                .map(located -> violation(located.file(), located.finding().node(), located.finding().message()))
+                .map(located -> {
+                    Violation violation = violation(located.file(), located.finding().node(), located.finding().message());
+                    // Часть находок анализ считает достовернее, чем правило в целом
+                    Confidence own = located.finding().confidence();
+                    return own == null ? violation : violation.withConfidence(own);
+                })
                 .toList();
     }
 }

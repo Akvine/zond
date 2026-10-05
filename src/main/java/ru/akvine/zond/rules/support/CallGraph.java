@@ -42,6 +42,8 @@ public final class CallGraph {
 
     // Вызовы, для которых нашелся метод проекта
     private final Set<MethodCallExpr> linkedSites = Collections.newSetFromMap(new IdentityHashMap<>());
+    // Вызовы, цель которых определена разрешением типов: в них анализ уверен
+    private final Set<MethodCallExpr> exactSites = Collections.newSetFromMap(new IdentityHashMap<>());
 
     // Граф нужен нескольким правилам подряд на одном и том же списке файлов - строим его один раз на сканирование
     private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
@@ -100,6 +102,13 @@ public final class CallGraph {
     }
 
     /**
+     * @return true, если метод, на который приходится вызов, найден по типам, а не угадан по именам
+     */
+    public boolean isExact(MethodCallExpr site) {
+        return exactSites.contains(site);
+    }
+
+    /**
      * @return true, если вызов сопоставлен с методом проекта
      */
     public boolean isLinked(MethodCallExpr site) {
@@ -148,7 +157,11 @@ public final class CallGraph {
         Optional<MethodDeclaration> resolved = Types.declaration(site)
                 .flatMap(this::location)
                 .map(byLocation::get);
-        return resolved.map(List::of).orElseGet(() -> resolveByNames(site));
+        if (resolved.isPresent()) {
+            exactSites.add(site);
+            return List.of(resolved.get());
+        }
+        return resolveByNames(site);
     }
 
     // Без решателя: load() и this.load() - метод своего класса, service.load() - метод класса, которым объявлен service

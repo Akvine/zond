@@ -5,6 +5,7 @@ import org.springframework.context.annotation.PropertySource;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.FileKind;
+import ru.akvine.zond.rules.flow.FlowLibrary;
 
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -21,6 +22,7 @@ public class ZondSettings {
     private static final String CLASSPATH_SEPARATOR = "[;,]";
     private static final String MIN_CONFIDENCE = "zond.rules.min-confidence";
     private static final String PROGRESS_PERCENT = "zond.progress.percent";
+    private static final String FLOW_LIBRARY = "zond.flow.library";
     private static final String AUTO_CLASSPATH = "zond.scan.auto-classpath";
     private static final String MAVEN_REPOSITORY = "zond.scan.maven-repository";
     private static final String REPORT_CONFIDENCE = "zond.report.confidence";
@@ -52,6 +54,11 @@ public class ZondSettings {
         this.exclude = exclude;
         this.threads = threads;
         this.environment = environment;
+        // Свой справочник библиотек для анализа потока данных дополняет встроенный
+        String library = environment.getProperty(FLOW_LIBRARY, "").trim();
+        if (!library.isEmpty()) {
+            FlowLibrary.extend(Path.of(library));
+        }
     }
 
     /**

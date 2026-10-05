@@ -74,7 +74,8 @@ public abstract class AbstractTransactionalBlockingCallRule extends AbstractRule
                     .filter(found -> reportedLines.add(line(call.site())))
                     .ifPresent(found -> violations.add(violation(sourceFile, call.site(), message(
                             method.getNameAsString(),
-                            found.operation() + " (через вызов " + found.chain() + ")"))));
+                            found.operation() + " (через вызов " + found.chain() + ")"))
+                            .withConfidence(found.confidence(graph.isExact(call.site())))));
         }
     }
 

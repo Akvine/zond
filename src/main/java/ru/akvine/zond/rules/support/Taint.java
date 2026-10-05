@@ -1,16 +1,30 @@
 package ru.akvine.zond.rules.support;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.ConstructorDeclaration;
+import com.github.javaparser.ast.body.EnumDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.body.RecordDeclaration;
+import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.ConditionalExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.expr.UnaryExpr;
+import com.github.javaparser.ast.nodeTypes.NodeWithStatements;
+import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.ast.stmt.ExpressionStmt;
 import com.github.javaparser.ast.stmt.ForEachStmt;
+import com.github.javaparser.ast.stmt.IfStmt;
+import com.github.javaparser.ast.stmt.ReturnStmt;
+import com.github.javaparser.ast.stmt.Statement;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.models.SourceFile;
 
@@ -105,6 +119,15 @@ public final class Taint {
 
     private static final String GETTER_PREFIX = "get";
 
+    // Метод, который перекладывает данные из одного объекта в другой: toEntity(dto), map(source), convert(request).
+    // Если тела у него нет (MapStruct, библиотека), считаем, что результат несет то же, что аргументы
+    private static final Pattern MAPPING_METHOD = Pattern.compile("^(to|map|convert|from|as|copy)([A-Z].*)?$");
+
+    // Вызов-утверждение отдельной строкой: validate(name), requireAllowed(sort) - не подошло, будет исключение
+    private static final Pattern ASSERTING_METHOD = Pattern.compile(
+            "^(validate|check|assert|require|ensure|verify).*", Pattern.CASE_INSENSITIVE);
+    private static final Set<String> CONSTRUCTOR_ANNOTATIONS = Set.of("AllArgsConstructor", "Data", "Value");
+
     private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
     private static Taint cached;
 
@@ -170,6 +193,8 @@ public final class Taint {
     private final CallGraph graph;
     // "Тип.свойство" -> значения, которые в него записывают по всему проекту
     private final Map<String, List<Expression>> writes = new HashMap<>();
+    // Классы проекта по простому имени: по ним выясняется, в какое свойство попадает аргумент конструктора
+    private final Map<String, TypeDeclaration<?>> types = new HashMap<>();
     // Самый достоверный источник, найденный в этом потоке после последнего запроса уверенности
     private final ThreadLocal<Confidence> found = new ThreadLocal<>();
     // Предел глубины для правила, которое сейчас работает в этом потоке
@@ -178,6 +203,21 @@ public final class Taint {
     private Taint(List<SourceFile> sources) {
         this.graph = CallGraph.of(sources);
         for (SourceFile source : sources) {
+            for (TypeDeclaration<?> type : source.unit().findAll(TypeDeclaration.class).stream()
+                    .map(found -> (TypeDeclaration<?>) found).toList()) {
+                types.putIfAbsent(type.getNameAsString(), type);
+            }
+        }
+        for (SourceFile source : sources) {
+            // new Order(comment), new OrderRecord(comment): аргумент конструктора попадает в свойство
+            for (ObjectCreationExpr creation : source.unit().findAll(ObjectCreationExpr.class)) {
+                String type = creation.getType().getNameAsString();
+                List<String> properties = constructorProperties(type, creation.getArguments().size());
+                for (int index = 0; index < properties.size(); index++) {
+                    writes.computeIfAbsent(type + "." + properties.get(index), key -> new ArrayList<>())
+                            .add(creation.getArgument(index));
+                }
+            }
             for (MethodCallExpr call : source.unit().findAll(MethodCallExpr.class)) {
                 if (call.getArguments().size() != 1 || call.getScope().isEmpty()) {
                     continue;
@@ -320,29 +360,161 @@ public final class Taint {
         return Optional.empty();
     }
 
-    // Проверка стоит на пути выполнения к этому использованию и относится к этой же переменной
-    private boolean isValidated(NameExpr name) {
-        String variable = name.getNameAsString();
-        return Guards.isGuarded(name, condition -> condition.findAll(MethodCallExpr.class).stream()
-                .filter(call -> VALIDATION_METHODS.contains(call.getNameAsString())
-                        || SANITIZER.matcher(call.getNameAsString()).matches())
-                .anyMatch(call -> call.findAll(NameExpr.class).stream()
-                        .anyMatch(used -> used.getNameAsString().equals(variable))));
+    /**
+     * Проверено ли значение на пути к этому использованию. В отличие от простого "проверка где-то выше",
+     * учитывается смысл условия: if (ALLOWED.contains(sort)) { use(sort); } и
+     * if (!ALLOWED.contains(sort)) throw ...; use(sort); - проверка, а if ("admin".equals(name)) return; use(name); - нет:
+     * дальше идут как раз все остальные значения.
+     */
+    private boolean isValidated(NameExpr usage) {
+        String variable = usage.getNameAsString();
+        Node boundary = Nodes.enclosingCallable(usage).orElse(null);
+        Node child = usage;
+        Node parent = usage.getParentNode().orElse(null);
+        while (parent != null && child != boundary) {
+            if (parent instanceof IfStmt branch && branch.getCondition() != child
+                    && passes(branch.getCondition(), branch.getThenStmt() == child, variable)) {
+                return true;
+            }
+            if (parent instanceof ConditionalExpr branch && branch.getCondition() != child
+                    && passes(branch.getCondition(), branch.getThenExpr() == child, variable)) {
+                return true;
+            }
+            // check(x) && use(x): правая часть выполняется, только если левая истинна; с || - если ложна
+            if (parent instanceof BinaryExpr binary && binary.getRight() == child
+                    && (binary.getOperator() == BinaryExpr.Operator.AND || binary.getOperator() == BinaryExpr.Operator.OR)
+                    && passes(binary.getLeft(), binary.getOperator() == BinaryExpr.Operator.AND, variable)) {
+                return true;
+            }
+            if (parent instanceof NodeWithStatements<?> block && isCheckedEarlier(block.getStatements(), child, variable)) {
+                return true;
+            }
+            child = parent;
+            parent = parent.getParentNode().orElse(null);
+        }
+        return false;
+    }
+
+    // Среди операторов до текущего есть выход при непрошедшей проверке либо вызов-утверждение
+    private boolean isCheckedEarlier(List<Statement> statements, Node current, String variable) {
+        for (Statement statement : statements) {
+            if (statement == current) {
+                return false;
+            }
+            if (statement instanceof IfStmt branch) {
+                boolean exitsWhenTrue = exits(branch.getThenStmt());
+                boolean exitsWhenFalse = branch.getElseStmt().filter(this::exits).isPresent();
+                // Выполнение продолжилось - значит, условие приняло то значение, при котором выхода нет
+                if (exitsWhenTrue && !exitsWhenFalse && passes(branch.getCondition(), false, variable)
+                        || exitsWhenFalse && !exitsWhenTrue && passes(branch.getCondition(), true, variable)) {
+                    return true;
+                }
+            }
+            boolean isAssertion = statement instanceof ExpressionStmt expression
+                    && expression.getExpression() instanceof MethodCallExpr call
+                    && (ASSERTING_METHOD.matcher(call.getNameAsString()).matches()
+                    || SANITIZER.matcher(call.getNameAsString()).matches())
+                    && mentions(call, variable);
+            if (isAssertion) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return true, если из того, что условие приняло значение truth, следует, что проверка переменной пройдена
+     */
+    private boolean passes(Expression condition, boolean truth, String variable) {
+        Expression value = Nodes.unwrap(condition);
+        if (value instanceof UnaryExpr unary && unary.getOperator() == UnaryExpr.Operator.LOGICAL_COMPLEMENT) {
+            return passes(unary.getExpression(), !truth, variable);
+        }
+        if (value instanceof BinaryExpr binary) {
+            // a && b истинно - истинны оба; a || b ложно - ложны оба. В остальных случаях о части ничего не известно
+            boolean bothKnown = binary.getOperator() == BinaryExpr.Operator.AND && truth
+                    || binary.getOperator() == BinaryExpr.Operator.OR && !truth;
+            return bothKnown
+                    && (passes(binary.getLeft(), truth, variable) || passes(binary.getRight(), truth, variable));
+        }
+        return truth && value instanceof MethodCallExpr call
+                && (VALIDATION_METHODS.contains(call.getNameAsString()) || SANITIZER.matcher(call.getNameAsString()).matches())
+                && mentions(call, variable);
+    }
+
+    private boolean mentions(MethodCallExpr call, String variable) {
+        return call.findAll(NameExpr.class).stream().anyMatch(used -> used.getNameAsString().equals(variable));
+    }
+
+    private boolean exits(Statement statement) {
+        if (statement.isReturnStmt() || statement.isThrowStmt() || statement.isContinueStmt() || statement.isBreakStmt()) {
+            return true;
+        }
+        return statement instanceof BlockStmt block && !block.getStatements().isEmpty()
+                && exits(block.getStatements().get(block.getStatements().size() - 1));
+    }
+
+    private boolean isEnum(Parameter parameter) {
+        return types.get(LocalTypes.typeName(parameter.getType())) instanceof EnumDeclaration;
+    }
+
+    /**
+     * @return свойства, в которые попадают аргументы конструктора, по порядку; пусто, если класс не из проекта
+     * либо подходящего конструктора не нашлось
+     */
+    private List<String> constructorProperties(String typeName, int arguments) {
+        TypeDeclaration<?> type = types.get(typeName);
+        if (type == null || arguments == 0) {
+            return List.of();
+        }
+        if (type instanceof RecordDeclaration record) {
+            return record.getParameters().size() == arguments
+                    ? record.getParameters().stream().map(Parameter::getNameAsString).toList()
+                    : List.of();
+        }
+        List<ConstructorDeclaration> constructors = type.getConstructors().stream()
+                .filter(constructor -> constructor.getParameters().size() == arguments)
+                .toList();
+        if (constructors.size() == 1) {
+            return constructors.get(0).getParameters().stream()
+                    .map(parameter -> assignedField(constructors.get(0), parameter.getNameAsString()))
+                    .toList();
+        }
+        // Конструктор Lombok: поля в порядке объявления
+        List<String> fields = type.getFields().stream()
+                .filter(field -> !field.isStatic())
+                .flatMap(field -> field.getVariables().stream())
+                .map(VariableDeclarator::getNameAsString)
+                .toList();
+        boolean isGenerated = constructors.isEmpty() && fields.size() == arguments
+                && Annotations.hasAny(type, CONSTRUCTOR_ANNOTATIONS);
+        return isGenerated ? fields : List.of();
+    }
+
+    // this.comment = text: параметр text попадает в поле comment; иначе считаем, что поле названо как параметр
+    private String assignedField(ConstructorDeclaration constructor, String parameter) {
+        for (AssignExpr assign : constructor.findAll(AssignExpr.class)) {
+            boolean fromParameter = assign.getValue().isNameExpr()
+                    && assign.getValue().asNameExpr().getNameAsString().equals(parameter);
+            if (fromParameter) {
+                return MethodCalls.receiverName(assign.getTarget());
+            }
+        }
+        return parameter;
     }
 
     private Optional<Origin> sourceOfParameter(Parameter parameter, int depth, Set<Node> visited) {
         Optional<MethodDeclaration> method = parameter.getParentNode()
                 .filter(parent -> parent instanceof MethodDeclaration)
                 .map(parent -> (MethodDeclaration) parent);
-        // Параметр лямбды: откуда берутся его значения, по коду не проследить
         if (method.isEmpty()) {
-            return Optional.empty();
+            return sourceOfLambdaParameter(parameter, depth, visited);
         }
 
         if (isRequestParameter(parameter, method.get())) {
             return Optional.of(new Origin(parameter.getNameAsString(), method.get(), Kind.REQUEST));
         }
-        if (Annotations.hasAny(method.get(), LISTENER_ANNOTATIONS)) {
+        if (Annotations.hasAny(method.get(), LISTENER_ANNOTATIONS) && !isEnum(parameter)) {
             return Optional.of(new Origin(parameter.getNameAsString(), method.get(), Kind.MESSAGE));
         }
         if (depth >= depthLimit.get()) {
@@ -360,6 +532,16 @@ public final class Taint {
             }
         }
         return Optional.empty();
+    }
+
+    // names.forEach(name -> ...), items.stream().map(item -> ...): параметр лямбды - элемент того, у чего вызван метод
+    private Optional<Origin> sourceOfLambdaParameter(Parameter parameter, int depth, Set<Node> visited) {
+        return parameter.getParentNode()
+                .filter(parent -> parent instanceof LambdaExpr)
+                .flatMap(Node::getParentNode)
+                .filter(parent -> parent instanceof MethodCallExpr)
+                .flatMap(call -> ((MethodCallExpr) call).getScope())
+                .flatMap(scope -> source(scope, depth, visited));
     }
 
     private Optional<Origin> sourceOfCall(MethodCallExpr call, int depth, Set<Node> visited) {
@@ -398,7 +580,15 @@ public final class Taint {
                 return written;
             }
         }
-        return PASSING_METHODS.contains(method) ? firstSource(call.getArguments(), depth, visited) : Optional.empty();
+        if (PASSING_METHODS.contains(method)) {
+            return firstSource(call.getArguments(), depth, visited);
+        }
+        boolean isOpaqueMapping = MAPPING_METHOD.matcher(method).matches() && !call.getArguments().isEmpty()
+                && graph.targetsOf(call).stream().noneMatch(target -> target.getBody().isPresent());
+        return isOpaqueMapping
+                ? firstSource(call.getArguments(), depth, visited)
+                        .map(origin -> new Origin(origin.text() + " через " + method + "(...)", origin.callable(), Kind.PROPERTY))
+                : Optional.empty();
     }
 
     // Integer.parseInt(value), UUID.fromString(value), Status.valueOf(value); String.valueOf(...) значение не меняет
@@ -412,20 +602,47 @@ public final class Taint {
 
     private Optional<Origin> sourceOfProperty(
             MethodCallExpr getter, Optional<String> ownerType, int depth, Set<Node> visited) {
-        Optional<String> property = PropertyAccess.readProperty(getter);
+        // order.getComment() либо, у записи (record), order.comment()
+        Optional<String> property = PropertyAccess.readProperty(getter)
+                .or(() -> ownerType.filter(type -> types.get(type) instanceof RecordDeclaration)
+                        .filter(type -> getter.getArguments().isEmpty())
+                        .map(type -> getter.getNameAsString()));
         if (property.isEmpty() || ownerType.isEmpty() || depth >= depthLimit.get()) {
             return Optional.empty();
         }
-        String key = ownerType.get() + "." + property.get();
-        for (Expression written : writes.getOrDefault(key, List.of())) {
-            Optional<Origin> origin = source(written, depth + 1, visited);
-            if (origin.isPresent()) {
-                // Сам источник достовернее, чем путь через объект: уверенность понижается
-                return Optional.of(new Origin(
-                        origin.get().text() + " через " + key, origin.get().callable(), Kind.PROPERTY));
+        // Геттер может отдавать поле с другим именем: getComment() { return text; }
+        List<String> names = new ArrayList<>(List.of(property.get()));
+        returnedField(ownerType.get(), getter.getNameAsString()).ifPresent(names::add);
+        for (String name : names) {
+            String key = ownerType.get() + "." + name;
+            for (Expression written : writes.getOrDefault(key, List.of())) {
+                Optional<Origin> origin = source(written, depth + 1, visited);
+                if (origin.isPresent()) {
+                    // Сам источник достовернее, чем путь через объект: уверенность понижается
+                    return Optional.of(new Origin(
+                            origin.get().text() + " через " + key, origin.get().callable(), Kind.PROPERTY));
+                }
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * @return поле, которое возвращает метод без параметров: для getComment() { return text; } - text
+     */
+    private Optional<String> returnedField(String typeName, String method) {
+        TypeDeclaration<?> type = types.get(typeName);
+        if (type == null) {
+            return Optional.empty();
+        }
+        return type.getMethodsByName(method).stream()
+                .filter(declaration -> declaration.getParameters().isEmpty())
+                .flatMap(declaration -> declaration.findAll(ReturnStmt.class).stream())
+                .flatMap(returned -> returned.getExpression().stream())
+                .map(Nodes::unwrap)
+                .filter(value -> value.isNameExpr() || value.isFieldAccessExpr())
+                .map(MethodCalls::receiverName)
+                .findFirst();
     }
 
     private Optional<Origin> firstSource(List<Expression> expressions, int depth, Set<Node> visited) {
@@ -439,10 +656,12 @@ public final class Taint {
     }
 
     private boolean isRequestParameter(Parameter parameter, MethodDeclaration method) {
-        if (Annotations.has(parameter, PATTERN_ANNOTATION)) {
+        // @Pattern проверил значение до входа в метод; значение enum не может быть ничем, кроме своих констант
+        if (Annotations.has(parameter, PATTERN_ANNOTATION) || isEnum(parameter)) {
             return false;
         }
-        if (Annotations.hasAny(parameter, REQUEST_ANNOTATIONS)) {
+        // Объект, собранный из тела запроса, целиком состоит из данных клиента
+        if (Annotations.hasAny(parameter, REQUEST_ANNOTATIONS) || Annotations.hasAny(parameter, BODY_ANNOTATIONS)) {
             return true;
         }
         // Строковый параметр обработчика без аннотаций Spring берет из параметров запроса по имени

@@ -62,10 +62,9 @@ class SecurityRulesTest {
                 }
                 """);
 
-        assertThat(violations).extracting(Violation::line).containsExactly(3, 4, 5, 6, 7, 13);
+        assertThat(violations).extracting(Violation::line).containsExactly(3, 4, 5, 6);
         assertThat(violations.get(0).message()).contains("CSRF");
         assertThat(violations.get(3).message()).contains("permitAll");
-        assertThat(violations.get(4).message()).contains("CORS");
     }
 
     @Test

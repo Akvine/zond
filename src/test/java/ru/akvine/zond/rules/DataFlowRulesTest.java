@@ -10,6 +10,7 @@ import ru.akvine.zond.rules.codesmell.UnreachableCodeRule;
 import ru.akvine.zond.rules.logical.AlwaysNullDereferenceRule;
 import ru.akvine.zond.rules.logical.ConstantConditionRule;
 import ru.akvine.zond.rules.logical.DivisionByZeroRule;
+import ru.akvine.zond.rules.logical.EmptyOptionalAccessRule;
 import ru.akvine.zond.rules.logical.IndexOutOfBoundsRule;
 import ru.akvine.zond.rules.logical.NullArgumentRule;
 import ru.akvine.zond.rules.logical.PossibleNullDereferenceRule;
@@ -36,6 +37,7 @@ class DataFlowRulesTest {
     private static final String SAMPLE = """
             package demo;
 
+            import java.util.ArrayList;
             import java.util.List;
             import java.util.Objects;
             import java.util.Optional;
@@ -287,6 +289,94 @@ class DataFlowRulesTest {
                         return second.length(); // @MAYBE
                     }
                     return 0;
+                }
+
+                int errorsCollectedInList(String name) {
+                    List<String> errors = new ArrayList<>();
+                    if (name == null) {
+                        errors.add("name");
+                    }
+                    if (!errors.isEmpty()) {
+                        return 0;
+                    }
+                    return name.length();
+                }
+
+                int errorsCollectedInParameter(String name, List<String> errors) {
+                    if (name == null) {
+                        errors.add("name");
+                    }
+                    if (!errors.isEmpty()) {
+                        return 0;
+                    }
+                    return name.length();
+                }
+
+                int emptyOptionalInWrongBranch(Optional<String> value) {
+                    if (value.isEmpty()) {
+                        return value.get().length(); // @OPT
+                    }
+                    return value.get().length();
+                }
+
+                int emptyOptionalCreated() {
+                    Optional<String> value = Optional.empty();
+                    return value.orElseThrow().length(); // @OPT
+                }
+
+                int presentOptional(Optional<String> value) {
+                    if (!value.isPresent()) {
+                        return 0;
+                    }
+                    return value.get().length();
+                }
+
+                int setterThenGetter(Account account) {
+                    account.setName(null);
+                    return account.getName().length(); // @NULL
+                }
+
+                int setterThenUnknownCall(Account account) {
+                    account.setName(null);
+                    account.restore();
+                    return account.getName().length();
+                }
+
+                int freshCollection() {
+                    List<String> items = new ArrayList<>();
+                    if (items.isEmpty()) { // @CONST
+                        return 0;
+                    }
+                    return items.size();
+                }
+
+                int collectionFilledElsewhere(List<String> source) {
+                    List<String> byReference = new ArrayList<>();
+                    source.forEach(byReference::add);
+                    List<String> byLambda = new ArrayList<>();
+                    source.forEach(item -> byLambda.add(item));
+                    List<String> byMethod = new ArrayList<>();
+                    fill(byMethod);
+                    if (byReference.isEmpty() || byLambda.isEmpty() || byMethod.isEmpty()) {
+                        return 0;
+                    }
+                    return 1;
+                }
+
+                List<String> filledInNestedLambda(Optional<List<String>> source) {
+                    List<String> items = new ArrayList<>();
+                    source.ifPresent(values -> values.forEach(items::add));
+                    return items.isEmpty() ? List.of("") : items;
+                }
+
+                int sizeChecked(List<String> items) {
+                    if (items.size() == 0) {
+                        return 0;
+                    }
+                    if (items.isEmpty()) { // @CONST
+                        return 1;
+                    }
+                    return 2;
                 }
 
                 int passNull() {
@@ -635,6 +725,11 @@ class DataFlowRulesTest {
     @Test
     void divisionByZero() {
         assertThat(found(new DivisionByZeroRule())).isEqualTo(marked("@ZERO"));
+    }
+
+    @Test
+    void emptyOptionalAccess() {
+        assertThat(found(new EmptyOptionalAccessRule())).isEqualTo(marked("@OPT"));
     }
 
     @Test

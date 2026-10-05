@@ -112,7 +112,8 @@ public class WriteInReadOnlyTransactionRule extends AbstractRule implements Proj
                             "Вызов '" + call.site().getNameAsString() + "(...)' в методе '"
                                     + method.getNameAsString() + "' с @Transactional(readOnly = true) приводит"
                                     + " к записи '" + found.operation() + "' (через вызов " + found.chain() + "):"
-                                    + " изменения могут не сохраниться или будут отклонены базой данных")));
+                                    + " изменения могут не сохраниться или будут отклонены базой данных")
+                            .withConfidence(found.confidence(graph.isExact(call.site())))));
         }
     }
 

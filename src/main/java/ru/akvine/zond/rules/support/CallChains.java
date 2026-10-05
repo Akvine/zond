@@ -2,6 +2,7 @@ package ru.akvine.zond.rules.support;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import ru.akvine.zond.enums.Confidence;
 import lombok.experimental.UtilityClass;
 
 import java.util.ArrayList;
@@ -23,8 +24,18 @@ public class CallChains {
     /**
      * @param operation что нашли: описание операции (restTemplate.getForObject)
      * @param path      через какие методы до нее дошли, от первого вызванного к тому, где она стоит
+     * @param exact     все вызовы внутри цепочки найдены по типам
      */
-    public record Found(String operation, List<String> path) {
+    public record Found(String operation, List<String> path, boolean exact) {
+
+        /**
+         * @return уверенность находки по этой цепочке: если каждый вызов в ней найден по типам, путь установлен
+         * точно; если хоть один угадан по именам - только вероятен
+         * @param firstCallExact найден ли по типам вызов, с которого цепочка начинается
+         */
+        public Confidence confidence(boolean firstCallExact) {
+            return exact && firstCallExact ? Confidence.CONFIRMED : Confidence.PROBABLE;
+        }
 
         // load -> fetch
         public String chain() {
@@ -77,7 +88,7 @@ public class CallChains {
         for (Node node : method.getBody().get().findAll(Node.class)) {
             Optional<String> found = operation.apply(node);
             if (found.isPresent()) {
-                return Optional.of(new Found(found.get(), List.of(method.getNameAsString())));
+                return Optional.of(new Found(found.get(), List.of(method.getNameAsString()), true));
             }
         }
 
@@ -87,7 +98,8 @@ public class CallChains {
                 List<String> path = new ArrayList<>();
                 path.add(method.getNameAsString());
                 path.addAll(deeper.get().path());
-                return Optional.of(new Found(deeper.get().operation(), path));
+                return Optional.of(new Found(deeper.get().operation(), path,
+                        deeper.get().exact() && graph.isExact(call.site())));
             }
         }
         return Optional.empty();

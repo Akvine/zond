@@ -9,6 +9,7 @@ import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.rules.support.CallGraph;
 import ru.akvine.zond.rules.support.TestClasses;
@@ -50,13 +51,21 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
         CONSTANT_CONDITION,
         UNREACHABLE_CODE,
         DIVISION_BY_ZERO,
-        INDEX_OUT_OF_BOUNDS
+        INDEX_OUT_OF_BOUNDS,
+        EMPTY_OPTIONAL
     }
 
     /**
      * Находка анализа, еще не привязанная к правилу
      */
-    public record Finding(Kind kind, Node node, String message) {
+    public record Finding(Kind kind, Node node, String message, Confidence confidence) {
+
+        /**
+         * Находка, уверенность которой определяет правило
+         */
+        public Finding(Kind kind, Node node, String message) {
+            this(kind, node, message, null);
+        }
     }
 
     /**

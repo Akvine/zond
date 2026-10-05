@@ -4,6 +4,7 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -15,10 +16,13 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class CorsAllowAllRule extends AbstractRule {
     private static final String CROSS_ORIGIN = "CrossOrigin";
+    private static final Pattern CREDENTIALS = Pattern.compile(
+            "[aA]llowCredentials\\s*(\\(\\s*true|=\\s*\"true\")");
     private static final String ANY_ORIGIN = "\"*\"";
     private static final String ORIGINS = "origins";
     private static final String ORIGIN_PATTERNS = "originPatterns";
@@ -71,7 +75,14 @@ public class CorsAllowAllRule extends AbstractRule {
         return !listsOrigins || text.contains(ANY_ORIGIN);
     }
 
+    // Любой сайт вместе с отправкой cookie - прямая уязвимость; без учетных данных открытый CORS бывает
+    // осознанным решением для публичного API
     private Violation report(SourceFile sourceFile, Node node) {
+        boolean withCredentials = CREDENTIALS.matcher(sourceFile.unit().toString()).find();
+        return describe(sourceFile, node).withConfidence(withCredentials ? Confidence.CONFIRMED : Confidence.SUSPICION);
+    }
+
+    private Violation describe(SourceFile sourceFile, Node node) {
         return violation(sourceFile, node,
                 "CORS разрешен для любых сайтов: чужая страница сможет обращаться к API от имени пользователя,"
                         + " который на нее зашел; перечислите доверенные адреса явно");

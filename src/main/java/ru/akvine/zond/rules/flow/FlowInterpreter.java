@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.flow;
 
+import ru.akvine.zond.enums.Confidence;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.CallableDeclaration;
@@ -83,27 +84,27 @@ public final class FlowInterpreter {
     private static final String BOOLEAN_TYPE = "boolean";
     private static final String LENGTH = "length";
 
-    // Objects.requireNonNull(x), Assert.notNull(x, "..."), Preconditions.checkNotNull(x): после вызова x не null
-    private static final Set<String> NULL_ASSERTIONS = Set.of(
-            "requireNonNull", "notNull", "checkNotNull", "hasText", "hasLength", "notEmpty", "notBlank",
-            "requireNonNullElse", "isNotNull");
-
-    // Objects.isNull(x), StringUtils.isBlank(x), CollectionUtils.isEmpty(x): false означает, что x не null
-    private static final Set<String> TRUE_FOR_NULL = Set.of("isNull", "isEmpty", "isBlank", "isNullOrEmpty");
-
-    // Objects.nonNull(x), StringUtils.hasText(x): true означает, что x не null
-    private static final Set<String> FALSE_FOR_NULL =
-            Set.of("nonNull", "isNotEmpty", "isNotBlank", "hasText", "hasLength", "isNotNull");
     private static final String IS_NULL = "isNull";
     private static final String NON_NULL = "nonNull";
     private static final Set<String> EQUALS_METHODS = Set.of("equals", "equalsIgnoreCase", "contentEquals");
     private static final Set<String> INDEX_SEARCH = Set.of("indexOf", "lastIndexOf");
     private static final Set<String> SIZE_METHODS = Set.of("size", "length");
     private static final Set<String> INDEX_CONSUMERS = Set.of("charAt", "substring");
-    private static final Set<String> NEVER_RETURNING = Set.of("exit", "fail");
     private static final List<String> SEARCH_GUARDS = List.of(".contains(", ".startsWith(", ".endsWith(", ".matches(");
     private static final String OR_ELSE = "orElse";
     private static final String INDEX_SEARCH_REASON = "результат поиска";
+    private static final String IS_EMPTY = "isEmpty";
+    private static final String IS_PRESENT = "isPresent";
+    private static final String SIZE = "size";
+    private static final String CLEAR = "clear";
+    private static final String SETTER_PREFIX = "set";
+    private static final String IS_EMPTY_CALL = ".isEmpty()";
+    private static final String IS_PRESENT_CALL = ".isPresent()";
+    private static final String SIZE_CALL = ".size()";
+    private static final String OPTIONAL = "Optional";
+    private static final String OPTIONAL_EMPTY = "empty";
+    private static final String OPTIONAL_OF = "of";
+    private static final Set<String> OPTIONAL_ACCESS = Set.of("get", "orElseThrow", "getAsInt", "getAsLong", "getAsDouble");
     private static final Set<String> NON_NULL_ANNOTATIONS = Set.of("NonNull", "Nonnull");
     // Под таким именем в состоянии хранится поле своего объекта
     private static final String THIS = "this.";
@@ -160,6 +161,8 @@ public final class FlowInterpreter {
     private int quietConditions;
     // Только что вызван метод, который не возвращает управление
     private boolean terminated;
+    // Метод уже мог завершиться в одной из веток (if (a == null) return;): все, что ниже, выполняется не всегда
+    private boolean exitedEarly;
     private boolean unreachableReported;
     // Исходы условия, вычисленного последним: нужны, когда его результат кладут в булеву переменную
     private Branches lastCondition;
@@ -329,6 +332,7 @@ public final class FlowInterpreter {
         }
         if (statement instanceof ThrowStmt throwStatement) {
             evaluate(throwStatement.getExpression(), state);
+            exitedEarly |= conditionDepth > 0 && lambdaDepth == 0;
             return null;
         }
         if (statement instanceof WhileStmt loop) {
@@ -468,6 +472,7 @@ public final class FlowInterpreter {
         if (lambdaDepth > 0) {
             return null;
         }
+        exitedEarly |= conditionDepth > 0;
         // if (name == null) return null; - метод лишь отражает состояние поля. Что в поле, вызывающий код
         // знает лучше: для него такой метод равносилен геттеру, и о результате ничего утверждать нельзя
         if (value != null && value.isNullish() && isFieldCheckedForNull(state)) {
@@ -566,7 +571,7 @@ public final class FlowInterpreter {
                 }
                 FlowState next = entry.widenedBy(back);
                 if (next.sameAs(entry)) {
-                    return entry;
+                    return next;
                 }
                 entry = next;
             }
@@ -693,6 +698,7 @@ public final class FlowInterpreter {
             // Исключение могло случиться в любом месте try: до присваивания или после него
             FlowState catchState = before.copy();
             catchState.forget(assigned, true, primitives);
+            forgetTouched(statement.getTryBlock(), catchState);
             catchState.assign(clause.getParameter().getNameAsString(),
                     FlowValue.notNull("пойманное исключение", clause.getParameter()));
             normal = FlowState.join(normal, execute(clause.getBody(), catchState));
@@ -701,6 +707,7 @@ public final class FlowInterpreter {
         if (statement.getFinallyBlock().isPresent()) {
             BlockStmt finallyBlock = statement.getFinallyBlock().get();
             FlowState finallyState = before.copy();
+            forgetTouched(statement, finallyState);
             finallyState.forget(assigned, true, primitives);
             FlowState finallyEnd = execute(finallyBlock, finallyState);
             if (finallyEnd == null) {
@@ -768,6 +775,9 @@ public final class FlowInterpreter {
         if (expression instanceof ObjectCreationExpr creation) {
             creation.getScope().ifPresent(scope -> evaluate(scope, state));
             creation.getArguments().forEach(argument -> evaluate(argument, state));
+            creation.getArguments().stream().map(this::unwrap)
+                    .filter(argument -> argument.isNameExpr() || argument.isFieldAccessExpr())
+                    .forEach(argument -> state.forgetFactsOf(argument.toString()));
             return FlowValue.notNull("объект создан через new", expression);
         }
         if (expression instanceof ArrayCreationExpr creation) {
@@ -784,6 +794,8 @@ public final class FlowInterpreter {
         if (expression instanceof MethodReferenceExpr reference) {
             // user::getName вычисляет user сразу, в месте создания ссылки
             Expression scope = reference.getScope();
+            // items.forEach(result::add): через ссылку на метод объект изменят позже
+            state.forgetFactsOf(scope.toString());
             if (key(scope, state) != null) {
                 dereference(scope, evaluate(scope, state), reference, state);
             }
@@ -827,6 +839,27 @@ public final class FlowInterpreter {
         FlowValue value = variable.getInitializer().map(initializer -> evaluate(initializer, state)).orElse(typed);
         state.assign(variable.getNameAsString(), assigned(value, typed, variable));
         variable.getInitializer().ifPresent(initializer -> correlateFlag(variable.getNameAsString(), initializer, state));
+        variable.getInitializer().ifPresent(initializer -> learnCreated(variable.getNameAsString(), initializer, state));
+    }
+
+    // new ArrayList<>() пуст, Optional.empty() пуст, Optional.of(x) не пуст
+    private void learnCreated(String name, Expression initializer, FlowState state) {
+        Expression value = unwrap(initializer);
+        Set<String> names = Set.of(name);
+        if (value instanceof ObjectCreationExpr creation && creation.getArguments().isEmpty()
+                && creation.getAnonymousClassBody().isEmpty()
+                && FlowLibrary.isCollection(creation.getType().getNameAsString())) {
+            learnSize(name, FlowValue.number(0, 0).withReason("коллекция создана пустой", creation), names, state);
+            return;
+        }
+        if (!(value instanceof MethodCallExpr call) || call.getScope().filter(scope -> OPTIONAL.equals(scope.toString())).isEmpty()) {
+            return;
+        }
+        if (OPTIONAL_EMPTY.equals(call.getNameAsString())) {
+            learnPresence(name, false, "задан как Optional.empty()", call, names, state);
+        } else if (OPTIONAL_OF.equals(call.getNameAsString())) {
+            learnPresence(name, true, "задан как Optional.of(...)", call, names, state);
+        }
     }
 
     // boolean isOwner = user != null && user.isOwner(): под условием if (isOwner) переменная user не null.
@@ -1110,7 +1143,8 @@ public final class FlowInterpreter {
         }
         if (index.max() < 0) {
             report(FlowAnalysis.Kind.INDEX_OUT_OF_BOUNDS, place,
-                    "Индекс здесь всегда отрицательный (" + range(index) + "): обращение завершится исключением");
+                    "Индекс здесь всегда отрицательный (" + range(index) + "): обращение завершится исключением",
+                    Confidence.CONFIRMED);
         } else if (index.min() == -1 && INDEX_SEARCH_REASON.equals(index.reason()) && !isSearchGuarded(place)) {
             report(FlowAnalysis.Kind.INDEX_OUT_OF_BOUNDS, place,
                     "Индекс - " + INDEX_SEARCH_REASON + " (indexOf), а он равен -1, когда ничего не найдено:"
@@ -1168,6 +1202,8 @@ public final class FlowInterpreter {
     // Захваченные переменные неизменны, поэтому внутри лямбды о них известно то же, что и снаружи.
     // Что лямбда узнала сама (проверки, обращения), наружу не выходит: неизвестно, когда она выполнится
     private void evaluateLambda(LambdaExpr lambda, FlowState state) {
+        // Объекты, с которыми лямбда работает, она может изменить - когда именно, неизвестно
+        forgetTouched(lambda, state);
         FlowState inner = state.copy();
         // Лямбда выполнится неизвестно когда: поля к тому времени могут измениться
         flushFields(inner);
@@ -1235,14 +1271,95 @@ public final class FlowInterpreter {
             flushFields(state);
             mutatesFields = true;
         }
+        checkOptionalAccess(call, state);
+        trackObjectState(call, arguments, state);
         return known(call, result, state);
+    }
+
+    // optional.get() там, где известно, что значения нет
+    private void checkOptionalAccess(MethodCallExpr call, FlowState state) {
+        Optional<String> receiver = receiverOf(call);
+        if (receiver.isEmpty() || !call.getArguments().isEmpty() || !OPTIONAL_ACCESS.contains(call.getNameAsString())) {
+            return;
+        }
+        FlowValue present = state.fact(receiver.get() + IS_PRESENT_CALL);
+        if (present != null && present.isConstant(0)) {
+            report(FlowAnalysis.Kind.EMPTY_OPTIONAL, call,
+                    "'" + receiver.get() + "' здесь всегда пуст (" + describeFact(present) + "): вызов '"
+                            + snippet(call) + "' завершится NoSuchElementException; похоже, перепутаны ветки условия");
+        }
+    }
+
+    /**
+     * Запоминает, что стало известно об объекте после вызова его метода, и забывает то, что вызов мог изменить:
+     * после list.add(x) список не пуст, после user.setName(null) геттер вернет null, а после неизвестного
+     * метода о состоянии объекта не известно ничего
+     */
+    private void trackObjectState(MethodCallExpr call, List<FlowValue> arguments, FlowState state) {
+        // Объект, переданный в чужой метод, там могли изменить
+        for (Expression argument : call.getArguments()) {
+            Expression value = unwrap(argument);
+            if (value.isNameExpr() || value.isFieldAccessExpr()) {
+                state.forgetFactsOf(value.toString());
+            }
+        }
+        Optional<String> receiver = receiverOf(call);
+        String method = call.getNameAsString();
+        if (receiver.isEmpty() || FlowLibrary.isQuery(method)) {
+            return;
+        }
+        state.forgetFactsOf(receiver.get());
+        Set<String> names = namesIn(call.getScope().get());
+        if (FlowLibrary.adds(method) && !arguments.isEmpty()) {
+            learnSize(receiver.get(), FlowValue.number(1, FlowValue.MAX).withReason("в коллекцию добавлен элемент", call), names, state);
+        } else if (CLEAR.equals(method) && arguments.isEmpty()) {
+            learnSize(receiver.get(), FlowValue.number(0, 0).withReason("коллекция очищена", call), names, state);
+        } else if (arguments.size() == 1 && method.startsWith(SETTER_PREFIX) && method.length() > SETTER_PREFIX.length()) {
+            // user.setName(value): user.getName() вернет то же значение
+            FlowValue written = arguments.get(0);
+            String property = method.substring(SETTER_PREFIX.length());
+            if (written.isNull() || written.isNotNull() || written.isNullish()) {
+                state.learn(receiver.get() + ".get" + property + "()", written, names);
+            }
+        }
+    }
+
+    // Размер коллекции и связанные с ним ответы isEmpty() и isPresent()
+    private void learnSize(String receiver, FlowValue size, Set<String> names, FlowState state) {
+        state.learn(receiver + SIZE_CALL, size, names);
+        if (size.min() >= 1) {
+            state.learn(receiver + IS_EMPTY_CALL, FlowValue.number(0, 0).withReason(size.reason(), size.origin()), names);
+        } else if (size.max() == 0) {
+            state.learn(receiver + IS_EMPTY_CALL, FlowValue.number(1, 1).withReason(size.reason(), size.origin()), names);
+        }
+    }
+
+    private void learnPresence(String receiver, boolean present, String reason, Node origin, Set<String> names, FlowState state) {
+        state.learn(receiver + IS_PRESENT_CALL, FlowValue.number(present ? 1 : 0, present ? 1 : 0).withReason(reason, origin), names);
+        state.learn(receiver + IS_EMPTY_CALL, FlowValue.number(present ? 0 : 1, present ? 0 : 1).withReason(reason, origin), names);
+    }
+
+    /**
+     * @return как записан объект, у которого вызван метод, если это переменная либо поле: errors, this.items
+     */
+    private Optional<String> receiverOf(MethodCallExpr call) {
+        return call.getScope()
+                .map(this::unwrap)
+                .filter(scope -> scope.isNameExpr() || scope.isFieldAccessExpr() && scope.asFieldAccessExpr().getScope().isThisExpr())
+                .map(Expression::toString);
+    }
+
+    private String describeFact(FlowValue fact) {
+        int line = fact.line();
+        return (fact.reason().isEmpty() ? "это следует из проверки выше" : fact.reason()) + (line > 0 ? " на строке " + line : "");
     }
 
     // То же выражение уже проверено на null либо к нему уже обращались: user.getName() после
     // if (user.getName() != null). Считаем, что между проверкой и использованием значение не менялось
     private FlowValue known(Expression expression, FlowValue value, FlowState state) {
-        FlowValue fact = value.isNotNull() || value.numeric() ? null : state.fact(expression.toString());
-        return fact == null ? value : fact;
+        FlowValue fact = state.fact(expression.toString());
+        // О значении, которое и так точно не null, факт ничего не добавит; для числа факт уточняет диапазон
+        return fact == null || value.isNotNull() && !value.numeric() ? value : fact;
     }
 
     private FlowValue applySummary(MethodCallExpr call, FlowSummary summary, List<FlowValue> arguments, FlowState state) {
@@ -1251,15 +1368,18 @@ public final class FlowInterpreter {
             FlowValue argument = arguments.get(index);
             Expression expression = call.getArgument(index);
             if (argument.isNull()) {
+                // И null, и обращение к нему видны прямо в коде
                 report(FlowAnalysis.Kind.NULL_ARGUMENT, expression,
                         "В метод '" + method + "' передается null (" + describe(expression, argument) + "), а метод"
-                                + " обращается к этому параметру без проверки: вызов завершится NullPointerException");
+                                + " обращается к этому параметру без проверки: вызов завершится NullPointerException",
+                        Confidence.CONFIRMED);
             } else if (argument.isNullish()) {
                 report(FlowAnalysis.Kind.NULL_ARGUMENT, expression,
                         "В метод '" + method + "' передается значение, которое может быть null ("
                                 + describe(expression, argument) + "), а метод обращается к этому параметру без"
                                 + " проверки; проверьте значение перед вызовом");
-            } else if (argument.nullness() == FlowValue.Nullness.UNKNOWN && argument.param() >= 0 && conditionDepth == 0) {
+            } else if (argument.nullness() == FlowValue.Nullness.UNKNOWN && argument.param() >= 0 && conditionDepth == 0
+                    && !exitedEarly) {
                 // Параметр уходит дальше в метод, который к нему обращается: обращение считается и нашим
                 dereferencedParams.add(argument.param());
             }
@@ -1293,7 +1413,7 @@ public final class FlowInterpreter {
 
     // Методы JDK и библиотек, поведение которых известно заранее
     private FlowValue libraryCall(MethodCallExpr call, String method, List<FlowValue> arguments, FlowState state) {
-        if (NULL_ASSERTIONS.contains(method) && isStaticStyle(call, state) && !arguments.isEmpty()) {
+        if (FlowLibrary.assertsNotNull(method) && isStaticStyle(call, state) && !arguments.isEmpty()) {
             Expression first = call.getArgument(0);
             String variable = key(first, state);
             if (variable != null) {
@@ -1302,7 +1422,7 @@ public final class FlowInterpreter {
             }
             return FlowValue.notNull("значение проверено вызовом " + method, call);
         }
-        if (NEVER_RETURNING.contains(method) && isStaticStyle(call, state)) {
+        if (FlowLibrary.neverReturns(method) && isStaticStyle(call, state)) {
             terminate("вызов '" + method + "' на строке " + lineOf(call) + " не возвращает управление");
             return FlowValue.unknown();
         }
@@ -1355,7 +1475,8 @@ public final class FlowInterpreter {
             report(FlowAnalysis.Kind.POSSIBLE_NULL_DEREFERENCE, place,
                     "'" + snippet(unwrapped) + "' может быть null (" + describe(unwrapped, value) + "), а обращение '"
                             + snippet(place) + "' идет без проверки; добавьте проверку либо обработайте отсутствие значения");
-        } else if (value.nullness() == FlowValue.Nullness.UNKNOWN && value.param() >= 0 && conditionDepth == 0) {
+        } else if (value.nullness() == FlowValue.Nullness.UNKNOWN && value.param() >= 0 && conditionDepth == 0
+                && !exitedEarly) {
             dereferencedParams.add(value.param());
         }
 
@@ -1547,6 +1668,16 @@ public final class FlowInterpreter {
         if (rightVariable != null) {
             state.refine(rightVariable, right.withRange(bounds[2], bounds[3]));
         }
+        narrowSize(state, leftExpression, left.withRange(bounds[0], bounds[1]));
+        narrowSize(state, rightExpression, right.withRange(bounds[2], bounds[3]));
+    }
+
+    // if (list.size() > 0), if (list.size() == 0): запоминаем, что стало известно о размере
+    private void narrowSize(FlowState state, Expression expression, FlowValue size) {
+        if (expression instanceof MethodCallExpr call && call.getArguments().isEmpty() && SIZE.equals(call.getNameAsString())) {
+            receiverOf(call).ifPresent(receiver -> learnSize(receiver,
+                    size.withReason("размер проверен", call), namesIn(call.getScope().get()), state));
+        }
     }
 
     private String describeRange(FlowValue value) {
@@ -1656,14 +1787,34 @@ public final class FlowInterpreter {
         return new Branches(whenTrue, state);
     }
 
+    // if (list.isEmpty()), if (optional.isPresent()): в каждой ветке ответ известен
+    private void learnEmptiness(MethodCallExpr call, FlowState whenTrue, FlowState whenFalse) {
+        Optional<String> receiver = receiverOf(call);
+        if (receiver.isEmpty() || !call.getArguments().isEmpty()) {
+            return;
+        }
+        Set<String> names = namesIn(call.getScope().get());
+        String reason = "проверено вызовом " + call.getNameAsString() + "()";
+        if (IS_EMPTY.equals(call.getNameAsString())) {
+            learnSize(receiver.get(), FlowValue.number(0, 0).withReason(reason, call), names, whenTrue);
+            learnSize(receiver.get(), FlowValue.number(1, FlowValue.MAX).withReason(reason, call), names, whenFalse);
+            whenTrue.learn(receiver.get() + IS_PRESENT_CALL, FlowValue.number(0, 0).withReason(reason, call), names);
+            whenFalse.learn(receiver.get() + IS_PRESENT_CALL, FlowValue.number(1, 1).withReason(reason, call), names);
+        } else if (IS_PRESENT.equals(call.getNameAsString())) {
+            learnPresence(receiver.get(), true, reason, call, names, whenTrue);
+            learnPresence(receiver.get(), false, reason, call, names, whenFalse);
+        }
+    }
+
     // Вызов в условии: isBlank(x), Objects.nonNull(x), "text".equals(x) говорят, равен ли x null
     private Branches splitCall(MethodCallExpr call, FlowState state) {
         FlowValue result = evaluate(call, state);
-        if (result.isConstant(1)) {
-            return new Branches(state, null);
-        }
-        if (result.isConstant(0)) {
-            return new Branches(null, state);
+        if (result.isConstant(1) || result.isConstant(0)) {
+            // Ответ известен заранее: коллекция только что создана пустой, элемент только что добавлен
+            if (!result.reason().isEmpty()) {
+                reportConstant(call, result.isConstant(1), describeFact(result));
+            }
+            return result.isConstant(1) ? new Branches(state, null) : new Branches(null, state);
         }
 
         String method = call.getNameAsString();
@@ -1692,6 +1843,7 @@ public final class FlowInterpreter {
                         FlowValue.Nullness.NULL, CHECKED_FOR_NULL, call));
             }
         }
+        learnEmptiness(call, whenTrue, whenFalse);
         return new Branches(whenTrue, whenFalse);
     }
 
@@ -1705,10 +1857,10 @@ public final class FlowInterpreter {
         if (index > 0 || !isStaticStyle(call, state)) {
             return null;
         }
-        if (TRUE_FOR_NULL.contains(method)) {
+        if (FlowLibrary.isTrueForNull(method)) {
             return true;
         }
-        return FALSE_FOR_NULL.contains(method) ? false : null;
+        return FlowLibrary.isFalseForNull(method) ? false : null;
     }
 
     private void reportConstant(Expression condition, boolean alwaysTrue, String reason) {
@@ -1725,8 +1877,32 @@ public final class FlowInterpreter {
     // --------------------------------------------------------------------------------------- вспомогательное
 
     private void report(FlowAnalysis.Kind kind, Node node, String message) {
+        report(kind, node, message, null);
+    }
+
+    /**
+     * @param confidence уверенность именно этой находки; null - как у правила
+     */
+    private void report(FlowAnalysis.Kind kind, Node node, String message, Confidence confidence) {
         if (reporting && silent == 0) {
-            findings.add(new FlowAnalysis.Finding(kind, node, message));
+            findings.add(new FlowAnalysis.Finding(kind, node, message, confidence));
+        }
+    }
+
+    // Объекты, у которых внутри узла вызывают методы либо которые передают аргументом: о них больше ничего не известно
+    private void forgetTouched(Node node, FlowState state) {
+        // items.forEach(result::add): объект изменят через ссылку на метод
+        for (MethodReferenceExpr reference : node.findAll(MethodReferenceExpr.class)) {
+            state.forgetFactsOf(reference.getScope().toString());
+        }
+        for (MethodCallExpr call : node.findAll(MethodCallExpr.class)) {
+            receiverOf(call).filter(receiver -> !FlowLibrary.isQuery(call.getNameAsString())).ifPresent(state::forgetFactsOf);
+            for (Expression argument : call.getArguments()) {
+                Expression value = unwrap(argument);
+                if (value.isNameExpr() || value.isFieldAccessExpr()) {
+                    state.forgetFactsOf(value.toString());
+                }
+            }
         }
     }
 
