@@ -1,5 +1,6 @@
 package ru.akvine.zond.cli;
 
+import ru.akvine.zond.config.ZondVersion;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -32,7 +33,7 @@ public class MainMenu {
             Path target = folderPicker.pick(Path.of(""), SCAN_FOLDER_TITLE, false).orElse(null);
 
             while (true) {
-                int choice = menu.choose("Главное меню", List.of(
+                int choice = menu.choose("Главное меню (" + ZondVersion.title() + ")", List.of(
                         "Сканировать (" + (target == null ? NOT_CHOSEN : target) + ")",
                         "Выбрать другую папку",
                         "Настройки",

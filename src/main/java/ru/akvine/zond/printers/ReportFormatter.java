@@ -3,6 +3,7 @@ package ru.akvine.zond.printers;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.config.ZondSettings;
+import ru.akvine.zond.config.ZondVersion;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.models.Violation;
@@ -37,6 +38,7 @@ public class ReportFormatter {
         String newLine = System.lineSeparator();
         StringBuilder report = new StringBuilder();
         report.append("Zond: отчет о сканировании").append(newLine);
+        report.append("Версия Zond: ").append(ZondVersion.current()).append(newLine);
         report.append("Путь: ").append(result.root().toAbsolutePath().normalize()).append(newLine);
         report.append("Файлов проверено: ").append(result.filesCount());
         if (result.testsSkipped()) {

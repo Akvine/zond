@@ -1,5 +1,6 @@
 package ru.akvine.zond.printers;
 
+import ru.akvine.zond.config.ZondVersion;
 import lombok.RequiredArgsConstructor;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.models.ScanResult;
@@ -79,6 +80,7 @@ public class SarifPrinter implements Printer {
 
         String driver = object(4,
                 pair("name", string(TOOL_NAME)),
+                pair("version", string(ZondVersion.current())),
                 pair("rules", array(5, ruleItems)));
         String run = object(2,
                 pair("tool", "{\n" + INDENT.repeat(4) + pair("driver", driver) + "\n" + INDENT.repeat(3) + "}"),

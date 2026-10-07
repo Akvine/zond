@@ -7,6 +7,14 @@ plugins {
 group = 'ru.akvine'
 version = '0.0.1-SNAPSHOT'
 
+// Версия из этого файла попадает в приложение: в баннер, в --version и в отчеты.
+// Время сборки не пишем: из-за него задачи Gradle каждый раз считались бы устаревшими
+springBoot {
+	buildInfo {
+		excludes = ['time']
+	}
+}
+
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(21)

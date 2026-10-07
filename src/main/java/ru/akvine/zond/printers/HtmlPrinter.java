@@ -1,5 +1,6 @@
 package ru.akvine.zond.printers;
 
+import ru.akvine.zond.config.ZondVersion;
 import lombok.RequiredArgsConstructor;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -141,6 +142,7 @@ public class HtmlPrinter implements Printer {
 
     private void appendStats(StringBuilder html, ScanResult result) {
         html.append("<div class=\"stats\">");
+        stat(html, "Версия Zond", ZondVersion.current());
         stat(html, "Файлов проверено", result.filesCount() + (result.testsSkipped() ? " (каталоги test пропущены)" : ""));
         stat(html, "Активных правил", result.rulesCount()
                 + (result.disabledRulesCount() > 0 ? " (отключено: " + result.disabledRulesCount() + ")" : ""));

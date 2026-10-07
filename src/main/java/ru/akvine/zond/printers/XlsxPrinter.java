@@ -1,5 +1,6 @@
 package ru.akvine.zond.printers;
 
+import ru.akvine.zond.config.ZondVersion;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellStyle;
@@ -96,6 +97,7 @@ public class XlsxPrinter implements Printer {
 
         int row = 0;
         row = writeHeader(sheet, row, styles, "Zond: отчет о сканировании");
+        row = writePair(sheet, row, "Версия Zond", ZondVersion.current());
         row = writePair(sheet, row, "Путь", result.root().toAbsolutePath().normalize().toString());
         row = writePair(sheet, row, "Файлов проверено", result.filesCount());
         row = writePair(sheet, row, "Каталоги test", result.testsSkipped() ? "пропущены" : "проверены");
