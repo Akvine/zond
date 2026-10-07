@@ -5,6 +5,7 @@ import org.springframework.context.annotation.PropertySource;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.FileKind;
+import ru.akvine.zond.models.TimingThresholds;
 import ru.akvine.zond.rules.flow.FlowLibrary;
 
 import java.nio.file.Path;
@@ -23,6 +24,10 @@ public class ZondSettings {
     private static final String MIN_CONFIDENCE = "zond.rules.min-confidence";
     private static final String PROGRESS_PERCENT = "zond.progress.percent";
     private static final String TIME_UNIT = "zond.progress.time-unit";
+    private static final String TIMING_PATH = "zond.report.timing.path";
+    private static final String TIMING_RED = "zond.report.timing.red-percent";
+    private static final String TIMING_YELLOW = "zond.report.timing.yellow-percent";
+    private static final String TIMING_GREEN = "zond.report.timing.green-percent";
     private static final String FLOW_LIBRARY = "zond.flow.library";
     private static final String AUTO_CLASSPATH = "zond.scan.auto-classpath";
     private static final String MAVEN_REPOSITORY = "zond.scan.maven-repository";
@@ -130,6 +135,24 @@ public class ZondSettings {
      */
     public String timeUnit() {
         return environment.getProperty(TIME_UNIT, "");
+    }
+
+    /**
+     * @return файл отчета по времени правил, как задано, либо пустая строка, если отчет не нужен
+     */
+    public String timingReportPath() {
+        return environment.getProperty(TIMING_PATH, "").trim();
+    }
+
+    /**
+     * @return пороги цветов в отчете по времени правил
+     * @throws IllegalArgumentException если пороги заданы неверно
+     */
+    public TimingThresholds timingThresholds() {
+        return TimingThresholds.parse(
+                environment.getProperty(TIMING_RED, ""),
+                environment.getProperty(TIMING_YELLOW, ""),
+                environment.getProperty(TIMING_GREEN, ""));
     }
 
     /**

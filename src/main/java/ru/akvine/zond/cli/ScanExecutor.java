@@ -6,6 +6,7 @@ import ru.akvine.zond.loaders.MavenClasspathResolver;
 import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.printers.PrinterFactory;
+import ru.akvine.zond.printers.TimingReportPrinter;
 import ru.akvine.zond.services.Scanner;
 
 import java.nio.file.Path;
@@ -32,12 +33,16 @@ public class ScanExecutor {
      * @return код завершения: 0 - проблем нет, 1 - проблемы найдены, 2 - сканирование не удалось
      */
     public int scan(Path target, SessionSettings settings) {
-        // В общее время входит все, чего ждет пользователь: поиск библиотек, разбор файлов, правила и запись отчета
-        long startedAt = System.nanoTime();
         try {
             ScanResult result = scanner.scan(target, optionsOf(target, settings));
             printerFactory.create(settings.reportFile()).print(result);
-            System.out.println(TOTAL_TIME + settings.getTimeUnit().format(System.nanoTime() - startedAt));
+            // Время считается от запуска первого правила: загрузка и разбор кода в него не входят
+            if (settings.getTimingReportFile() != null) {
+                new TimingReportPrinter(
+                        settings.getTimingReportFile(), settings.getTimeUnit(), settings.getTimingThresholds())
+                        .print(result);
+            }
+            System.out.println(TOTAL_TIME + settings.getTimeUnit().format(result.checkNanos()));
             return result.hasViolations() ? EXIT_VIOLATIONS_FOUND : EXIT_OK;
         } catch (RuntimeException exception) {
             System.err.println("Ошибка: " + exception.getMessage());

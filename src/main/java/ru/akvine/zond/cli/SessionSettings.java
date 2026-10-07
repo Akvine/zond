@@ -9,6 +9,7 @@ import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.enums.ReportFormat;
 import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.models.ScanOptions;
+import ru.akvine.zond.models.TimingThresholds;
 
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -49,6 +50,16 @@ public class SessionSettings {
      * В чем показывать время работы правил и всей проверки
      */
     private DurationUnit timeUnit = DurationUnit.MILLISECONDS;
+
+    /**
+     * Файл отчета по времени правил; null - отчет не нужен
+     */
+    private Path timingReportFile;
+
+    /**
+     * Пороги цветов в отчете по времени правил
+     */
+    private TimingThresholds timingThresholds = TimingThresholds.defaults();
 
     /**
      * Коды и имена отключенных правил в том виде, как их задал пользователь

@@ -12,6 +12,10 @@ import java.util.List;
  * @param suppressedCount    сколько проблем скрыто комментариями zond:ignore
  * @param testsSkipped       каталоги test не проверялись
  * @param failedFiles        файлы, которые не удалось разобрать
+ * @param lowConfidenceCount сколько проблем скрыто порогом уверенности
+ * @param timings            сколько работало каждое правило, в порядке запуска
+ * @param checkNanos         сколько заняла проверка: от запуска первого правила до конца последнего,
+ *                           без загрузки и разбора кода
  */
 public record ScanResult(
         Path root,
@@ -22,7 +26,16 @@ public record ScanResult(
         int suppressedCount,
         boolean testsSkipped,
         List<Path> failedFiles,
-        int lowConfidenceCount) {
+        int lowConfidenceCount,
+        List<RuleTiming> timings,
+        long checkNanos) {
+
+    public ScanResult(
+            Path root, int filesCount, int rulesCount, int disabledRulesCount, List<Violation> violations,
+            int suppressedCount, boolean testsSkipped, List<Path> failedFiles, int lowConfidenceCount) {
+        this(root, filesCount, rulesCount, disabledRulesCount, violations, suppressedCount, testsSkipped, failedFiles,
+                lowConfidenceCount, List.of(), 0);
+    }
 
     public ScanResult(
             Path root, int filesCount, int rulesCount, int disabledRulesCount, List<Violation> violations,

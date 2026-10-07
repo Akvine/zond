@@ -11,6 +11,7 @@ import ru.akvine.zond.loaders.SourceLoader;
 import ru.akvine.zond.loaders.TextFileLoader;
 import ru.akvine.zond.models.ConfigFile;
 import ru.akvine.zond.models.LoadResult;
+import ru.akvine.zond.models.RuleTiming;
 import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
@@ -25,6 +26,8 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -67,9 +70,14 @@ public class Scanner {
 
         progressListener.onScanStarted(activeRules, options);
         List<Violation> violations = new ArrayList<>();
-        for (List<Violation> found : run(activeRules, context, options.threadCount())) {
+        Map<Rule, Long> spent = new ConcurrentHashMap<>();
+        // Отсчет времени проверки начинается здесь: код к этому моменту уже загружен и разобран
+        long checkStartedAt = System.nanoTime();
+        for (List<Violation> found : run(activeRules, context, options.threadCount(), spent)) {
             violations.addAll(found);
         }
+
+        long checkNanos = System.nanoTime() - checkStartedAt;
 
         // Находки, которые в самом коде помечены комментарием zond:ignore
         Suppressions suppressions = new Suppressions();
@@ -93,23 +101,28 @@ public class Scanner {
                 found - beforeConfidence,
                 options.skipTests(),
                 loaded.failedFiles(),
-                lowConfidence);
+                lowConfidence,
+                activeRules.stream()
+                        .map(rule -> new RuleTiming(rule.code(), rule.name(), spent.getOrDefault(rule, 0L)))
+                        .toList(),
+                checkNanos);
     }
 
     /**
      * @return находки каждого правила в порядке самих правил: от числа потоков итог не зависит
      */
-    private List<List<Violation>> run(List<Rule> activeRules, ScanContext context, int threads) {
+    private List<List<Violation>> run(
+            List<Rule> activeRules, ScanContext context, int threads, Map<Rule, Long> spent) {
         AtomicInteger started = new AtomicInteger();
         if (threads <= 1) {
-            return activeRules.stream().map(rule -> run(rule, context, started, activeRules.size())).toList();
+            return activeRules.stream().map(rule -> run(rule, context, started, activeRules.size(), spent)).toList();
         }
 
         ExecutorService executor = Executors.newFixedThreadPool(threads);
         try {
             List<Future<List<Violation>>> futures = new ArrayList<>();
             for (Rule rule : activeRules) {
-                futures.add(executor.submit(() -> run(rule, context, started, activeRules.size())));
+                futures.add(executor.submit(() -> run(rule, context, started, activeRules.size(), spent)));
             }
             List<List<Violation>> results = new ArrayList<>();
             for (Future<List<Violation>> future : futures) {
@@ -121,7 +134,8 @@ public class Scanner {
         }
     }
 
-    private List<Violation> run(Rule rule, ScanContext context, AtomicInteger started, int total) {
+    private List<Violation> run(
+            Rule rule, ScanContext context, AtomicInteger started, int total, Map<Rule, Long> spent) {
         int number = started.incrementAndGet();
         progressListener.onRuleStarted(number, total, rule);
         // Время считается в том же потоке, где работает правило: ожидание в очереди в него не входит
@@ -129,7 +143,9 @@ public class Scanner {
         try {
             return withLevel(levelOf(rule), rule.confidence(), apply(rule, context));
         } finally {
-            progressListener.onRuleFinished(number, total, rule, System.nanoTime() - startedAt);
+            long nanos = System.nanoTime() - startedAt;
+            spent.put(rule, nanos);
+            progressListener.onRuleFinished(number, total, rule, nanos);
         }
     }
 
