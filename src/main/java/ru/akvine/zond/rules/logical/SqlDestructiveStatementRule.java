@@ -18,7 +18,7 @@ import java.util.regex.Pattern;
 @Component
 public class SqlDestructiveStatementRule extends AbstractContextRule {
     private static final Pattern DESTRUCTIVE = Pattern.compile(
-            "^(drop\\s+table|truncate)\\b.*|^alter\\s+table\\s+.*\\bdrop\\s+(column\\s+)?(?!constraint\\b|index\\b)\\w+.*",
+            "^(drop\\s+table|truncate)\\b.*|^alter\\s+table\\s+.*\\bdrop\\s+(column\\s+)?(?!constraint\\b|index\\b|not\\s+null\\b|default\\b|identity\\b|primary\\b|foreign\\b)\\w+.*",
             Pattern.CASE_INSENSITIVE);
     private static final int SNIPPET_LENGTH = 60;
 

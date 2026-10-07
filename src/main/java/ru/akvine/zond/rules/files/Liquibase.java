@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -24,6 +25,10 @@ public class Liquibase {
     private static final String ROOT = "databaseChangeLog";
     private static final String CHANGE_SET = "changeSet";
     private static final String CHANGES = "changes";
+    private static final String ID = "id";
+    // --changeset автор:id в SQL-файле формата Liquibase
+    private static final Pattern SQL_CHANGE_SET = Pattern.compile("^\\s*--\\s*changeset\\b", Pattern.CASE_INSENSITIVE);
+    private static final String AUTHOR = "author";
     private static final String COLUMN = "column";
     private static final String COLUMNS = "columns";
     private static final String CONSTRAINTS = "constraints";
@@ -90,6 +95,47 @@ public class Liquibase {
         String get(String key) {
             return attributes.getOrDefault(key, "");
         }
+    }
+
+    /**
+     * Набор изменений журнала: Liquibase различает наборы по id, автору и файлу
+     */
+    public record ChangeSet(String id, String author, int line) {
+    }
+
+    public List<ChangeSet> changeSets(TextFile file) {
+        List<ChangeSet> changeSets = new ArrayList<>();
+        if (file.type() == TextFileType.LIQUIBASE_XML) {
+            XmlParser.parse(file.lines()).ifPresent(root -> root.descendants(CHANGE_SET).forEach(changeSet ->
+                    changeSets.add(new ChangeSet(changeSet.attribute(ID), changeSet.attribute(AUTHOR), changeSet.line()))));
+            return changeSets;
+        }
+        for (YamlNode document : YamlParser.parse(file.lines()).orElse(List.of())) {
+            for (YamlNode item : document.get(ROOT).items()) {
+                YamlNode changeSet = item.get(CHANGE_SET);
+                if (changeSet.exists()) {
+                    changeSets.add(new ChangeSet(changeSet.get(ID).text(), changeSet.get(AUTHOR).text(), changeSet.line()));
+                }
+            }
+        }
+        return changeSets;
+    }
+
+    /**
+     * @return строки, с которых в файле начинаются наборы изменений: в журнале XML и YAML либо в SQL-файле
+     * с пометками "--changeset". Пустой список - файл целиком является одной миграцией
+     */
+    public List<Integer> changeSetLines(TextFile file) {
+        if (file.type() != TextFileType.SQL) {
+            return changeSets(file).stream().map(ChangeSet::line).toList();
+        }
+        List<Integer> lines = new ArrayList<>();
+        for (int index = 0; index < file.lines().size(); index++) {
+            if (SQL_CHANGE_SET.matcher(file.lines().get(index)).find()) {
+                lines.add(index + 1);
+            }
+        }
+        return lines;
     }
 
     public List<SqlStatements.Statement> statements(TextFile file) {
@@ -184,11 +230,23 @@ public class Liquibase {
             case "addUniqueConstraint" -> add(statements, change,
                     "ALTER TABLE " + table + " ADD CONSTRAINT " + orUnnamed(change.get("constraintName"))
                             + " UNIQUE (" + change.get(COLUMN_NAMES) + ")");
+            case "renameColumn" -> add(statements, change,
+                    "ALTER TABLE " + table + " RENAME COLUMN " + change.get("oldColumnName") + " TO "
+                            + change.get("newColumnName"));
+            case "renameTable" -> add(statements, change,
+                    "ALTER TABLE " + change.get("oldTableName") + " RENAME TO " + change.get("newTableName"));
+            case "modifyDataType" -> add(statements, change,
+                    "ALTER TABLE " + table + " ALTER COLUMN " + change.get(COLUMN_NAME) + " TYPE "
+                            + change.get("newDataType"));
+            case "addNotNullConstraint" -> add(statements, change,
+                    "ALTER TABLE " + table + " ALTER COLUMN " + change.get(COLUMN_NAME) + " SET NOT NULL");
+            case "dropNotNullConstraint" -> add(statements, change,
+                    "ALTER TABLE " + table + " ALTER COLUMN " + change.get(COLUMN_NAME) + " DROP NOT NULL");
             case "update" -> add(statements, change, "UPDATE " + table + " SET " + columnNames(change) + whereOf(change));
             case "delete" -> add(statements, change, "DELETE FROM " + table + whereOf(change));
             case SQL -> embeddedSql(change, statements);
             default -> {
-                // Остальные изменения (переименование, представления, последовательности) правила не проверяют
+                // Остальные изменения (представления, последовательности, процедуры) правила не проверяют
             }
         }
     }
@@ -226,6 +284,7 @@ public class Liquibase {
     private String definitions(Change change) {
         return change.columns().stream()
                 .map(column -> column.get(NAME) + " " + typeOf(column)
+                        + (FALSE.equalsIgnoreCase(column.get(NULLABLE)) ? " NOT NULL" : "")
                         + (TRUE.equalsIgnoreCase(column.get(PRIMARY_KEY)) ? " PRIMARY KEY" : "")
                         + (TRUE.equalsIgnoreCase(column.get(UNIQUE)) ? " UNIQUE" : "")
                         + (column.references() ? " REFERENCES " + column.referenced() : ""))
