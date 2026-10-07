@@ -24,10 +24,10 @@ public class ZondSettings {
     private static final String MIN_CONFIDENCE = "zond.rules.min-confidence";
     private static final String PROGRESS_PERCENT = "zond.progress.percent";
     private static final String TIME_UNIT = "zond.progress.time-unit";
-    private static final String TIMING_PATH = "zond.report.timing.path";
-    private static final String TIMING_RED = "zond.report.timing.red-percent";
-    private static final String TIMING_YELLOW = "zond.report.timing.yellow-percent";
-    private static final String TIMING_GREEN = "zond.report.timing.green-percent";
+    private static final String STATISTIC_PATH = "zond.report.statistic.path";
+    private static final String STATISTIC_RED = "zond.report.statistic.red-percent";
+    private static final String STATISTIC_YELLOW = "zond.report.statistic.yellow-percent";
+    private static final String STATISTIC_GREEN = "zond.report.statistic.green-percent";
     private static final String FLOW_LIBRARY = "zond.flow.library";
     private static final String AUTO_CLASSPATH = "zond.scan.auto-classpath";
     private static final String MAVEN_REPOSITORY = "zond.scan.maven-repository";
@@ -138,21 +138,21 @@ public class ZondSettings {
     }
 
     /**
-     * @return файл отчета по времени правил, как задано, либо пустая строка, если отчет не нужен
+     * @return файл статистики по правилам, как задано, либо пустая строка, если отчет не нужен
      */
-    public String timingReportPath() {
-        return environment.getProperty(TIMING_PATH, "").trim();
+    public String statisticReportPath() {
+        return environment.getProperty(STATISTIC_PATH, "").trim();
     }
 
     /**
-     * @return пороги цветов в отчете по времени правил
+     * @return пороги цветов времени в статистике по правилам
      * @throws IllegalArgumentException если пороги заданы неверно
      */
     public TimingThresholds timingThresholds() {
         return TimingThresholds.parse(
-                environment.getProperty(TIMING_RED, ""),
-                environment.getProperty(TIMING_YELLOW, ""),
-                environment.getProperty(TIMING_GREEN, ""));
+                environment.getProperty(STATISTIC_RED, ""),
+                environment.getProperty(STATISTIC_YELLOW, ""),
+                environment.getProperty(STATISTIC_GREEN, ""));
     }
 
     /**

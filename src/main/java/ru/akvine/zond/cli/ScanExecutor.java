@@ -6,7 +6,7 @@ import ru.akvine.zond.loaders.MavenClasspathResolver;
 import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.printers.PrinterFactory;
-import ru.akvine.zond.printers.TimingReportPrinter;
+import ru.akvine.zond.printers.StatisticReportPrinter;
 import ru.akvine.zond.services.Scanner;
 
 import java.nio.file.Path;
@@ -37,9 +37,9 @@ public class ScanExecutor {
             ScanResult result = scanner.scan(target, optionsOf(target, settings));
             printerFactory.create(settings.reportFile()).print(result);
             // Время считается от запуска первого правила: загрузка и разбор кода в него не входят
-            if (settings.getTimingReportFile() != null) {
-                new TimingReportPrinter(
-                        settings.getTimingReportFile(), settings.getTimeUnit(), settings.getTimingThresholds())
+            if (settings.getStatisticReportFile() != null) {
+                new StatisticReportPrinter(
+                        settings.getStatisticReportFile(), settings.getTimeUnit(), settings.getTimingThresholds())
                         .print(result);
             }
             System.out.println(TOTAL_TIME + settings.getTimeUnit().format(result.checkNanos()));

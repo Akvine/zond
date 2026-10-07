@@ -8,7 +8,7 @@ import org.springframework.stereotype.Component;
 import ru.akvine.zond.config.ZondSettings;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.DurationUnit;
-import ru.akvine.zond.printers.TimingReportPrinter;
+import ru.akvine.zond.printers.StatisticReportPrinter;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.services.RuleCatalog;
@@ -31,7 +31,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String AUTO_CLASSPATH_OPTION = "auto-classpath";
     private static final String MIN_CONFIDENCE_OPTION = "min-confidence";
     private static final String TIME_UNIT_OPTION = "time-unit";
-    private static final String TIMING_REPORT_OPTION = "timing-report";
+    private static final String STATISTIC_REPORT_OPTION = "statistic-report";
     private static final String RULES_SEPARATOR = ",";
     private static final String TRUE = "true";
     private static final String FALSE = "false";
@@ -126,20 +126,20 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         String timeUnit = optionValue(args, TIME_UNIT_OPTION);
         session.setTimeUnit(DurationUnit.parse(timeUnit == null ? settings.timeUnit() : timeUnit));
 
-        String timingReport = optionValue(args, TIMING_REPORT_OPTION);
-        session.setTimingReportFile(parseTimingReport(timingReport == null ? settings.timingReportPath() : timingReport));
+        String statisticReport = optionValue(args, STATISTIC_REPORT_OPTION);
+        session.setStatisticReportFile(parseStatisticReport(statisticReport == null ? settings.statisticReportPath() : statisticReport));
         session.setTimingThresholds(settings.timingThresholds());
         return session;
     }
 
     // Цвета ячеек есть только в Excel, поэтому другого формата у этого отчета нет
-    private Path parseTimingReport(String value) {
+    private Path parseStatisticReport(String value) {
         if (value.isBlank()) {
             return null;
         }
-        if (!value.trim().toLowerCase(Locale.ROOT).endsWith(TimingReportPrinter.EXTENSION)) {
-            throw new IllegalArgumentException("Отчет по времени правил пишется только в Excel: имя файла должно"
-                    + " заканчиваться на " + TimingReportPrinter.EXTENSION + ", а задано '" + value.trim() + "'");
+        if (!value.trim().toLowerCase(Locale.ROOT).endsWith(StatisticReportPrinter.EXTENSION)) {
+            throw new IllegalArgumentException("Статистика по правилам пишется только в Excel: имя файла должно"
+                    + " заканчиваться на " + StatisticReportPrinter.EXTENSION + ", а задано '" + value.trim() + "'");
         }
         return Path.of(value.trim());
     }

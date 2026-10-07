@@ -52,12 +52,12 @@ public class SessionSettings {
     private DurationUnit timeUnit = DurationUnit.MILLISECONDS;
 
     /**
-     * Файл отчета по времени правил; null - отчет не нужен
+     * Файл статистики по правилам; null - отчет не нужен
      */
-    private Path timingReportFile;
+    private Path statisticReportFile;
 
     /**
-     * Пороги цветов в отчете по времени правил
+     * Пороги цветов времени в статистике по правилам
      */
     private TimingThresholds timingThresholds = TimingThresholds.defaults();
 

@@ -3,7 +3,7 @@ package ru.akvine.zond.models;
 import ru.akvine.zond.enums.TimingZone;
 
 /**
- * Пороги цветов в отчете по времени: доля правила в общем времени всех правил, в процентах.
+ * Пороги цветов времени в статистике по правилам: доля правила в общем времени всех правил, в процентах.
  * Правило получает самый тяжелый цвет, порога которого достигло.
  *
  * @param red    с какой доли строка красная
@@ -33,7 +33,7 @@ public record TimingThresholds(double red, double yellow, double green) {
                 parse("зеленого", green, DEFAULT_GREEN));
         // Иначе более легкий цвет никогда бы не выпал: его перекрывал бы более тяжелый
         if (thresholds.red < thresholds.yellow || thresholds.yellow < thresholds.green) {
-            throw new IllegalArgumentException("Пороги цветов в отчете по времени должны идти по убыванию:"
+            throw new IllegalArgumentException("Пороги цветов в статистике по правилам должны идти по убыванию:"
                     + " красный " + thresholds.red + ", желтый " + thresholds.yellow + ", зеленый " + thresholds.green);
         }
         return thresholds;
@@ -69,7 +69,7 @@ public record TimingThresholds(double red, double yellow, double green) {
         } catch (NumberFormatException exception) {
             // ниже сообщаем о неверном значении так же, как о числе вне диапазона
         }
-        throw new IllegalArgumentException("Порог " + color + " цвета в отчете по времени должен быть числом от 0 до 100,"
+        throw new IllegalArgumentException("Порог " + color + " цвета в статистике по правилам должен быть числом от 0 до 100,"
                 + " а задано '" + value.trim() + "'");
     }
 }
