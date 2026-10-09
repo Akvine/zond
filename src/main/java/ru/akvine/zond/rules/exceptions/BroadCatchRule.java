@@ -10,6 +10,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 
@@ -41,8 +42,11 @@ public class BroadCatchRule extends AbstractRule {
                 continue;
             }
 
+            // На границе задачи ловить все и положено: выше исключение обработать некому. Нужно лишь, чтобы оно
+            // не пропало - ушло в лог или обработчику вместе со стеком
+            boolean barrier = CodeContexts.isTaskBoundary(clause) && CodeContexts.passesExceptionOn(clause);
             Optional<String> broadType = findBroadType(clause.getParameter().getType());
-            if (broadType.isPresent() && !rethrows(clause)) {
+            if (broadType.isPresent() && !rethrows(clause) && !barrier) {
                 violations.add(violation(sourceFile, clause,
                         "catch (" + broadType.get() + ") без повторного выброса: вместе с ожидаемыми ошибками"
                                 + " перехватываются и ошибки программирования (NullPointerException и т.п.);"

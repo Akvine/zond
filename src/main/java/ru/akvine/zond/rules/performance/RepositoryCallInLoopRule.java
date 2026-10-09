@@ -15,7 +15,7 @@ import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.CallChains;
 import ru.akvine.zond.rules.support.CallGraph;
-import ru.akvine.zond.rules.support.Loops;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.Repositories;
 
 import java.util.ArrayList;
@@ -52,7 +52,8 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
         for (SourceFile sourceFile : sourceFiles) {
             Set<Integer> reportedLines = new HashSet<>();
             for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
-                if (!Loops.isRepeated(call)) {
+                // В цикле повторных попыток запрос повторяется по числу попыток, а не по числу элементов
+                if (!CodeContexts.isRepeatedOverData(call)) {
                     continue;
                 }
                 describe(call, graph)

@@ -8,6 +8,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.MethodCalls;
 
 import java.util.List;
@@ -38,6 +39,9 @@ public class ToMapWithoutMergeRule extends AbstractRule {
                 .filter(call -> TO_MAP_METHODS.contains(call.getNameAsString()))
                 .filter(call -> call.getArguments().size() == ARGUMENTS_WITHOUT_MERGE)
                 .filter(call -> call.getScope().map(scope -> MethodCalls.isType(scope, COLLECTORS)).orElse(true))
+                // При запуске повтор ключа - ошибка настройки (два обработчика одного типа, два значения
+                // перечисления с одним кодом): падение сразу и есть нужное поведение
+                .filter(call -> !CodeContexts.isStartup(call))
                 .map(call -> violation(sourceFile, call,
                         call.getNameAsString() + "(...) без функции слияния: на первом же повторяющемся ключе будет"
                                 + " IllegalStateException (Duplicate key); добавьте третий аргумент, например"

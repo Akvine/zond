@@ -20,6 +20,7 @@ import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.BeanScopes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.SpringBeans;
@@ -87,13 +88,6 @@ public class SharedBeanReconfigurationRule extends AbstractRule implements Proje
             Map.entry("ModelMapper", MODEL_MAPPER),
             Map.entry("JavaMailSenderImpl", MAIL_SENDER));
 
-    // Методы, которые выполняются один раз при запуске
-    private static final Set<String> STARTUP_ANNOTATIONS = Set.of(
-            "PostConstruct", "Bean", "Autowired", "Inject", "EventListener", "BeforeEach", "BeforeAll", "Before");
-    private static final Set<String> STARTUP_METHODS = Set.of("afterPropertiesSet", "init", "onApplicationEvent");
-    private static final Set<String> STARTUP_INTERFACES = Set.of("CommandLineRunner", "ApplicationRunner");
-    private static final String RUN = "run";
-
     // Классы настройки: менять общие бины - их прямое назначение, и делают они это при запуске
     private static final Set<String> CONFIGURATION_ANNOTATIONS =
             Set.of("Configuration", "TestConfiguration", "AutoConfiguration", "ConfigurationProperties");
@@ -137,7 +131,7 @@ public class SharedBeanReconfigurationRule extends AbstractRule implements Proje
                 if (shared.isEmpty()) {
                     continue;
                 }
-                Set<MethodDeclaration> startup = startupMethods(type);
+                Set<MethodDeclaration> startup = CodeContexts.startupMethods(type);
                 for (MethodDeclaration method : type.getMethods()) {
                     for (Change change : changes(method, shared)) {
                         String where = "в методе '" + method.getNameAsString() + "'";
@@ -329,40 +323,5 @@ public class SharedBeanReconfigurationRule extends AbstractRule implements Proje
     private boolean isOwnLazyCreation(VariableDeclarator field, MethodDeclaration method) {
         return method.findAll(AssignExpr.class).stream()
                 .anyMatch(assignment -> LocalTypes.findDeclaration(assignment.getTarget()).filter(field::equals).isPresent());
-    }
-
-    // Методы запуска и закрытые методы, которые вызываются только из них
-    private Set<MethodDeclaration> startupMethods(ClassOrInterfaceDeclaration type) {
-        boolean runner = type.getImplementedTypes().stream()
-                .anyMatch(implemented -> STARTUP_INTERFACES.contains(implemented.getNameAsString()));
-        Set<MethodDeclaration> startup = new HashSet<>();
-        for (MethodDeclaration method : type.getMethods()) {
-            if (Annotations.hasAny(method, STARTUP_ANNOTATIONS) || STARTUP_METHODS.contains(method.getNameAsString())
-                    || runner && RUN.equals(method.getNameAsString())) {
-                startup.add(method);
-            }
-        }
-        boolean added = true;
-        while (added) {
-            added = false;
-            for (MethodDeclaration method : type.getMethods()) {
-                if (method.isPrivate() && !startup.contains(method) && isCalledOnlyAtStartup(method, type, startup)) {
-                    startup.add(method);
-                    added = true;
-                }
-            }
-        }
-        return startup;
-    }
-
-    private boolean isCalledOnlyAtStartup(MethodDeclaration method, ClassOrInterfaceDeclaration type, Set<MethodDeclaration> startup) {
-        List<MethodCallExpr> calls = type.findAll(MethodCallExpr.class).stream()
-                .filter(call -> call.getNameAsString().equals(method.getNameAsString()))
-                .filter(call -> call.getScope().filter(scope -> !scope.isThisExpr()).isEmpty())
-                .toList();
-        // Вызов из конструктора или блока инициализации тоже относится к запуску
-        return !calls.isEmpty() && calls.stream().allMatch(call -> Nodes.enclosingCallable(call)
-                .filter(callable -> !(callable instanceof MethodDeclaration) || startup.contains(callable))
-                .isPresent());
     }
 }

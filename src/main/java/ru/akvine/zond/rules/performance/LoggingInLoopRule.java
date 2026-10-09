@@ -8,13 +8,15 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.Loggers;
-import ru.akvine.zond.rules.support.Loops;
 
 import java.util.List;
+import java.util.Set;
 
 @Component
 public class LoggingInLoopRule extends AbstractRule {
+    private static final Set<String> PROBLEM_LEVELS = Set.of("warn", "error");
 
     @Override
     public String code() {
@@ -32,12 +34,21 @@ public class LoggingInLoopRule extends AbstractRule {
         return sourceFile.unit().findAll(MethodCallExpr.class).stream()
                 .filter(Loggers::isLogCall)
                 .filter(Loggers::isEnabledLevel)
-                .filter(Loops::isRepeated)
+                // Итерации цикла повторных попыток - это попытки, а не элементы данных: их считаные единицы
+                .filter(CodeContexts::isRepeatedOverData)
+                .filter(call -> !isErrorReport(call))
                 .map(call -> violation(sourceFile, call,
                         "Логирование " + call.getScope().get() + "." + call.getNameAsString() + "(...) в цикле:"
                                 + " на большом объеме это тысячи записей, которые забивают лог и тормозят обработку;"
                                 + " выведите одну итоговую запись после цикла либо понизьте уровень до debug"))
                 .toList();
+    }
+
+    // Сообщение об ошибке, а не о ходе работы: запись в catch либо warn / error под условием. Она появляется
+    // не на каждом элементе, а когда с элементом что-то не так, и убирать ее из цикла нельзя
+    private boolean isErrorReport(MethodCallExpr call) {
+        boolean problemLevel = PROBLEM_LEVELS.contains(call.getNameAsString());
+        return CodeContexts.isInCatch(call) || problemLevel && CodeContexts.isConditionalInIteration(call);
     }
 
     @Override

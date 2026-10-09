@@ -21,6 +21,7 @@ import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.BeanScopes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.ProjectClasses;
 import ru.akvine.zond.rules.support.SpringBeans;
@@ -98,7 +99,6 @@ public class StatefulBeanAsSingletonRule extends AbstractRule implements Project
     private static final String CREATE_ENTITY_MANAGER = "createEntityManager";
 
     private static final String BEAN = "Bean";
-    private static final Set<String> STARTUP_ANNOTATIONS = Set.of("PostConstruct", "Bean", "Autowired", "Inject");
     // Для этих типов в статическом поле уже есть отдельное правило
     private static final Set<String> CHECKED_WHEN_STATIC = Set.of("SimpleDateFormat", "Calendar", "GregorianCalendar");
     private static final String HOW_TO_GET = " Экземпляр prototype-бина получайте через ObjectProvider или метод с @Lookup,"
@@ -222,8 +222,9 @@ public class StatefulBeanAsSingletonRule extends AbstractRule implements Project
 
     // Хотя бы одно обращение из обычного метода вне synchronized: при запуске и под блокировкой объект не делится
     private boolean isUsedWithoutLock(VariableDeclarator field, ClassOrInterfaceDeclaration bean) {
+        Set<MethodDeclaration> startup = CodeContexts.startupMethods(bean);
         for (MethodDeclaration method : bean.getMethods()) {
-            if (method.isSynchronized() || Annotations.hasAny(method, STARTUP_ANNOTATIONS)) {
+            if (method.isSynchronized() || startup.contains(method)) {
                 continue;
             }
             // format.parse(...) либо this.format.parse(...)

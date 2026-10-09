@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.support;
 
+import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
@@ -64,6 +65,71 @@ public final class ProjectClasses {
     }
 
     /**
+     * Класс проекта, на который ссылается тип в коде. В отличие от поиска по простому имени учитывает импорты
+     * и пакет файла: одноименные классы проекта различаются, а класс библиотеки не подменяется классом проекта
+     * с таким же именем.
+     *
+     * @return пусто, если тип объявлен вне проекта либо понять, какой из классов имеется в виду, нельзя
+     */
+    public Optional<ClassOrInterfaceDeclaration> resolve(ClassOrInterfaceType usage) {
+        String simpleName = usage.getNameAsString();
+        List<ClassOrInterfaceDeclaration> candidates = bySimpleName.getOrDefault(simpleName, List.of());
+        Optional<CompilationUnit> unit = usage.findCompilationUnit();
+        if (candidates.isEmpty() || unit.isEmpty()) {
+            return candidates.isEmpty() ? Optional.empty() : find(simpleName);
+        }
+
+        // Outer.Inner либо полное имя прямо в коде
+        if (usage.getScope().isPresent()) {
+            String qualified = usage.getScope().get().asString() + "." + simpleName;
+            return only(candidates.stream()
+                    .filter(candidate -> qualifiedName(candidate).equals(qualified)
+                            || qualifiedName(candidate).endsWith("." + qualified))
+                    .toList());
+        }
+
+        // import ru.shop.dto.Order: имя задано однозначно, и если такого класса в проекте нет - он из библиотеки
+        Optional<String> imported = unit.get().getImports().stream()
+                .filter(declaration -> !declaration.isAsterisk() && !declaration.isStatic())
+                .map(declaration -> declaration.getNameAsString())
+                .filter(name -> name.equals(simpleName) || name.endsWith("." + simpleName))
+                .findFirst();
+        if (imported.isPresent()) {
+            return only(candidates.stream().filter(candidate -> qualifiedName(candidate).equals(imported.get())).toList());
+        }
+
+        // Класс того же пакета
+        String ownPackage = unit.get().getPackageDeclaration().map(declaration -> declaration.getNameAsString() + ".").orElse("");
+        Optional<ClassOrInterfaceDeclaration> neighbour = only(candidates.stream()
+                .filter(candidate -> qualifiedName(candidate).equals(ownPackage + simpleName))
+                .toList());
+        if (neighbour.isPresent()) {
+            return neighbour;
+        }
+        // Вложенный класс из того же файла
+        Optional<ClassOrInterfaceDeclaration> nested = only(candidates.stream()
+                .filter(candidate -> candidate.findCompilationUnit().filter(found -> found == unit.get()).isPresent())
+                .toList());
+        if (nested.isPresent()) {
+            return nested;
+        }
+        // import ru.shop.dto.*
+        Set<String> packages = new HashSet<>();
+        unit.get().getImports().stream()
+                .filter(declaration -> declaration.isAsterisk() && !declaration.isStatic())
+                .forEach(declaration -> packages.add(declaration.getNameAsString() + "." + simpleName));
+        return only(candidates.stream().filter(candidate -> packages.contains(qualifiedName(candidate))).toList());
+    }
+
+    private Optional<ClassOrInterfaceDeclaration> only(List<ClassOrInterfaceDeclaration> found) {
+        return found.size() == 1 ? Optional.of(found.get(0)) : Optional.empty();
+    }
+
+    private String qualifiedName(ClassOrInterfaceDeclaration type) {
+        return type.getFullyQualifiedName().orElse(type.getNameAsString());
+    }
+
+    /**
      * @return true, если класс с таким простым именем объявлен в проекте, пусть даже не один
      */
     public boolean isDeclared(String simpleName) {
@@ -84,7 +150,7 @@ public final class ProjectClasses {
     public Optional<ClassOrInterfaceDeclaration> parent(ClassOrInterfaceDeclaration type) {
         return type.getExtendedTypes().stream()
                 .findFirst()
-                .flatMap(parent -> find(parent.getNameAsString()))
+                .flatMap(this::resolve)
                 .filter(parent -> !parent.isInterface());
     }
 
@@ -102,7 +168,7 @@ public final class ProjectClasses {
             if (OBJECT.equals(extended.getNameAsString())) {
                 return false;
             }
-            Optional<ClassOrInterfaceDeclaration> parent = find(extended.getNameAsString());
+            Optional<ClassOrInterfaceDeclaration> parent = resolve(extended);
             if (parent.isEmpty()) {
                 return true;
             }

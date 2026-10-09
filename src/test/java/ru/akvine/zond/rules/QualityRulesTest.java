@@ -2,6 +2,7 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.rules.codesmell.BooleanFlagParameterRule;
 import ru.akvine.zond.rules.codesmell.DeepNestingRule;
 import ru.akvine.zond.rules.codesmell.DisabledTestWithoutReasonRule;
@@ -15,6 +16,7 @@ import ru.akvine.zond.rules.concurrency.AsyncReturnTypeRule;
 import ru.akvine.zond.rules.logical.ProxyAnnotationOnPrivateMethodRule;
 import ru.akvine.zond.rules.logical.ScheduledWithParametersRule;
 
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -155,7 +157,8 @@ class QualityRulesTest {
 
     @Test
     void valueWithoutDefault() {
-        assertThat(RuleTests.lines(new ValueWithoutDefaultRule(), """
+        // Файлы настроек в проверку не попали: правило судит только по самой аннотации
+        ScanContext context = new ScanContext(Path.of("."), List.of(RuleTests.parse(Path.of("Sample.java"), """
                 class Sample {
                     @Value("${app.name}")
                     private String name;
@@ -166,7 +169,9 @@ class QualityRulesTest {
                     @Value("${app.url}/api")
                     private String url;
                 }
-                """)).containsExactly(2, 8);
+                """)), List.of(), List.of());
+
+        assertThat(new ValueWithoutDefaultRule().checkContext(context)).extracting(Violation::line).containsExactly(2, 8);
     }
 
     @Test

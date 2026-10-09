@@ -10,6 +10,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.TestClasses;
 
@@ -22,6 +23,7 @@ import java.util.Set;
 public class GenericExceptionRule extends AbstractRule {
     private static final String OVERRIDE = "Override";
     private static final String MAIN = "main";
+    private static final String PRE_DESTROY = "PreDestroy";
 
     private static final Set<String> GENERIC_THROWN = Set.of("Exception", "RuntimeException", "Throwable", "Error");
     private static final Set<String> GENERIC_DECLARED = Set.of("Exception", "Throwable");
@@ -54,6 +56,12 @@ public class GenericExceptionRule extends AbstractRule {
         // У переопределенного метода и у main сигнатуру диктует не автор; в тестах throws Exception - норма
         for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
             if (Annotations.has(method, OVERRIDE) || MAIN.equals(method.getNameAsString()) || TestClasses.isInside(method)) {
+                continue;
+            }
+            // Метод, который вызывает контейнер (@Bean, @PostConstruct, @PreDestroy): ловить его исключения
+            // некому, кроме самого контейнера. Метод функционального интерфейса обязан принять любую лямбду
+            if (CodeContexts.isStartupMethod(method) || Annotations.has(method, PRE_DESTROY)
+                    || CodeContexts.isFunctionalInterfaceMethod(method)) {
                 continue;
             }
             method.getThrownExceptions().stream()
