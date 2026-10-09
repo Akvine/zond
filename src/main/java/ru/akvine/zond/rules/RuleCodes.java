@@ -363,4 +363,7 @@ public class RuleCodes {
     public final static String MAPPER_MISSES_FIELD_RULE_CODE = "jr:357";
     public final static String GRACEFUL_SHUTDOWN_MISSING_RULE_CODE = "jr:358";
     public final static String INSECURE_HTTP_URL_RULE_CODE = "jr:359";
+    public final static String STATEFUL_BEAN_AS_SINGLETON_RULE_CODE = "jr:360";
+    public final static String SHARED_BEAN_RECONFIGURATION_RULE_CODE = "jr:361";
+    public final static String LINEAR_SEARCH_INSTEAD_OF_MAP_RULE_CODE = "jr:362";
 }

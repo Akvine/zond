@@ -5,6 +5,8 @@ import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.type.Type;
 import lombok.experimental.UtilityClass;
@@ -18,6 +20,7 @@ import java.util.Set;
 @UtilityClass
 public class SpringBeans {
     private final static String LAZY = "Lazy";
+    private final static String VALUE = "Value";
     private final static Set<String> STEREOTYPES =
             Set.of("Component", "Service", "Repository", "Controller", "RestController", "Configuration");
     private final static Set<String> INJECTION_ANNOTATIONS = Set.of("Autowired", "Inject", "Resource");
@@ -78,6 +81,36 @@ public class SpringBeans {
             }
         }
         return dependencies;
+    }
+
+    /**
+     * @return true, если значение поля приходит от контейнера, а не создается в самом классе
+     */
+    public boolean isInjectedField(FieldDeclaration field, ClassOrInterfaceDeclaration bean) {
+        if (field.isStatic() || hasInitializer(field)) {
+            return false;
+        }
+        if (Annotations.hasAny(field, INJECTION_ANNOTATIONS) || Annotations.has(field, VALUE)) {
+            return true;
+        }
+        if (bean.getConstructors().isEmpty()) {
+            return Annotations.has(bean, ALL_ARGS_CONSTRUCTOR)
+                    || Annotations.has(bean, REQUIRED_ARGS_CONSTRUCTOR) && field.isFinal();
+        }
+        // this.format = format: значение пришло параметром конструктора
+        for (ConstructorDeclaration constructor : bean.getConstructors()) {
+            for (AssignExpr assignment : constructor.findAll(AssignExpr.class)) {
+                boolean toField = field.getVariables().stream().anyMatch(variable ->
+                        LocalTypes.findDeclaration(assignment.getTarget()).filter(variable::equals).isPresent());
+                Expression value = Nodes.unwrap(assignment.getValue());
+                boolean fromParameter = value.isNameExpr()
+                        && constructor.getParameterByName(value.asNameExpr().getNameAsString()).isPresent();
+                if (toField && fromParameter) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private boolean hasInitializer(FieldDeclaration field) {

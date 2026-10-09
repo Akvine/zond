@@ -9,6 +9,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.KeyLookups;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Loops;
 
@@ -45,8 +46,11 @@ public class StreamInLoopRule extends AbstractRule {
             // Стрим по коллекции, полученной внутри итерации (item.getChildren().stream()), сюда не попадает
             Optional<Node> iteration = Loops.enclosingIteration(call);
             Optional<Node> declaration = LocalTypes.findDeclaration(call.getScope().get());
+            // Поиск элемента по ключу показывает LinearSearchInsteadOfMapRule: там совет точнее - собрать Map
+            boolean keyLookup = KeyLookups.ofStream(call).filter(KeyLookups::isRepeated).isPresent();
             if (iteration.isPresent()
                     && declaration.isPresent()
+                    && !keyLookup
                     && Loops.isDeclaredOutside(iteration.get(), declaration.get())) {
                 violations.add(violation(sourceFile, call,
                         "Стрим по '" + call.getScope().get() + "' создается на каждой итерации: коллекция всякий раз"

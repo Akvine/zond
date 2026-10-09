@@ -63,6 +63,13 @@ public final class ProjectClasses {
         return found.size() == 1 ? Optional.of(found.get(0)) : Optional.empty();
     }
 
+    /**
+     * @return true, если класс с таким простым именем объявлен в проекте, пусть даже не один
+     */
+    public boolean isDeclared(String simpleName) {
+        return bySimpleName.containsKey(simpleName);
+    }
+
     public List<ClassOrInterfaceDeclaration> all() {
         return bySimpleName.values().stream().flatMap(List::stream).toList();
     }
