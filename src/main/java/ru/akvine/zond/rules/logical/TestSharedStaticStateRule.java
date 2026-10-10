@@ -132,4 +132,10 @@ public class TestSharedStaticStateRule extends AbstractRule {
         }
         return value.isFieldAccessExpr() && value.asFieldAccessExpr().getNameAsString().equals(field);
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

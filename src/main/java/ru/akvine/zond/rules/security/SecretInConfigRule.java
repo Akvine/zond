@@ -17,7 +17,8 @@ import java.util.regex.Pattern;
 @Component
 public class SecretInConfigRule extends AbstractConfigRule {
     // ${DB_PASSWORD}, ${db.password:}: значение приходит из окружения
-    private static final Pattern PLACEHOLDER = Pattern.compile("^\\$\\{.*}$");
+    // {{ .Values.secret }} подставит Helm, @api.token@ - сборка Maven: секрета в самом файле нет
+    private static final Pattern PLACEHOLDER = Pattern.compile("^\\$\\{.*}$|^\\{\\{.*}}$|^@[\\w.\\-]+@$");
 
     // ENC(...), {cipher}...: значение зашифровано
     private static final Pattern ENCRYPTED = Pattern.compile("^(ENC\\(.*\\)|\\{cipher}.*)$");

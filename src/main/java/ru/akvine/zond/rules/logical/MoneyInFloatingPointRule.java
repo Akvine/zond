@@ -13,11 +13,14 @@ import ru.akvine.zond.rules.support.LocalTypes;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
 @Component
 public class MoneyInFloatingPointRule extends AbstractRule {
+    private static final String AMOUNT = "amount";
+    private static final String PRICE = "price";
     private static final Set<String> FLOATING_TYPES = Set.of("double", "float", "Double", "Float");
 
     // Типы не разрешаем: о том, что в поле деньги, судим по имени
@@ -41,7 +44,8 @@ public class MoneyInFloatingPointRule extends AbstractRule {
         for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
             for (VariableDeclarator variable : field.getVariables()) {
                 String type = LocalTypes.typeName(variable.getType());
-                if (FLOATING_TYPES.contains(type) && MONEY_NAME.matcher(variable.getNameAsString()).matches()) {
+                if (FLOATING_TYPES.contains(type) && MONEY_NAME.matcher(variable.getNameAsString()).matches()
+                        && !isQuantity(variable, field)) {
                     violations.add(violation(sourceFile, variable,
                             "Денежное поле '" + variable.getNameAsString() + "' типа " + type + ": двоичная дробь"
                                     + " не может точно представить 0.1, при сложении и округлении копейки"
@@ -50,6 +54,17 @@ public class MoneyInFloatingPointRule extends AbstractRule {
             }
         }
         return violations;
+    }
+
+    // amount рядом с ценой - это количество (2.5 кг, 0.5 порции), а деньги лежат в price
+    private boolean isQuantity(VariableDeclarator variable, FieldDeclaration field) {
+        if (!AMOUNT.equalsIgnoreCase(variable.getNameAsString())) {
+            return false;
+        }
+        return field.getParentNode()
+                .map(owner -> owner.findAll(VariableDeclarator.class).stream()
+                        .anyMatch(other -> other != variable && other.getNameAsString().toLowerCase(Locale.ROOT).contains(PRICE)))
+                .orElse(false);
     }
 
     @Override

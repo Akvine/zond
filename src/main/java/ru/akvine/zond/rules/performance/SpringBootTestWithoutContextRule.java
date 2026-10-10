@@ -60,4 +60,10 @@ public class SpringBootTestWithoutContextRule extends AbstractRule {
                 && type.getMethods().stream().allMatch(method -> method.getParameters().isEmpty())
                 && type.getMethods().stream().noneMatch(method -> CONTEXT_LOADS.equals(method.getNameAsString()));
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

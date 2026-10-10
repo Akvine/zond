@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.config.RuleSettings;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.codesmell.AssertTrueEqualsRule;
 import ru.akvine.zond.rules.codesmell.CommentedOutCodeRule;
@@ -17,6 +18,7 @@ import ru.akvine.zond.rules.logical.IncompleteAssertionRule;
 import ru.akvine.zond.rules.logical.LogPlaceholderMismatchRule;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -153,6 +155,49 @@ class QualityMoreRulesTest {
 
         assertThat(violations).extracting(Violation::line).containsExactly(2);
         assertThat(violations.get(0).message()).contains("'complex'", "- 12 ");
+    }
+
+    @Test
+    void cyclomaticComplexityCountsEveryBranch() {
+        CyclomaticComplexityRule strict = new CyclomaticComplexityRule();
+        strict.setSettings(RuleSettings.of(Map.of("jr-193.max-complexity", "1")));
+
+        List<Violation> violations = RuleTests.check(strict, """
+                class Sample {
+                    Sample(int a) {
+                        if (a > 0 && a < 10) { work(); }
+                    }
+                    int branches(int a, List<Integer> items) {
+                        for (int item : items) { work(); }
+                        while (a > 0) { a--; }
+                        try { work(); } catch (IllegalStateException e) { work(); }
+                        switch (a) {
+                            case 1: work(); break;
+                            case 2, 3: work(); break;
+                            default: work();
+                        }
+                        items.forEach(item -> { if (item > 0) { work(); } });
+                        return a > 0 || a < -5 ? 1 : 0;
+                    }
+                    Runnable nested(int a) {
+                        return new Runnable() {
+                            @Override
+                            public void run() {
+                                if (a > 0) { work(); }
+                                if (a > 1) { work(); }
+                            }
+                        };
+                    }
+                    void plain() { work(); }
+                }
+                """);
+
+        // Конструктор: if и &&. Метод: for, while, catch, два case, if в лямбде, || и ?:. Ветвления анонимного
+        // класса относятся к его методу run, а не к nested
+        assertThat(violations).extracting(Violation::line).containsExactly(2, 5, 19);
+        assertThat(violations.get(0).message()).contains("конструктора 'Sample' - 3 ");
+        assertThat(violations.get(1).message()).contains("метода 'branches' - 9 ");
+        assertThat(violations.get(2).message()).contains("метода 'run' - 3 ");
     }
 
     @Test

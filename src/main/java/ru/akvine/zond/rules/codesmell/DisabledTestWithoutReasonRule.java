@@ -54,4 +54,10 @@ public class DisabledTestWithoutReasonRule extends AbstractRule {
         return annotation.findAll(StringLiteralExpr.class).stream()
                 .anyMatch(reason -> !reason.asString().isBlank());
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

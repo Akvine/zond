@@ -59,7 +59,9 @@ public class Secrets {
     private final static Pattern PATH_LIKE_VALUE = Pattern.compile("^(/|[a-z][a-z0-9+.\\-]*://)[^@]*$");
 
     // ${db.password}, #{...}: значение подставляется из настроек
-    private final static Pattern PLACEHOLDER_VALUE = Pattern.compile("^[$#]\\{.*");
+    // ${ENV_VAR}, #{выражение}, {{ .Values.secret }} из шаблона Helm, @token@ из сборки Maven:
+    // значение подставят при развертывании, в файле секрета нет
+    private final static Pattern PLACEHOLDER_VALUE = Pattern.compile("^[$#]\\{.*|^\\{\\{.*}}$|^@[\\w.\\-]+@$");
 
     private final static Pattern WHITESPACE = Pattern.compile("\\s");
 

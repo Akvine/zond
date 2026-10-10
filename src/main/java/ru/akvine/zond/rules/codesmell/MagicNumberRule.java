@@ -11,7 +11,9 @@ import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.IntegerLiteralExpr;
 import com.github.javaparser.ast.expr.LiteralStringValueExpr;
 import com.github.javaparser.ast.expr.LongLiteralExpr;
+import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
+import com.github.javaparser.ast.nodeTypes.NodeWithArguments;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -24,10 +26,14 @@ import ru.akvine.zond.rules.support.TestClasses;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class MagicNumberRule extends AbstractRule {
     private static final String HASH_CODE = "hashCode";
+
+    private static final Pattern UNIT_CONSTANT = Pattern.compile("(TimeUnit|ChronoUnit|DataUnit)\\.[A-Z_]+");
+    private static final Pattern UNIT_FACTORY = Pattern.compile("^(Duration|Period|DataSize)\\.of[A-Z]\\w*\\(");
 
     // Числа, смысл которых понятен без имени
     private static final Set<Double> ALLOWED = Set.of(0.0, 1.0, 2.0);
@@ -100,6 +106,19 @@ public class MagicNumberRule extends AbstractRule {
             }
             current = current.getParentNode().orElse(null);
         }
-        return TestClasses.isInside(literal);
+        return TestClasses.isInside(literal) || hasUnit(literal);
+    }
+
+    // Duration.ofSeconds(30), poll(5, TimeUnit.SECONDS): смысл числа назван единицей измерения рядом
+    private boolean hasUnit(Node literal) {
+        Node parent = literal.getParentNode().orElse(null);
+        while (parent instanceof UnaryExpr || parent instanceof EnclosedExpr) {
+            parent = parent.getParentNode().orElse(null);
+        }
+        if (parent instanceof MethodCallExpr call && UNIT_FACTORY.matcher(call.toString()).find()) {
+            return true;
+        }
+        return parent instanceof NodeWithArguments<?> call && call.getArguments().stream()
+                .anyMatch(argument -> UNIT_CONSTANT.matcher(argument.toString()).matches());
     }
 }

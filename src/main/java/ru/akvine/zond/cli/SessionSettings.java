@@ -62,6 +62,11 @@ public class SessionSettings {
     private TimingThresholds timingThresholds = TimingThresholds.defaults();
 
     /**
+     * В тестовом коде работают только правила для тестов, остальные проверяют код приложения
+     */
+    private boolean testRulesOnly = true;
+
+    /**
      * Коды и имена отключенных правил в том виде, как их задал пользователь
      */
     private final Set<String> disabledRules = new LinkedHashSet<>();
@@ -164,6 +169,7 @@ public class SessionSettings {
                 .withThreads(threads)
                 .withMinConfidence(minConfidence)
                 .withTimeUnit(timeUnit)
+                .withTestRulesOnly(testRulesOnly)
                 .withSkippedKinds(skippedKinds);
     }
 }

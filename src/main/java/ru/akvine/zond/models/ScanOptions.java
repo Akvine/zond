@@ -24,6 +24,7 @@ import java.util.stream.Collectors;
  * @param minConfidence наименьшая уверенность находки, с которой она еще попадает в отчет
  * @param skippedKinds  виды файлов помимо Java, которые проверять не нужно: SQL, файлы сборки и прочие
  * @param timeUnit      в чем показывать время работы правил
+ * @param testRulesOnly в тестовом коде работают только правила для тестов
  */
 public record ScanOptions(
         Set<String> disabledRules,
@@ -34,10 +35,13 @@ public record ScanOptions(
         int threads,
         Set<FileKind> skippedKinds,
         Confidence minConfidence,
-        DurationUnit timeUnit) {
+        DurationUnit timeUnit,
+        boolean testRulesOnly) {
     private static final int SINGLE_THREAD = 1;
     private static final String SEPARATOR = "[,;\\s]+";
     private static final String TEST_DIRECTORY = "test";
+    private static final String SOURCE_DIRECTORY = "src";
+    private static final Set<String> BUILD_DIRECTORIES = Set.of("build", "target", "out");
     private static final String OLD_NAME_PREFIX = "Check";
 
     /**
@@ -45,37 +49,42 @@ public record ScanOptions(
      */
     public static ScanOptions defaults() {
         return new ScanOptions(
-                Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(), Confidence.SUSPICION, DurationUnit.MILLISECONDS);
+                Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(), Confidence.SUSPICION, DurationUnit.MILLISECONDS, true);
     }
 
     public ScanOptions withSkipTests(boolean skip) {
-        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit);
+        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly);
     }
 
     public ScanOptions withClasspath(List<Path> libraries) {
         return new ScanOptions(
-                disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions, threads, skippedKinds, minConfidence, timeUnit);
+                disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly);
     }
 
     public ScanOptions withExclusions(PathExclusions excluded) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded, threads, skippedKinds, minConfidence, timeUnit);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly);
     }
 
     public ScanOptions withThreads(int count) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, count, skippedKinds, minConfidence, timeUnit);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, count, skippedKinds, minConfidence, timeUnit, testRulesOnly);
     }
 
     public ScanOptions withMinConfidence(Confidence confidence) {
         return new ScanOptions(
-                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, confidence, timeUnit);
+                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, confidence, timeUnit, testRulesOnly);
     }
 
     public ScanOptions withTimeUnit(DurationUnit unit) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, unit);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, unit, testRulesOnly);
+    }
+
+    public ScanOptions withTestRulesOnly(boolean only) {
+        return new ScanOptions(
+                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit, only);
     }
 
     public ScanOptions withSkippedKinds(Set<FileKind> kinds) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, Set.copyOf(kinds), minConfidence, timeUnit);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, Set.copyOf(kinds), minConfidence, timeUnit, testRulesOnly);
     }
 
     /**
@@ -97,14 +106,42 @@ public record ScanOptions(
             return true;
         }
 
-        // Смотрим только на часть пути ниже корня: если сканировать попросили сам каталог test, его и проверяем
-        Path relative = root.toAbsolutePath().normalize().relativize(file.toAbsolutePath().normalize());
+        return !isTestFile(root, file);
+    }
+
+    /**
+     * @return true для файла из каталога сборки (build, target, out): копии исходников, которые туда кладут
+     * форматтеры и генераторы, и сгенерированный код. Каталог с таким именем внутри src - обычный пакет
+     */
+    public boolean isBuildOutput(Path root, Path file) {
+        Path absoluteRoot = root.toAbsolutePath().normalize();
+        Path absoluteFile = file.toAbsolutePath().normalize();
+        Path relative = absoluteFile.startsWith(absoluteRoot) ? absoluteRoot.relativize(absoluteFile) : file;
         for (Path part : relative) {
-            if (TEST_DIRECTORY.equals(part.toString())) {
+            if (SOURCE_DIRECTORY.equals(part.toString())) {
                 return false;
             }
+            if (BUILD_DIRECTORIES.contains(part.toString())) {
+                return true;
+            }
         }
-        return true;
+        return false;
+    }
+
+    /**
+     * @return true для файла из каталога test: тестовый код и его ресурсы
+     */
+    public boolean isTestFile(Path root, Path file) {
+        // Смотрим только на часть пути ниже корня: если сканировать попросили сам каталог test, его и проверяем
+        Path absoluteRoot = root.toAbsolutePath().normalize();
+        Path absoluteFile = file.toAbsolutePath().normalize();
+        Path relative = absoluteFile.startsWith(absoluteRoot) ? absoluteRoot.relativize(absoluteFile) : file;
+        for (Path part : relative) {
+            if (TEST_DIRECTORY.equals(part.toString())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -118,7 +155,7 @@ public record ScanOptions(
                 .collect(Collectors.toSet());
         return new ScanOptions(
                 disabled, parseLevel(minLevel), false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(),
-                Confidence.SUSPICION, DurationUnit.MILLISECONDS);
+                Confidence.SUSPICION, DurationUnit.MILLISECONDS, true);
     }
 
     /**

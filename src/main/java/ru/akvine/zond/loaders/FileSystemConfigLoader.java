@@ -80,12 +80,30 @@ public class FileSystemConfigLoader implements ConfigLoader {
             if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) {
                 continue;
             }
-            Matcher matcher = PROPERTY_LINE.matcher(line);
+            // Значение, перенесенное через \ в конце строки, продолжается на следующих: это одно свойство,
+            // а не несколько. Иначе каждая строка продолжения стала бы отдельным ключом
+            int firstLine = index;
+            StringBuilder logical = new StringBuilder();
+            while (endsWithContinuation(line) && index + 1 < lines.size()) {
+                logical.append(line, 0, line.length() - 1);
+                line = lines.get(++index).trim();
+            }
+            logical.append(line);
+            Matcher matcher = PROPERTY_LINE.matcher(logical);
             if (matcher.matches()) {
-                properties.add(new ConfigProperty(matcher.group(1), matcher.group(2).trim(), index + 1));
+                properties.add(new ConfigProperty(matcher.group(1), matcher.group(2).trim(), firstLine + 1));
             }
         }
         return properties;
+    }
+
+    // Нечетное число \ в конце строки - перенос; четное - экранированные обратные черты самого значения
+    private boolean endsWithContinuation(String line) {
+        int slashes = 0;
+        for (int index = line.length() - 1; index >= 0 && line.charAt(index) == '\\'; index--) {
+            slashes++;
+        }
+        return slashes % 2 == 1;
     }
 
     // Ключи вложенных словарей соединяются точкой, элементы списков получают индекс - так же свойства

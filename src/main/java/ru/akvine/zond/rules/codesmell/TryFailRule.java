@@ -57,4 +57,10 @@ public class TryFailRule extends AbstractRule {
                 .filter(call -> FAIL.equals(call.getNameAsString()))
                 .isPresent();
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

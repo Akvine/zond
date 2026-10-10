@@ -9,10 +9,12 @@ import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.InitializerDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.ConditionalExpr;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithArguments;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.CatchClause;
@@ -53,6 +55,9 @@ public class CodeContexts {
     // Счетчик или предел цикла назван попыткой: attempt, retry, retries, maxTries.
     // "tries" берется только отдельным словом: иначе подошли бы entries и countries
     private static final Pattern RETRY_NAME = Pattern.compile("(?i:attempt|retry|retries)|(?<![a-zA-Z])tries|Tries");
+
+    // Переменная, которой листают страницы: offset, page, pageNumber, cursor, lastId
+    private static final Pattern PAGING_NAME = Pattern.compile("(?i)offset|page|cursor|lastId|chunk");
 
     // Метод, с которого начинается самостоятельная задача: выше него исключение ловить уже некому
     private static final Set<String> BOUNDARY_ANNOTATIONS = Set.of(
@@ -185,13 +190,29 @@ public class CodeContexts {
     }
 
     /**
+     * Постраничное чтение: цикл идет по страницам, сдвигая смещение, номер страницы или курсор. Запрос на каждую
+     * страницу - то, ради чего такой цикл пишут, а не запрос на каждый элемент.
+     */
+    public boolean isPagingLoop(Node iteration) {
+        if (!(iteration instanceof ForStmt || iteration instanceof WhileStmt || iteration instanceof DoStmt)) {
+            return false;
+        }
+        boolean assigned = iteration.findAll(AssignExpr.class).stream()
+                .anyMatch(assignment -> PAGING_NAME.matcher(assignment.getTarget().toString()).find());
+        return assigned || iteration.findAll(UnaryExpr.class).stream()
+                .filter(unary -> unary.getOperator() != UnaryExpr.Operator.LOGICAL_COMPLEMENT
+                        && unary.getOperator() != UnaryExpr.Operator.MINUS)
+                .anyMatch(unary -> PAGING_NAME.matcher(unary.getExpression().toString()).find());
+    }
+
+    /**
      * @return true, если узел повторяется по числу элементов данных: он лежит в цикле или в поэлементной
      * лямбде, и это не цикл повторных попыток
      */
     public boolean isRepeatedOverData(Node node) {
         Optional<Node> iteration = Loops.enclosingIteration(node);
         while (iteration.isPresent()) {
-            if (!isRetryLoop(iteration.get())) {
+            if (!isRetryLoop(iteration.get()) && !isPagingLoop(iteration.get())) {
                 return true;
             }
             iteration = Loops.enclosingIteration(iteration.get());
@@ -202,7 +223,7 @@ public class CodeContexts {
     /**
      * Граница задачи: выше этого catch исключение ловить некому либо незачем. Это метод, с которого задача
      * начинается ({@code @Scheduled}, слушатель, run() потока), лямбда, отданная исполнителю, и обработка одного
-     * элемента в цикле, где ошибка одного не должна останавливать остальные.
+     * элемента в цикле, где ошибка одного не должна останавливать остальные, и уборка в блоке finally.
      */
     public boolean isTaskBoundary(CatchClause clause) {
         Optional<TryStmt> tryStatement = clause.getParentNode()
@@ -211,7 +232,7 @@ public class CodeContexts {
         if (tryStatement.isEmpty()) {
             return false;
         }
-        if (isItemBoundary(tryStatement.get()) || isInExecutorLambda(clause)) {
+        if (isItemBoundary(tryStatement.get()) || isInExecutorLambda(clause) || isCleanup(tryStatement.get())) {
             return true;
         }
         return Nodes.enclosingCallable(clause)
@@ -233,6 +254,34 @@ public class CodeContexts {
                 .flatMap(call -> call.getArguments().stream())
                 .map(Nodes::unwrap)
                 .anyMatch(argument -> argument.isNameExpr() && argument.asNameExpr().getNameAsString().equals(exception));
+    }
+
+    /**
+     * @return true, если catch записывает в лог само пойманное исключение: его стек уже сохранен
+     */
+    public boolean logsException(CatchClause clause) {
+        String exception = clause.getParameter().getNameAsString();
+        return clause.getBody().findAll(MethodCallExpr.class).stream()
+                .filter(Loggers::isLogCall)
+                .flatMap(call -> call.getArguments().stream())
+                .map(Nodes::unwrap)
+                .anyMatch(argument -> argument.isNameExpr() && argument.asNameExpr().getNameAsString().equals(exception));
+    }
+
+    /**
+     * @return true, если catch выбрасывает пойманное исключение дальше - само либо причиной нового:
+     * стек уходит вместе с ним и не теряется
+     */
+    public boolean rethrowsWithCause(CatchClause clause) {
+        String exception = clause.getParameter().getNameAsString();
+        return clause.getBody().findAll(ThrowStmt.class).stream()
+                .map(ThrowStmt::getExpression)
+                .map(Nodes::unwrap)
+                .anyMatch(thrown -> thrown.isNameExpr() && thrown.asNameExpr().getNameAsString().equals(exception)
+                        || thrown.isObjectCreationExpr() && thrown.asObjectCreationExpr().getArguments().stream()
+                        .map(Nodes::unwrap)
+                        .anyMatch(argument -> argument.isNameExpr()
+                                && argument.asNameExpr().getNameAsString().equals(exception)));
     }
 
     /**
@@ -327,6 +376,16 @@ public class CodeContexts {
                 .flatMap(Node::getParentNode);
         return holder.isPresent()
                 && Loops.enclosingIteration(tryStatement).filter(iteration -> iteration == holder.get()).isPresent();
+    }
+
+    // finally { try { lock.unlock(); } catch (Exception e) { ... } }: сбой уборки не должен заслонить
+    // исходное исключение, поэтому ловят все
+    private boolean isCleanup(TryStmt tryStatement) {
+        Optional<Node> block = tryStatement.getParentNode().filter(parent -> parent instanceof BlockStmt);
+        return block.flatMap(Node::getParentNode)
+                .filter(parent -> parent instanceof TryStmt outer
+                        && outer.getFinallyBlock().filter(finallyBlock -> finallyBlock == block.get()).isPresent())
+                .isPresent();
     }
 
     // executor.submit(() -> { try { ... } catch (Exception e) { ... } }), new Thread(() -> ...)

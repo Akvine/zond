@@ -11,6 +11,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 
@@ -19,6 +20,8 @@ import java.util.Set;
 
 @Component
 public class NarrowingCastRule extends AbstractRule {
+    private static final String MATH = "Math";
+    private static final String MIN = "min";
     private static final Set<String> NARROW_TYPES = Set.of("int", "short", "byte");
     private static final Set<String> WIDE_TYPES = Set.of("long", "Long");
 
@@ -42,11 +45,17 @@ public class NarrowingCastRule extends AbstractRule {
         return sourceFile.unit().findAll(CastExpr.class).stream()
                 .filter(cast -> NARROW_TYPES.contains(cast.getType().asString()))
                 .filter(cast -> isUnboundedLong(Nodes.unwrap(cast.getExpression())) && !TestClasses.isInside(cast))
+                // (int) Math.min(size, limit): значение перед приведением обрезано до предела
+                .filter(cast -> !isClamped(Nodes.unwrap(cast.getExpression())))
                 .map(cast -> violation(sourceFile, cast,
-                        "'" + cast + "': long приводится к " + cast.getType() + " без проверки - значение,"
+                        "'" + Nodes.text(cast) + "': long приводится к " + cast.getType() + " без проверки - значение,"
                                 + " которое не помещается, молча обрежется и станет другим числом, возможно"
                                 + " отрицательным; используйте Math.toIntExact(...) либо проверьте диапазон"))
                 .toList();
+    }
+
+    private boolean isClamped(Expression expression) {
+        return expression.isMethodCallExpr() && MethodCalls.isCallOn(expression.asMethodCallExpr(), MATH, MIN);
     }
 
     @Override

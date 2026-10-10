@@ -67,7 +67,7 @@ class ContextRulesTest {
                 drop table legacy_orders;
                 alter table orders drop column total;
                 alter table orders drop constraint fk_manager;
-                update orders set status = 'NEW; still text';
+                update orders set code = 'NEW; still text';
                 delete from orders where id = 1;
                 /* delete from orders; */
                 truncate table audit;
@@ -224,8 +224,9 @@ class ContextRulesTest {
         assertThat(check(new MissingConfigPropertyRule())).containsExactly("Settings.java:4");
         // app.mail.* читает @ConfigurationProperties, app.feature.enabled - @ConditionalOnProperty
         assertThat(check(new UnusedConfigPropertyRule())).containsExactly(
+                // Свойство, которое повторяется в файлах двух профилей, - одна находка
                 "application-dev.properties:1", "application-dev.properties:2",
-                "application-prod.properties:1", "application-prod.properties:2",
+                "application-prod.properties:2",
                 "application.properties:2");
     }
 

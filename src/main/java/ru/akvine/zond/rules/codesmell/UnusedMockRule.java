@@ -69,4 +69,10 @@ public class UnusedMockRule extends AbstractRule {
     public ErrorType errorType() {
         return ErrorType.CODE_SMELL;
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

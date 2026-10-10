@@ -248,6 +248,12 @@ class ScanRunnerTest {
         Path test = Files.createDirectories(dir.resolve("src/test/java"));
         Files.move(dir.resolve("Bad.java"), test.resolve("Bad.java"));
 
+        // Правило о коде приложения к тестам не применяется: тесты проверяют только правила для тестов
+        ScanRunner testRulesOnly = runner("");
+        testRulesOnly.run(new DefaultApplicationArguments("--path=" + dir));
+        assertThat(testRulesOnly.getExitCode()).isZero();
+
+        environment.setProperty("zond.scan.test-rules-only", "false");
         ScanRunner withTests = runner("");
         withTests.run(new DefaultApplicationArguments("--path=" + dir));
         assertThat(withTests.getExitCode()).isEqualTo(1);

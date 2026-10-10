@@ -43,6 +43,15 @@ public interface Rule {
      * Замечание о качестве кода (длинный метод, лишний импорт) - факт, видный в тексте; остальное
      * без отдельного подтверждения считается вероятным
      */
+    /**
+     * @return true, если правило проверяет и тестовый код. По умолчанию правила проверяют только код приложения:
+     * требования к нему - производительность, безопасность, устойчивость к null - к тестам не относятся,
+     * а упавший тест и есть нужный исход ошибки в тесте
+     */
+    default boolean appliesToTests() {
+        return false;
+    }
+
     default Confidence confidence() {
         return errorType() == ErrorType.CODE_SMELL ? Confidence.CONFIRMED : Confidence.PROBABLE;
     }

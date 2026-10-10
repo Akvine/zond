@@ -66,4 +66,10 @@ public class ConstantAssertionRule extends AbstractRule {
                 && first.isLiteralExpr()
                 && Nodes.unwrap(call.getArgument(1)).isLiteralExpr();
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

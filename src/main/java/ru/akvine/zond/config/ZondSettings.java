@@ -24,6 +24,7 @@ public class ZondSettings {
     private static final String MIN_CONFIDENCE = "zond.rules.min-confidence";
     private static final String PROGRESS_PERCENT = "zond.progress.percent";
     private static final String TIME_UNIT = "zond.progress.time-unit";
+    private static final String TEST_RULES_ONLY = "zond.scan.test-rules-only";
     private static final String STATISTIC_PATH = "zond.report.statistic.path";
     private static final String STATISTIC_RED = "zond.report.statistic.red-percent";
     private static final String STATISTIC_YELLOW = "zond.report.statistic.yellow-percent";
@@ -128,6 +129,13 @@ public class ZondSettings {
      */
     public String minConfidence() {
         return environment.getProperty(MIN_CONFIDENCE, "");
+    }
+
+    /**
+     * @return true, если в тестовом коде должны работать только правила для тестов. Выключается только явным false
+     */
+    public boolean testRulesOnly() {
+        return !FALSE.equalsIgnoreCase(environment.getProperty(TEST_RULES_ONLY, "").trim());
     }
 
     /**

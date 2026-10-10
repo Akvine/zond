@@ -12,7 +12,9 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
+import ru.akvine.zond.rules.support.Repositories;
 import ru.akvine.zond.rules.support.TestClasses;
 import ru.akvine.zond.rules.support.TransactionalAnnotations;
 
@@ -20,10 +22,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class ReferenceOutsideTransactionRule extends AbstractRule {
     private static final Set<String> REFERENCE_METHODS = Set.of("getReferenceById", "getOne", "getById", "getReference");
+    private static final Pattern ENTITY_MANAGER = Pattern.compile("(?i).*entityManager|em|.*session");
 
     // Идентификатор хранится в самой ссылке - для него обращение к БД не нужно
     private static final Set<String> SAFE_METHODS = Set.of("getId", "getClass", "equals", "hashCode");
@@ -46,7 +50,13 @@ public class ReferenceOutsideTransactionRule extends AbstractRule {
                     .map(Nodes::unwrap)
                     .filter(Expression::isMethodCallExpr)
                     .map(Expression::asMethodCallExpr)
-                    .filter(call -> REFERENCE_METHODS.contains(call.getNameAsString()));
+                    .filter(call -> REFERENCE_METHODS.contains(call.getNameAsString()))
+                    // Ленивую ссылку отдают репозиторий и EntityManager; clientService.getById(...) - обычный
+                    // метод проекта, который возвращает загруженный объект
+                    .filter(call -> Repositories.isRepositoryCall(call) || call.getScope()
+                            .map(MethodCalls::receiverName)
+                            .filter(receiver -> ENTITY_MANAGER.matcher(receiver).matches())
+                            .isPresent());
             Optional<Node> callable = Nodes.enclosingCallable(variable);
             if (source.isEmpty() || callable.isEmpty() || isTransactional(callable.get())
                     || TestClasses.isInside(variable)) {

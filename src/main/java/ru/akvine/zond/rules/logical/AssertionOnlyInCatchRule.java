@@ -78,4 +78,10 @@ public class AssertionOnlyInCatchRule extends AbstractRule {
         return clause.findAll(MethodCallExpr.class).stream()
                 .anyMatch(call -> call.getNameAsString().startsWith(ASSERT_PREFIX));
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

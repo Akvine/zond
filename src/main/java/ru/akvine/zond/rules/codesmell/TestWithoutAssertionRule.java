@@ -68,4 +68,10 @@ public class TestWithoutAssertionRule extends AbstractRule {
                 .map(MethodCallExpr::getNameAsString)
                 .anyMatch(name -> ASSERTION_PREFIXES.stream().anyMatch(name::startsWith));
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

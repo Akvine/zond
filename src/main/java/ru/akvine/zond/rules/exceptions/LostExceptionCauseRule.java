@@ -12,6 +12,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
@@ -38,7 +39,8 @@ public class LostExceptionCauseRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
         for (CatchClause clause : sourceFile.unit().findAll(CatchClause.class)) {
             String caught = clause.getParameter().getNameAsString();
-            if (attachesCauseManually(clause, caught)) {
+            // Исключение записано в лог целиком: стек и причина сохранены, хоть и не едут дальше
+            if (attachesCauseManually(clause, caught) || CodeContexts.logsException(clause)) {
                 continue;
             }
 

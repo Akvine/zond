@@ -66,7 +66,9 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
         // Какие классы принимают данные извне, видно по обработчикам запросов и сообщений. Имя класса об этом
         // не говорит: OrderRequest бывает и запросом, который приложение само отправляет другому сервису
         boolean handlersKnown = classes.all().stream().anyMatch(this::isHandler);
-        Set<ClassOrInterfaceDeclaration> inbound = handlersKnown ? inboundTypes(classes) : Set.of();
+        Set<ClassOrInterfaceDeclaration> inbound = handlersKnown ? inboundTypes(classes, true, true) : Set.of();
+        // Запрос присылает кто угодно, а сообщение в очередь обычно кладет свой же сервис: уверенности меньше
+        Set<ClassOrInterfaceDeclaration> fromRequests = handlersKnown ? inboundTypes(classes, true, false) : Set.of();
 
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
@@ -81,7 +83,7 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
                                 "Коллекция '" + fieldNames(field) + "' во входном DTO '" + type.getNameAsString()
                                         + "' без @Size: клиент может прислать сколько угодно элементов и исчерпать"
                                         + " память или процессор; ограничьте размер: @Size(max = ...)")
-                                .withConfidence(handlersKnown ? Confidence.PROBABLE : Confidence.SUSPICION));
+                                .withConfidence(fromRequests.contains(type) ? Confidence.PROBABLE : Confidence.SUSPICION));
                     }
                 }
             }
@@ -105,13 +107,13 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
     }
 
     // Классы, в которые разбирается запрос или сообщение, вместе с классами их полей и предками
-    private Set<ClassOrInterfaceDeclaration> inboundTypes(ProjectClasses classes) {
+    private Set<ClassOrInterfaceDeclaration> inboundTypes(ProjectClasses classes, boolean requests, boolean messages) {
         Deque<ClassOrInterfaceDeclaration> queue = new ArrayDeque<>();
         for (ClassOrInterfaceDeclaration type : classes.all()) {
             if (TestClasses.isInside(type)) {
                 continue;
             }
-            if (Annotations.hasAny(type, CONTROLLERS)) {
+            if (requests && Annotations.hasAny(type, CONTROLLERS)) {
                 // Аннотации параметров могут стоять и в интерфейсе, который контроллер реализует
                 List<ClassOrInterfaceDeclaration> declarations = new ArrayList<>(List.of(type));
                 type.getImplementedTypes().forEach(implemented -> classes.resolve(implemented)
@@ -124,7 +126,7 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
                         .forEach(parameter -> collect(parameter.getType(), classes, queue));
             }
             for (MethodDeclaration method : type.getMethods()) {
-                if (Annotations.hasAny(method, LISTENER_ANNOTATIONS)) {
+                if (messages && Annotations.hasAny(method, LISTENER_ANNOTATIONS)) {
                     for (Parameter parameter : method.getParameters()) {
                         collect(parameter.getType(), classes, queue);
                     }

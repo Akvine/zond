@@ -59,6 +59,8 @@ public class InternalCollectionExposureRule extends AbstractRule {
                 findReturnedField(method)
                         .flatMap(field -> LocalTypes.findField(method, field))
                         .filter(this::isMutable)
+                        // У поля есть сеттер: класс - носитель данных, и его состояние и так меняют снаружи
+                        .filter(field -> !hasSetter(type, field.getNameAsString()))
                         .ifPresent(field -> violations.add(violation(sourceFile, method,
                                 "Метод '" + method.getNameAsString() + "' отдает внутреннее поле '"
                                         + field.getNameAsString() + "' как есть: вызывающий код сможет менять"
@@ -81,6 +83,12 @@ public class InternalCollectionExposureRule extends AbstractRule {
     }
 
     // Тело метода - единственный оператор return field; либо return this.field;
+    private boolean hasSetter(ClassOrInterfaceDeclaration type, String field) {
+        String setter = "set" + Character.toUpperCase(field.charAt(0)) + field.substring(1);
+        return type.getMethodsByName(setter).stream()
+                .anyMatch(method -> !method.isPrivate() && method.getParameters().size() == 1);
+    }
+
     private Optional<String> findReturnedField(MethodDeclaration method) {
         List<Statement> statements = method.getBody().map(body -> (List<Statement>) body.getStatements()).orElse(List.of());
         if (statements.size() != 1 || !statements.get(0).isReturnStmt()) {

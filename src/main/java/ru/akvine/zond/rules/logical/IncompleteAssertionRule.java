@@ -50,4 +50,10 @@ public class IncompleteAssertionRule extends AbstractRule {
     public ErrorType errorType() {
         return ErrorType.LOGICAL;
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

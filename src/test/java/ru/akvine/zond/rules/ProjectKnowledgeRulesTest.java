@@ -162,7 +162,9 @@ class ProjectKnowledgeRulesTest {
                 .containsExactlyInAnyOrder(
                         "OrderRequest.java:2", "OrderRequest.java:6", "BaseRequest.java:1", "OrderLine.java:1",
                         "SearchForm.java:1", "ImportRow.java:1", "OrderEvent.java:1");
-        assertThat(violations).extracting(Violation::confidence).containsOnly(Confidence.PROBABLE);
+        // Запрос присылает кто угодно, а сообщение в очередь обычно кладет свой же сервис: уверенности меньше
+        assertThat(violations).allSatisfy(violation -> assertThat(violation.confidence())
+                .isEqualTo(violation.file().toString().equals("OrderEvent.java") ? Confidence.SUSPICION : Confidence.PROBABLE));
     }
 
     @Test

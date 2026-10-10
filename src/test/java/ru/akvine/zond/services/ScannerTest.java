@@ -174,6 +174,30 @@ class ScannerTest {
     }
 
     @Test
+    void findingsInBuildOutputAreNotReported(@TempDir Path dir) throws IOException {
+        String code = """
+                class Sample {
+                    @Transactional
+                    private void save() {}
+                }
+                """;
+        // Копия исходника от форматтера, сгенерированный код и пакет, который просто называется build
+        for (String path : List.of("src/main/java/Main.java", "build/spotless/src/main/java/Main.java",
+                "target/generated-sources/Generated.java", "src/main/java/com/shop/build/Builder.java")) {
+            Path file = dir.resolve(path);
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, code);
+        }
+
+        ScanResult result = scanner.scan(dir);
+
+        assertThat(result.filesCount()).isEqualTo(4);
+        assertThat(result.violations())
+                .extracting(violation -> violation.file().getFileName().toString())
+                .containsExactlyInAnyOrder("Main.java", "Builder.java");
+    }
+
+    @Test
     void skipsTestDirectoriesWhenAsked(@TempDir Path dir) throws IOException {
         String code = """
                 class Sample {
@@ -188,7 +212,14 @@ class ScannerTest {
         Files.writeString(dir.resolve("src/test/application.properties"), "spring.jpa.hibernate.ddl-auto=validate\n");
         ScanOptions skipTests = ScanOptions.defaults().withSkipTests(true);
 
-        ScanResult everything = scanner.scan(dir);
+        // По умолчанию тесты читаются, но правило о коде приложения к ним не применяется
+        ScanResult testRulesOnly = scanner.scan(dir);
+        assertThat(testRulesOnly.filesCount()).isEqualTo(3);
+        assertThat(testRulesOnly.violations())
+                .extracting(violation -> violation.file().getFileName().toString())
+                .containsExactly("Main.java");
+
+        ScanResult everything = scanner.scan(dir, ScanOptions.defaults().withTestRulesOnly(false));
         assertThat(everything.filesCount()).isEqualTo(3);
         assertThat(everything.violations()).hasSize(2);
         assertThat(everything.testsSkipped()).isFalse();

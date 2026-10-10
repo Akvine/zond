@@ -80,4 +80,10 @@ public class UncheckedResultInTestRule extends AbstractRule {
         return method.findAll(NameExpr.class).stream()
                 .anyMatch(name -> name.getNameAsString().equals(variable.getNameAsString()));
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

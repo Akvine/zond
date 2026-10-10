@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.codesmell;
 
+import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
@@ -22,6 +23,7 @@ import java.util.Set;
 
 @Component
 public class RawTypeRule extends AbstractRule {
+    private static final String JDK_PACKAGE = "java.";
     private static final Set<String> GENERIC_TYPES = Set.of(
             "List", "ArrayList", "LinkedList", "Set", "HashSet", "LinkedHashSet", "TreeSet", "Map", "HashMap",
             "LinkedHashMap", "TreeMap", "ConcurrentHashMap", "Collection", "Iterable", "Iterator", "Queue", "Deque",
@@ -46,7 +48,7 @@ public class RawTypeRule extends AbstractRule {
         for (ClassOrInterfaceType type : sourceFile.unit().findAll(ClassOrInterfaceType.class)) {
             // new ArrayList<>() - параметр выведет компилятор: аргументы заданы, хоть и пустые
             if (!GENERIC_TYPES.contains(type.getNameAsString()) || type.getTypeArguments().isPresent()
-                    || !isTypeUsage(type)) {
+                    || !isTypeUsage(type) || isAnotherClass(sourceFile, type.getNameAsString())) {
                 continue;
             }
             if (reportedLines.add(type.getBegin().map(position -> position.line).orElse(0))) {
@@ -57,6 +59,20 @@ public class RawTypeRule extends AbstractRule {
             }
         }
         return violations;
+    }
+
+    // Queue из org.springframework.amqp.core - это не java.util.Queue, и параметра типа у него нет. Тип из JDK
+    // виден в файле, только если импортирован оттуда: по имени либо через import java.util.*
+    private boolean isAnotherClass(SourceFile sourceFile, String name) {
+        List<ImportDeclaration> imports = sourceFile.unit().getImports().stream()
+                .filter(declaration -> !declaration.isStatic())
+                .toList();
+        // Файл без импортов - отрывок кода: судить не по чему, считаем тип обычным
+        if (imports.isEmpty()) {
+            return false;
+        }
+        return imports.stream().noneMatch(declaration -> declaration.getNameAsString().startsWith(JDK_PACKAGE)
+                && (declaration.isAsterisk() || declaration.getNameAsString().endsWith("." + name)));
     }
 
     @Override

@@ -64,6 +64,7 @@ public final class DbSchema {
     private static final Pattern DROP_NOT_NULL = Pattern.compile(
             "^alter\\s+(?:column\\s+)?(\\S+)\\s+drop\\s+not\\s+null$", FLAGS);
     private static final Pattern MODIFY = Pattern.compile("^modify\\s+(?:column\\s+)?(\\S+)\\s+(.+)$", FLAGS);
+    private static final Pattern NULLABILITY = Pattern.compile("^(not\\s+)?null$", FLAGS);
     private static final Pattern CHANGE = Pattern.compile("^change\\s+(?:column\\s+)?(\\S+)\\s+(\\S+)\\s+(.+)$", FLAGS);
 
     // После drop / rename стоит не имя колонки, а вид объекта: ограничение, индекс, ключ
@@ -318,7 +319,14 @@ public final class DbSchema {
         }
         Matcher modify = MODIFY.matcher(action);
         if (modify.matches()) {
-            changes.add(Change.of(Kind.CHANGE_TYPE, table, name(modify.group(1)), typeOf(modify.group(2))));
+            // modify col null / not null (Oracle, MySQL) меняет только обязательность, тип остается прежним
+            Matcher nullability = NULLABILITY.matcher(modify.group(2).trim());
+            if (nullability.matches()) {
+                Kind kind = nullability.group(1) == null ? Kind.DROP_NOT_NULL : Kind.SET_NOT_NULL;
+                changes.add(Change.of(kind, table, name(modify.group(1)), null));
+            } else {
+                changes.add(Change.of(Kind.CHANGE_TYPE, table, name(modify.group(1)), typeOf(modify.group(2))));
+            }
             return;
         }
         Matcher change = CHANGE.matcher(action);

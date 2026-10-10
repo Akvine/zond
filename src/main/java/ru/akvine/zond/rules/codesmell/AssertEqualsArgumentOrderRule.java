@@ -94,4 +94,10 @@ public class AssertEqualsArgumentOrderRule extends AbstractRule {
         }
         return value.isFieldAccessExpr() && CONSTANT_NAME.matcher(value.asFieldAccessExpr().getNameAsString()).matches();
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

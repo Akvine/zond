@@ -93,7 +93,7 @@ class ProjectFilesRulesTest {
                             tableName: old_orders
                         - sql:
                             sql: |
-                              update orders set note = 'x';
+                              update orders set title = 'x';
                               delete from orders where id = 2;
                       rollback:
                         - dropTable:

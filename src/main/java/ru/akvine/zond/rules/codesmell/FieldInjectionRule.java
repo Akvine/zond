@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.codesmell;
 
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
@@ -10,6 +11,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.Rule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
@@ -20,6 +22,13 @@ import java.util.stream.Collectors;
 
 @Component
 public class FieldInjectionRule implements Rule {
+    private static final Set<String> UI_CONTROLLER_ANNOTATIONS = Set.of(
+            "UiController", "UiDescriptor", "ViewController", "ViewDescriptor", "FragmentDescriptor", "DesignRoot");
+    private static final Set<String> UI_CONTROLLER_BASES = Set.of(
+            "Screen", "ScreenFragment", "StandardEditor", "StandardLookup", "MasterDetailScreen", "StandardView",
+            "StandardListView", "StandardDetailView", "StandardMainView", "Fragment", "AbstractWindow",
+            "AbstractEditor", "AbstractLookup", "AbstractFrame");
+
     private static final Set<String> INJECTION_ANNOTATIONS = Set.of("Autowired", "Inject", "Resource");
 
     @Override
@@ -48,7 +57,7 @@ public class FieldInjectionRule implements Rule {
         for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
             // Статические не учитываем: в них внедрение не работает в принципе, это ловит отдельное правило.
             // В тестах внедрение через поле - обычная практика: экземпляр создает тестовый фреймворк, а не Spring
-            if (field.isStatic() || TestClasses.isInside(field)) {
+            if (field.isStatic() || TestClasses.isInside(field) || isCreatedByFramework(field)) {
                 continue;
             }
 
@@ -64,6 +73,15 @@ public class FieldInjectionRule implements Rule {
                             + " а поле можно будет сделать final")));
         }
         return violations;
+    }
+
+    // Экран интерфейса (Jmix, CUBA, Vaadin Flow) создает сам фреймворк конструктором без параметров
+    // и заполняет его поля: внедрить зависимость через конструктор там нельзя
+    private boolean isCreatedByFramework(FieldDeclaration field) {
+        return field.findAncestor(ClassOrInterfaceDeclaration.class)
+                .filter(type -> Annotations.hasAny(type, UI_CONTROLLER_ANNOTATIONS) || type.getExtendedTypes().stream()
+                        .anyMatch(parent -> UI_CONTROLLER_BASES.contains(parent.getNameAsString())))
+                .isPresent();
     }
 
     @Override

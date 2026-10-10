@@ -40,9 +40,15 @@ public class LocalDateTimeNowRule implements Rule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // now(zone) и now(clock) не трогаем: там пояс выбран явно
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        List<MethodCallExpr> calls = sourceFile.unit().findAll(MethodCallExpr.class).stream()
                 .filter(call -> MethodCalls.isCallOn(call, LOCAL_DATE_TIME, NOW))
                 .filter(call -> call.getArguments().isEmpty())
+                .toList();
+        // Как хранить время, решают один раз на проект: десяток одинаковых находок в файле ничего не добавляет
+        // к одной. Показываем первое место и число остальных
+        String others = calls.size() > 1 ? " (в этом файле еще " + (calls.size() - 1) + " таких мест)" : "";
+        return calls.stream()
+                .limit(1)
                 .map(call -> new Violation(
                         errorLevel(),
                         errorType(),
@@ -52,7 +58,7 @@ public class LocalDateTimeNowRule implements Rule {
                         call.getBegin().map(position -> position.line).orElse(0),
                         "LocalDateTime.now() для временной метки: значение берется в часовом поясе сервера"
                                 + " и не хранит его, один и тот же момент на разных серверах даст разное время;"
-                                + " используйте Instant.now(), ZonedDateTime.now() или OffsetDateTime.now()"))
+                                + " используйте Instant.now(), ZonedDateTime.now() или OffsetDateTime.now()" + others))
                 .toList();
     }
 

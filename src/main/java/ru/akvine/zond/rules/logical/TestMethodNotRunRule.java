@@ -91,4 +91,10 @@ public class TestMethodNotRunRule extends AbstractRule {
         return type.findAll(MethodCallExpr.class).stream().anyMatch(call -> call.getNameAsString().equals(name))
                 || type.findAll(MethodReferenceExpr.class).stream().anyMatch(reference -> reference.getIdentifier().equals(name));
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

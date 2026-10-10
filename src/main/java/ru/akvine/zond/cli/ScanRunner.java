@@ -125,6 +125,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
 
         String timeUnit = optionValue(args, TIME_UNIT_OPTION);
         session.setTimeUnit(DurationUnit.parse(timeUnit == null ? settings.timeUnit() : timeUnit));
+        session.setTestRulesOnly(settings.testRulesOnly());
 
         String statisticReport = optionValue(args, STATISTIC_REPORT_OPTION);
         session.setStatisticReportFile(parseStatisticReport(statisticReport == null ? settings.statisticReportPath() : statisticReport));

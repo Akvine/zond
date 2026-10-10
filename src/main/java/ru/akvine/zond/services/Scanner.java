@@ -27,12 +27,14 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -78,6 +80,17 @@ public class Scanner {
         }
 
         long checkNanos = System.nanoTime() - checkStartedAt;
+
+        // Копии исходников и сгенерированный код в каталогах сборки читаются - по ним видно, что класс или
+        // метод используется, - но находки в них не показываются: править там нечего, а копия дала бы
+        // каждую находку дважды
+        violations.removeIf(violation -> options.isBuildOutput(root, violation.file()));
+
+        // В тестовом коде остаются находки только тех правил, которые тесты и проверяют
+        if (options.testRulesOnly()) {
+            Set<String> forTests = activeRules.stream().filter(Rule::appliesToTests).map(Rule::code).collect(Collectors.toSet());
+            violations.removeIf(violation -> !forTests.contains(violation.ruleCode()) && options.isTestFile(root, violation.file()));
+        }
 
         // Находки, которые в самом коде помечены комментарием zond:ignore
         Suppressions suppressions = new Suppressions();

@@ -53,7 +53,8 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
             Set<Integer> reportedLines = new HashSet<>();
             for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
                 // В цикле повторных попыток запрос повторяется по числу попыток, а не по числу элементов
-                if (!CodeContexts.isRepeatedOverData(call)) {
+                // Запрос в catch выполняется, только когда обработка элемента сорвалась, а не для каждого
+                if (!CodeContexts.isRepeatedOverData(call) || CodeContexts.isInCatch(call)) {
                     continue;
                 }
                 describe(call, graph)

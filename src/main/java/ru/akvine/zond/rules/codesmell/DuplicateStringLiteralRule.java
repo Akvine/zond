@@ -3,6 +3,10 @@ package ru.akvine.zond.rules.codesmell;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.EnclosedExpr;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.StringLiteralExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -12,15 +16,23 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Loggers;
+import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class DuplicateStringLiteralRule extends AbstractRule {
+    private static final String EXCEPTION_SUFFIX = "Exception";
+    // Проверки аргументов, где строка - текст ошибки: Assert.notNull(x, "..."), Objects.requireNonNull(x, "...")
+    private static final Set<String> MESSAGE_HOLDERS = Set.of("Assert", "Preconditions", "Validate", "Objects");
+    private static final Set<String> MESSAGE_METHODS = Set.of("requireNonNull", "checkArgument", "checkState", "checkNotNull");
+
     private static final RuleParameter MIN_OCCURRENCES =
             new RuleParameter("min-occurrences", 3, "Со скольких повторений литерал считается дублем");
 
@@ -82,6 +94,23 @@ public class DuplicateStringLiteralRule extends AbstractRule {
             }
             current = current.getParentNode().orElse(null);
         }
-        return TestClasses.isInside(literal);
+        return TestClasses.isInside(literal) || isMessage(literal);
+    }
+
+    // Текст сообщения для человека: в лог, в исключение, в проверку аргумента. Одинаковые сообщения в соседних
+    // методах естественны, а вынос их в константы код не улучшает
+    private boolean isMessage(StringLiteralExpr literal) {
+        Node current = literal.getParentNode().orElse(null);
+        while (current instanceof BinaryExpr || current instanceof EnclosedExpr) {
+            current = current.getParentNode().orElse(null);
+        }
+        if (current instanceof ObjectCreationExpr creation) {
+            return creation.getType().getNameAsString().endsWith(EXCEPTION_SUFFIX);
+        }
+        if (!(current instanceof MethodCallExpr call)) {
+            return false;
+        }
+        return Loggers.isLogCall(call) || MESSAGE_METHODS.contains(call.getNameAsString())
+                || call.getScope().map(MethodCalls::receiverName).filter(MESSAGE_HOLDERS::contains).isPresent();
     }
 }

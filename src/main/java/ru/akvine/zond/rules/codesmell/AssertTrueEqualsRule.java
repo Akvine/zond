@@ -66,4 +66,10 @@ public class AssertTrueEqualsRule extends AbstractRule {
                 || binary.getOperator() == BinaryExpr.Operator.NOT_EQUALS;
         return isEquality && !binary.getLeft().isNullLiteralExpr() && !binary.getRight().isNullLiteralExpr();
     }
+
+    // Правило проверяет сами тесты
+    @Override
+    public boolean appliesToTests() {
+        return true;
+    }
 }

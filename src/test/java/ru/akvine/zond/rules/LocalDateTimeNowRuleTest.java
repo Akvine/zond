@@ -32,7 +32,9 @@ class LocalDateTimeNowRuleTest {
                 }
                 """));
 
-        assertThat(violations).extracting(Violation::line).containsExactly(2, 4);
+        // Находка одна на файл: первое место и число остальных
+        assertThat(violations).extracting(Violation::line).containsExactly(2);
+        assertThat(violations.get(0).message()).contains("в этом файле еще 1 таких мест");
         assertThat(violations).allMatch(violation -> violation.ruleCode().equals("jr:10"));
         assertThat(violations).allMatch(violation -> violation.errorLevel() == ErrorLevel.MAJOR);
     }

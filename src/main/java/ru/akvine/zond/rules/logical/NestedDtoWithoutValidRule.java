@@ -17,9 +17,13 @@ import ru.akvine.zond.rules.support.Constraints;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.TestClasses;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -51,16 +55,26 @@ public class NestedDtoWithoutValidRule extends AbstractRule implements ProjectRu
             }
             for (Parameter parameter : sourceFile.unit().findAll(Parameter.class)) {
                 if (Annotations.has(parameter, Constraints.VALID) || Annotations.has(parameter, Constraints.VALIDATED)) {
+                    // List<OrderLine> lines: проверяется и сам список, и его элементы
+                    parameter.getType().findAll(ClassOrInterfaceType.class)
+                            .forEach(used -> validated.add(used.getNameAsString()));
                     validated.add(LocalTypes.typeName(parameter.getType()));
                 }
             }
         }
 
+        // Ограничения работают только там, куда заходит валидатор: в классах, достижимых от параметра с @Valid.
+        // @NotNull в ответе или во внутреннем объекте никто не проверяет, и @Valid над его полем ничего не изменит
+        Set<String> reachable = reachableFrom(validated, sourceFiles);
+
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
-                // Проверяют сам класс - значит, ждут, что проверится и вложенное. Сущности JPA проверяет Hibernate
-                boolean isChecked = constrained.contains(type.getNameAsString()) || validated.contains(type.getNameAsString());
+                // Проверяют сам класс - значит, ждут, что проверится и вложенное. Сущности JPA проверяет Hibernate.
+                // Если параметров с @Valid в проверке нет вовсе, судим по самим ограничениям, как раньше
+                boolean isChecked = validated.isEmpty()
+                        ? constrained.contains(type.getNameAsString())
+                        : reachable.contains(type.getNameAsString());
                 if (!isChecked || Annotations.has(type, ENTITY) || TestClasses.isInside(type)) {
                     continue;
                 }
@@ -76,6 +90,28 @@ public class NestedDtoWithoutValidRule extends AbstractRule implements ProjectRu
             }
         }
         return violations;
+    }
+
+    // Классы, до которых валидатор может дойти от проверяемых параметров: по типам полей и их параметрам
+    private Set<String> reachableFrom(Set<String> roots, List<SourceFile> sourceFiles) {
+        Map<String, Set<String>> fieldTypes = new HashMap<>();
+        for (SourceFile sourceFile : sourceFiles) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+                Set<String> names = fieldTypes.computeIfAbsent(type.getNameAsString(), name -> new HashSet<>());
+                type.getFields().forEach(field -> field.findAll(ClassOrInterfaceType.class)
+                        .forEach(used -> names.add(used.getNameAsString())));
+                type.getExtendedTypes().forEach(parent -> names.add(parent.getNameAsString()));
+            }
+        }
+        Set<String> reachable = new HashSet<>();
+        Deque<String> queue = new ArrayDeque<>(roots);
+        while (!queue.isEmpty()) {
+            String name = queue.poll();
+            if (reachable.add(name)) {
+                queue.addAll(fieldTypes.getOrDefault(name, Set.of()));
+            }
+        }
+        return reachable;
     }
 
     @Override
