@@ -62,6 +62,16 @@ public class Scanner {
                 .filter(file -> options.scans(file.type().getKind()))
                 .toList();
         ScanContext context = new ScanContext(root, loaded.sources(), configFiles, textFiles);
+        // Правила, которым нужен проект целиком (граф вызовов, поиск неиспользуемого, сверка со схемой БД),
+        // получают его весь и при проверке только измененных файлов: иначе выводы были бы неверными. Правила,
+        // которые смотрят файл сам по себе, запускаются только на измененных
+        ScanContext perFile = options.changedOnly()
+                ? new ScanContext(
+                        root,
+                        loaded.sources().stream().filter(source -> options.isChanged(source.path())).toList(),
+                        configFiles.stream().filter(file -> options.isChanged(file.path())).toList(),
+                        textFiles)
+                : context;
 
         // Правила идут по номеру кода, чтобы прогресс шел предсказуемо
         List<Rule> enabledRules = rules.stream().filter(Rule::enabled).toList();
@@ -75,11 +85,16 @@ public class Scanner {
         Map<Rule, Long> spent = new ConcurrentHashMap<>();
         // Отсчет времени проверки начинается здесь: код к этому моменту уже загружен и разобран
         long checkStartedAt = System.nanoTime();
-        for (List<Violation> found : run(activeRules, context, options.threadCount(), spent)) {
+        for (List<Violation> found : run(activeRules, context, perFile, options.threadCount(), spent)) {
             violations.addAll(found);
         }
 
         long checkNanos = System.nanoTime() - checkStartedAt;
+
+        // Просили только измененные файлы: находки в остальных не показываются
+        if (options.changedOnly()) {
+            violations.removeIf(violation -> !options.isChanged(violation.file()));
+        }
 
         // Копии исходников и сгенерированный код в каталогах сборки читаются - по ним видно, что класс или
         // метод используется, - но находки в них не показываются: править там нечего, а копия дала бы
@@ -118,24 +133,33 @@ public class Scanner {
                 activeRules.stream()
                         .map(rule -> new RuleTiming(rule.code(), rule.name(), spent.getOrDefault(rule, 0L)))
                         .toList(),
-                checkNanos);
+                checkNanos,
+                options.changedOnly() ? changedCount(options, loaded, configFiles, textFiles) : null);
+    }
+
+    // Сколько из прочитанных файлов изменено: по ним и показаны находки
+    private int changedCount(ScanOptions options, LoadResult loaded, List<ConfigFile> configFiles, List<TextFile> textFiles) {
+        long sources = loaded.sources().stream().filter(source -> options.isChanged(source.path())).count();
+        long configs = configFiles.stream().filter(file -> options.isChanged(file.path())).count();
+        long texts = textFiles.stream().filter(file -> options.isChanged(file.path())).count();
+        return (int) (sources + configs + texts);
     }
 
     /**
      * @return находки каждого правила в порядке самих правил: от числа потоков итог не зависит
      */
     private List<List<Violation>> run(
-            List<Rule> activeRules, ScanContext context, int threads, Map<Rule, Long> spent) {
+            List<Rule> activeRules, ScanContext context, ScanContext perFile, int threads, Map<Rule, Long> spent) {
         AtomicInteger started = new AtomicInteger();
         if (threads <= 1) {
-            return activeRules.stream().map(rule -> run(rule, context, started, activeRules.size(), spent)).toList();
+            return activeRules.stream().map(rule -> run(rule, context, perFile, started, activeRules.size(), spent)).toList();
         }
 
         ExecutorService executor = Executors.newFixedThreadPool(threads);
         try {
             List<Future<List<Violation>>> futures = new ArrayList<>();
             for (Rule rule : activeRules) {
-                futures.add(executor.submit(() -> run(rule, context, started, activeRules.size(), spent)));
+                futures.add(executor.submit(() -> run(rule, context, perFile, started, activeRules.size(), spent)));
             }
             List<List<Violation>> results = new ArrayList<>();
             for (Future<List<Violation>> future : futures) {
@@ -148,13 +172,13 @@ public class Scanner {
     }
 
     private List<Violation> run(
-            Rule rule, ScanContext context, AtomicInteger started, int total, Map<Rule, Long> spent) {
+            Rule rule, ScanContext context, ScanContext perFile, AtomicInteger started, int total, Map<Rule, Long> spent) {
         int number = started.incrementAndGet();
         progressListener.onRuleStarted(number, total, rule);
         // Время считается в том же потоке, где работает правило: ожидание в очереди в него не входит
         long startedAt = System.nanoTime();
         try {
-            return withLevel(levelOf(rule), rule.confidence(), apply(rule, context));
+            return withLevel(levelOf(rule), rule.confidence(), apply(rule, context, perFile));
         } finally {
             long nanos = System.nanoTime() - startedAt;
             spent.put(rule, nanos);
@@ -193,16 +217,16 @@ public class Scanner {
 
     // Правило проверяет либо все загруженное сразу, либо файлы настроек, либо проект целиком,
     // либо каждый Java-файл по отдельности
-    private List<Violation> apply(Rule rule, ScanContext context) {
+    private List<Violation> apply(Rule rule, ScanContext context, ScanContext perFile) {
         if (rule instanceof ContextRule contextRule) {
             return contextRule.checkContext(context);
         }
         if (rule instanceof ConfigRule configRule) {
-            return context.configFiles().stream().flatMap(file -> configRule.checkConfig(file).stream()).toList();
+            return perFile.configFiles().stream().flatMap(file -> configRule.checkConfig(file).stream()).toList();
         }
         if (rule instanceof ProjectRule projectRule) {
             return projectRule.checkProject(context.sources());
         }
-        return context.sources().stream().flatMap(source -> rule.check(source).stream()).toList();
+        return perFile.sources().stream().flatMap(source -> rule.check(source).stream()).toList();
     }
 }

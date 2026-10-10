@@ -16,6 +16,8 @@ import java.util.List;
  * @param timings            сколько работало каждое правило, в порядке запуска
  * @param checkNanos         сколько заняла проверка: от запуска первого правила до конца последнего,
  *                           без загрузки и разбора кода
+ * @param changedFilesCount  сколько измененных файлов проверено, если находки показаны только по ним;
+ *                           null - проверен весь проект
  */
 public record ScanResult(
         Path root,
@@ -28,7 +30,16 @@ public record ScanResult(
         List<Path> failedFiles,
         int lowConfidenceCount,
         List<RuleTiming> timings,
-        long checkNanos) {
+        long checkNanos,
+        Integer changedFilesCount) {
+
+    public ScanResult(
+            Path root, int filesCount, int rulesCount, int disabledRulesCount, List<Violation> violations,
+            int suppressedCount, boolean testsSkipped, List<Path> failedFiles, int lowConfidenceCount,
+            List<RuleTiming> timings, long checkNanos) {
+        this(root, filesCount, rulesCount, disabledRulesCount, violations, suppressedCount, testsSkipped, failedFiles,
+                lowConfidenceCount, timings, checkNanos, null);
+    }
 
     public ScanResult(
             Path root, int filesCount, int rulesCount, int disabledRulesCount, List<Violation> violations,

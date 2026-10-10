@@ -25,6 +25,9 @@ public class ZondSettings {
     private static final String PROGRESS_PERCENT = "zond.progress.percent";
     private static final String TIME_UNIT = "zond.progress.time-unit";
     private static final String TEST_RULES_ONLY = "zond.scan.test-rules-only";
+    private static final String CHANGED_ONLY = "zond.scan.changed-only";
+    private static final String CHANGED_SINCE = "zond.scan.changed-since";
+    private static final String SNAPSHOT_DIRECTORY = "zond.scan.snapshot-dir";
     private static final String STATISTIC_PATH = "zond.report.statistic.path";
     private static final String STATISTIC_RED = "zond.report.statistic.red-percent";
     private static final String STATISTIC_YELLOW = "zond.report.statistic.yellow-percent";
@@ -132,6 +135,21 @@ public class ZondSettings {
     }
 
     /**
+     * @return true, если показывать нужно находки только в измененных файлах: по данным git, а без него -
+     * по хешам файлов, которые запомнены после прошлой проверки
+     */
+    public boolean changedOnly() {
+        return Boolean.parseBoolean(environment.getProperty(CHANGED_ONLY, "").trim());
+    }
+
+    /**
+     * @return ветка, тег или коммит git, с которым сравнивать; пустая строка - с HEAD, то есть только незакоммиченное
+     */
+    public String changedSince() {
+        return environment.getProperty(CHANGED_SINCE, "").trim();
+    }
+
+    /**
      * @return true, если в тестовом коде должны работать только правила для тестов. Выключается только явным false
      */
     public boolean testRulesOnly() {
@@ -184,6 +202,15 @@ public class ZondSettings {
      */
     public boolean autoClasspath() {
         return !FALSE.equalsIgnoreCase(environment.getProperty(AUTO_CLASSPATH, "").trim());
+    }
+
+    /**
+     * @return где хранить хеши файлов для поиска измененных без git, если это задано настройкой;
+     * иначе берется ~/.zond/snapshots
+     */
+    public Optional<Path> snapshotDirectory() {
+        String path = environment.getProperty(SNAPSHOT_DIRECTORY, "").trim();
+        return path.isEmpty() ? Optional.empty() : Optional.of(Path.of(path));
     }
 
     /**

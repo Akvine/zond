@@ -144,6 +144,9 @@ public class HtmlPrinter implements Printer {
         html.append("<div class=\"stats\">");
         stat(html, "Версия Zond", ZondVersion.current());
         stat(html, "Файлов проверено", result.filesCount() + (result.testsSkipped() ? " (каталоги test пропущены)" : ""));
+        if (result.changedFilesCount() != null) {
+            stat(html, "Находки только в измененных файлах", String.valueOf(result.changedFilesCount()));
+        }
         stat(html, "Активных правил", result.rulesCount()
                 + (result.disabledRulesCount() > 0 ? " (отключено: " + result.disabledRulesCount() + ")" : ""));
         stat(html, "Найдено проблем", String.valueOf(result.violations().size()));

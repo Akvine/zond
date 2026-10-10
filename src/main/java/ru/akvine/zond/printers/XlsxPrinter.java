@@ -101,6 +101,9 @@ public class XlsxPrinter implements Printer {
         row = writePair(sheet, row, "Путь", result.root().toAbsolutePath().normalize().toString());
         row = writePair(sheet, row, "Файлов проверено", result.filesCount());
         row = writePair(sheet, row, "Каталоги test", result.testsSkipped() ? "пропущены" : "проверены");
+        if (result.changedFilesCount() != null) {
+            row = writePair(sheet, row, "Находки только в измененных файлах", result.changedFilesCount());
+        }
         row = writePair(sheet, row, "Активных правил", result.rulesCount());
         row = writePair(sheet, row, "Правил отключено настройками", result.disabledRulesCount());
         row = writePair(sheet, row, "Найдено проблем", result.violations().size());

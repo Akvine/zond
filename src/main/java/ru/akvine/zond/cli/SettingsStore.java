@@ -27,6 +27,9 @@ public class SettingsStore {
     private static final String EXCLUDE = "zond.scan.exclude";
     private static final String MIN_CONFIDENCE = "zond.rules.min-confidence";
     private static final String TIME_UNIT = "zond.progress.time-unit";
+    private static final String THREADS = "zond.scan.threads";
+    private static final String CHANGED_ONLY = "zond.scan.changed-only";
+    private static final String CHANGED_SINCE = "zond.scan.changed-since";
     private static final String LIST_DELIMITER = ", ";
 
     private final Path configFile;
@@ -52,6 +55,9 @@ public class SettingsStore {
         values.put(MIN_CONFIDENCE, settings.getMinConfidence().name());
         values.put(TIME_UNIT, settings.getTimeUnit().getCode());
         values.put(SKIP_TESTS, String.valueOf(settings.isSkipTests()));
+        values.put(THREADS, String.valueOf(settings.getThreads()));
+        values.put(CHANGED_ONLY, String.valueOf(settings.isChangedOnly()));
+        values.put(CHANGED_SINCE, settings.getChangedSince());
         values.put(EXCLUDE, String.join(LIST_DELIMITER, settings.getExclusions().patterns()));
         for (FileKind kind : FileKind.values()) {
             values.put(kind.property(), String.valueOf(settings.isScanned(kind)));

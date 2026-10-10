@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
  * @param skippedKinds  виды файлов помимо Java, которые проверять не нужно: SQL, файлы сборки и прочие
  * @param timeUnit      в чем показывать время работы правил
  * @param testRulesOnly в тестовом коде работают только правила для тестов
+ * @param changedFiles  файлы, находки в которых нужно показать; null - весь проект
  */
 public record ScanOptions(
         Set<String> disabledRules,
@@ -36,7 +37,8 @@ public record ScanOptions(
         Set<FileKind> skippedKinds,
         Confidence minConfidence,
         DurationUnit timeUnit,
-        boolean testRulesOnly) {
+        boolean testRulesOnly,
+        Set<Path> changedFiles) {
     private static final int SINGLE_THREAD = 1;
     private static final String SEPARATOR = "[,;\\s]+";
     private static final String TEST_DIRECTORY = "test";
@@ -49,42 +51,65 @@ public record ScanOptions(
      */
     public static ScanOptions defaults() {
         return new ScanOptions(
-                Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(), Confidence.SUSPICION, DurationUnit.MILLISECONDS, true);
+                Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(), Confidence.SUSPICION, DurationUnit.MILLISECONDS, true, null);
     }
 
     public ScanOptions withSkipTests(boolean skip) {
-        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly);
+        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles);
     }
 
     public ScanOptions withClasspath(List<Path> libraries) {
         return new ScanOptions(
-                disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly);
+                disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles);
     }
 
     public ScanOptions withExclusions(PathExclusions excluded) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles);
     }
 
     public ScanOptions withThreads(int count) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, count, skippedKinds, minConfidence, timeUnit, testRulesOnly);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, count, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles);
     }
 
     public ScanOptions withMinConfidence(Confidence confidence) {
         return new ScanOptions(
-                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, confidence, timeUnit, testRulesOnly);
+                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, confidence, timeUnit, testRulesOnly, changedFiles);
     }
 
     public ScanOptions withTimeUnit(DurationUnit unit) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, unit, testRulesOnly);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, unit, testRulesOnly, changedFiles);
     }
 
     public ScanOptions withTestRulesOnly(boolean only) {
         return new ScanOptions(
-                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit, only);
+                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit, only, changedFiles);
+    }
+
+    /**
+     * @param files измененные файлы с абсолютными путями; null - проверять весь проект
+     */
+    public ScanOptions withChangedFiles(Set<Path> files) {
+        return new ScanOptions(
+                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit,
+                testRulesOnly, files == null ? null : Set.copyOf(files));
+    }
+
+    /**
+     * @return true, если показывать нужно находки только в измененных файлах
+     */
+    public boolean changedOnly() {
+        return changedFiles != null;
+    }
+
+    /**
+     * @return true, если файл изменен либо проверяется весь проект
+     */
+    public boolean isChanged(Path file) {
+        return changedFiles == null || changedFiles.contains(file.toAbsolutePath().normalize());
     }
 
     public ScanOptions withSkippedKinds(Set<FileKind> kinds) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, Set.copyOf(kinds), minConfidence, timeUnit, testRulesOnly);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, Set.copyOf(kinds), minConfidence, timeUnit, testRulesOnly, changedFiles);
     }
 
     /**
@@ -155,7 +180,7 @@ public record ScanOptions(
                 .collect(Collectors.toSet());
         return new ScanOptions(
                 disabled, parseLevel(minLevel), false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(),
-                Confidence.SUSPICION, DurationUnit.MILLISECONDS, true);
+                Confidence.SUSPICION, DurationUnit.MILLISECONDS, true, null);
     }
 
     /**

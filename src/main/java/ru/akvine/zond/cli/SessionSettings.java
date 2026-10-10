@@ -24,6 +24,9 @@ import java.util.Set;
 @Getter
 @Setter
 public class SessionSettings {
+    // Больше потоков, чем ядер, проверку не ускоряет; предел защищает от опечатки вроде 1000000
+    public static final int MAX_THREADS = 128;
+
     private static final String DEFAULT_REPORT_NAME = "zond-report";
     private static final String RULES_SEPARATOR = "[,;\\s]+";
     private static final String RULES_DELIMITER = ", ";
@@ -60,6 +63,16 @@ public class SessionSettings {
      * Пороги цветов времени в статистике по правилам
      */
     private TimingThresholds timingThresholds = TimingThresholds.defaults();
+
+    /**
+     * Показывать находки только в измененных файлах: по данным git, а без него - по хешам файлов
+     */
+    private boolean changedOnly;
+
+    /**
+     * Ветка, тег или коммит git, с которым сравнивать; пустая строка - HEAD, то есть только незакоммиченное
+     */
+    private String changedSince = "";
 
     /**
      * В тестовом коде работают только правила для тестов, остальные проверяют код приложения
@@ -159,6 +172,27 @@ public class SessionSettings {
 
     public String disabledRulesAsText() {
         return String.join(RULES_DELIMITER, disabledRules);
+    }
+
+    /**
+     * @param value число потоков как его ввели; пустая строка - один поток
+     * @return число потоков: 0 - по числу ядер процессора
+     * @throws IllegalArgumentException если это не целое число от 0 до {@link #MAX_THREADS}
+     */
+    public static int parseThreads(String value) {
+        if (value == null || value.isBlank()) {
+            return 1;
+        }
+        try {
+            int threads = Integer.parseInt(value.trim());
+            if (threads >= 0 && threads <= MAX_THREADS) {
+                return threads;
+            }
+        } catch (NumberFormatException exception) {
+            // Сообщение ниже общее для "не число" и "число вне диапазона"
+        }
+        throw new IllegalArgumentException("Число потоков должно быть целым числом от 0 до " + MAX_THREADS
+                + " (0 - по числу ядер процессора), а задано '" + value.trim() + "'");
     }
 
     public ScanOptions toScanOptions() {

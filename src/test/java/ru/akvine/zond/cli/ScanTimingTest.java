@@ -110,11 +110,15 @@ class ScanTimingTest {
         assertThat(events).containsExactly(
                 "scan 2 s", "start 1 jr:1", "finish 1 jr:1", "start 2 jr:4", "finish 2 jr:4");
 
-        // В несколько потоков порядок окончания не определен, но время сообщает каждое правило
+        // В несколько потоков не определен ни порядок, ни то, какое правило получит какой номер: номер дается
+        // в момент запуска. Но время сообщает каждое правило, и номер у его начала и конца один
         events.clear();
         scanner.scan(dir, ScanOptions.defaults().withThreads(2));
-        assertThat(events).containsExactlyInAnyOrder(
-                "scan 2 ms", "start 1 jr:1", "finish 1 jr:1", "start 2 jr:4", "finish 2 jr:4")
-                .doesNotHaveDuplicates();
+        assertThat(events).hasSize(5).contains("scan 2 ms").doesNotHaveDuplicates();
+        for (String code : List.of("jr:1", "jr:4")) {
+            List<String> ofRule = events.stream().filter(event -> event.endsWith(" " + code)).toList();
+            assertThat(ofRule).hasSize(2);
+            assertThat(ofRule.get(0).replace("start", "finish")).isEqualTo(ofRule.get(1).replace("start", "finish"));
+        }
     }
 }

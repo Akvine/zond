@@ -7,6 +7,7 @@ import ru.akvine.zond.enums.DurationUnit;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.enums.ReportFormat;
+import ru.akvine.zond.loaders.GitChangedFiles;
 import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.services.RuleCatalog;
 
@@ -52,6 +53,8 @@ public class SettingsMenu {
                     "Исключенные пути: " + describeExclusions(settings),
                     "Файлы помимо Java: " + describeKinds(settings),
                     "Единица времени: " + settings.getTimeUnit().getTitle(),
+                    "Потоки сканирования: " + describeThreads(settings.getThreads()),
+                    "Только измененные файлы: " + describeChanged(settings),
                     BACK));
             switch (choice) {
                 case 1 -> chooseReportDirectory(settings);
@@ -63,6 +66,8 @@ public class SettingsMenu {
                 case 7 -> editExclusions(settings);
                 case 8 -> editKinds(settings);
                 case 9 -> chooseTimeUnit(settings);
+                case 10 -> chooseThreads(settings);
+                case 11 -> editChangedOnly(settings);
                 default -> {
                     return;
                 }
@@ -117,6 +122,85 @@ public class SettingsMenu {
                 values.stream().map(this::describe).toList());
         settings.setMinConfidence(values.get(choice - 1));
         save(settings);
+    }
+
+    // Число спрашивается, пока не введут допустимое: с ошибкой во вводе настройка не меняется
+    private void chooseThreads(SessionSettings settings) {
+        System.out.println("Сколько потоков использовать при сканировании: от 1 до " + SessionSettings.MAX_THREADS
+                + "; 0 - по числу ядер процессора (на этой машине их " + Runtime.getRuntime().availableProcessors() + ")");
+        while (true) {
+            String answer = input.ask("Число потоков (пустая строка - отмена): ");
+            if (answer.isEmpty()) {
+                return;
+            }
+            try {
+                settings.setThreads(SessionSettings.parseThreads(answer));
+                break;
+            } catch (IllegalArgumentException exception) {
+                System.out.println(exception.getMessage());
+            }
+        }
+        System.out.println("Потоки сканирования: " + describeThreads(settings.getThreads()));
+        save(settings);
+    }
+
+    private String describeThreads(int threads) {
+        return threads == 0
+                ? "по числу ядер процессора (" + Runtime.getRuntime().availableProcessors() + ")"
+                : String.valueOf(threads);
+    }
+
+    private void editChangedOnly(SessionSettings settings) {
+        while (true) {
+            int choice = menu.choose("Только измененные файлы: в репозитории git изменения берутся у git,"
+                    + " в остальных папках - по хешам файлов с прошлой проверки", List.of(
+                    "Показывать находки: " + (settings.isChangedOnly() ? "только в измененных файлах" : "во всех файлах"),
+                    "С чем сравнивать в репозитории git: " + describeSince(settings),
+                    BACK));
+            switch (choice) {
+                case 1 -> {
+                    settings.setChangedOnly(!settings.isChangedOnly());
+                    save(settings);
+                }
+                case 2 -> chooseChangedSince(settings);
+                default -> {
+                    return;
+                }
+            }
+        }
+    }
+
+    // Есть ли такая ветка, покажет только git в папке проекта - она выбирается позже. Здесь проверяется,
+    // что введенное вообще похоже на имя ветки, тега или коммита
+    private void chooseChangedSince(SessionSettings settings) {
+        System.out.println("Ветка, тег или коммит, с которым сравнивать рабочую копию: main, origin/main, v1.2.0, HEAD~3."
+                + " Без него сравнение идет с HEAD - изменено то, что еще не закоммичено."
+                + " Вне репозитория git не используется: там сравнение всегда с прошлой проверкой");
+        while (true) {
+            String answer = input.ask("С чем сравнивать (пустая строка - отмена, '-' - с HEAD): ");
+            if (answer.isEmpty()) {
+                return;
+            }
+            try {
+                settings.setChangedSince(CLEAR.equals(answer) ? "" : GitChangedFiles.validate(answer));
+                break;
+            } catch (IllegalArgumentException exception) {
+                System.out.println(exception.getMessage());
+            }
+        }
+        save(settings);
+    }
+
+    private String describeChanged(SessionSettings settings) {
+        return settings.isChangedOnly()
+                ? "да, в git сравнение с " + describeSince(settings) + ", без git - с прошлой проверкой"
+                : "нет, проверяется все";
+    }
+
+    private String describeSince(SessionSettings settings) {
+        return settings.getChangedSince().isEmpty()
+                ? GitChangedFiles.HEAD + " (незакоммиченные изменения)"
+                : settings.getChangedSince();
     }
 
     private void chooseTimeUnit(SessionSettings settings) {

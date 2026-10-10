@@ -45,6 +45,9 @@ public class ReportFormatter {
             report.append(" (каталоги test пропущены)");
         }
         report.append(newLine);
+        if (result.changedFilesCount() != null) {
+            report.append("Находки показаны только в измененных файлах: ").append(result.changedFilesCount()).append(newLine);
+        }
         report.append("Активных правил: ").append(result.rulesCount());
         if (result.disabledRulesCount() > 0) {
             report.append(" (отключено настройками: ").append(result.disabledRulesCount()).append(')');

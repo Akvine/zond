@@ -3,6 +3,7 @@ package ru.akvine.zond.cli;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,6 +14,8 @@ import ru.akvine.zond.config.ZondSettings;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.loaders.FileSystemTextFileLoader;
+import ru.akvine.zond.loaders.GitChangedFiles;
+import ru.akvine.zond.loaders.HashChangedFiles;
 import ru.akvine.zond.loaders.MavenClasspathResolver;
 import ru.akvine.zond.printers.PrinterFactory;
 import ru.akvine.zond.printers.ReportFormatter;
@@ -143,7 +146,10 @@ class ScanRunnerTest {
                 "7", "generated, *Dto.java",   // исключенные пути
                 "8", "1", "9",                 // миграции БД: не проверять
                 "9", "2",                      // единица времени: секунды
-                "10",
+                "10", "много", "-2", "500", "4", // потоки: неверный ввод спрашивается заново
+                "11", "1",                     // только измененные файлы: включить
+                "2", "не ветка", "origin/main", "3", // с чем сравнивать: неверный ввод спрашивается заново
+                "12",
                 SCAN, EXIT);
 
         runner.run(new DefaultApplicationArguments());
@@ -157,6 +163,9 @@ class ScanRunnerTest {
                 "zond.rules.min-confidence=PROBABLE",
                 "zond.progress.time-unit=s",
                 "zond.scan.skip-tests=true",
+                "zond.scan.threads=4",
+                "zond.scan.changed-only=true",
+                "zond.scan.changed-since=origin/main",
                 "zond.scan.exclude=generated, *Dto.java",
                 "zond.scan.sql=false",
                 "zond.scan.build-files=true",
@@ -177,7 +186,7 @@ class ScanRunnerTest {
                 CANCEL,
                 SETTINGS,
                 "6", "1", "TransactionOnPrivateMethodRule", "2", "jr:1", "4",
-                "10",
+                "12",
                 EXIT);
 
         runner.run(new DefaultApplicationArguments());
@@ -284,6 +293,44 @@ class ScanRunnerTest {
         ScanRunner negative = runner("");
         negative.run(new DefaultApplicationArguments("--path=" + dir, "--threads=-1"));
         assertThat(negative.getExitCode()).isEqualTo(2);
+
+        // Предел защищает от опечатки: тысяча потоков проверку не ускорит
+        ScanRunner tooMany = runner("");
+        tooMany.run(new DefaultApplicationArguments("--path=" + dir, "--threads=1000"));
+        assertThat(tooMany.getExitCode()).isEqualTo(2);
+    }
+
+    @Test
+    void changedOnlyOutsideGitRepositoryComparesWithPreviousScan() throws IOException {
+        Assumptions.assumeTrue(new GitChangedFiles().find(dir, "").isEmpty(), "временная папка лежит в репозитории git");
+        // Прошлой проверки не было: сравнивать не с чем, поэтому проверяется все
+        ScanRunner first = runner("");
+        first.run(new DefaultApplicationArguments("--path=" + dir, "--changed-only"));
+        assertThat(first.getExitCode()).isEqualTo(1);
+        assertThat(configDir.resolve("snapshots")).isNotEmptyDirectory();
+
+        // С тех пор ничего не меняли: старая находка больше не показывается
+        ScanRunner unchanged = runner("");
+        unchanged.run(new DefaultApplicationArguments("--path=" + dir, "--changed-only"));
+        assertThat(unchanged.getExitCode()).isZero();
+
+        // Файл изменили - его находка видна снова. Точка отсчета git здесь ни при чем и проверке не мешает
+        Files.writeString(dir.resolve("Bad.java"), Files.readString(dir.resolve("Bad.java")) + "// правка\n");
+        ScanRunner edited = runner("");
+        edited.run(new DefaultApplicationArguments("--path=" + dir, "--changed-since=main"));
+        assertThat(edited.getExitCode()).isEqualTo(1);
+
+        // Без режима проверяется все, а запомненные хеши не трогаются
+        ScanRunner everything = runner("");
+        everything.run(new DefaultApplicationArguments("--path=" + dir));
+        assertThat(everything.getExitCode()).isEqualTo(1);
+    }
+
+    @Test
+    void wrongGitReferenceStopsTheRun() {
+        ScanRunner wrongReference = runner("");
+        wrongReference.run(new DefaultApplicationArguments("--path=" + dir, "--changed-since=--upload-pack"));
+        assertThat(wrongReference.getExitCode()).isEqualTo(2);
     }
 
     @Test
@@ -397,7 +444,9 @@ class ScanRunnerTest {
                         (number, total, rule) -> {},
                         ruleSettings),
                 new PrinterFactory(new ReportFormatter()),
-                new MavenClasspathResolver(configDir.resolve("repository")));
+                new MavenClasspathResolver(configDir.resolve("repository")),
+                new GitChangedFiles(),
+                new HashChangedFiles(configDir.resolve("snapshots")));
         MainMenu mainMenu = new MainMenu(
                 menu,
                 folderPicker,

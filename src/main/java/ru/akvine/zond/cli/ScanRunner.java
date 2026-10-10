@@ -10,6 +10,7 @@ import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.DurationUnit;
 import ru.akvine.zond.printers.StatisticReportPrinter;
 import ru.akvine.zond.enums.FileKind;
+import ru.akvine.zond.loaders.GitChangedFiles;
 import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.services.RuleCatalog;
 
@@ -31,6 +32,8 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String AUTO_CLASSPATH_OPTION = "auto-classpath";
     private static final String MIN_CONFIDENCE_OPTION = "min-confidence";
     private static final String TIME_UNIT_OPTION = "time-unit";
+    private static final String CHANGED_ONLY_OPTION = "changed-only";
+    private static final String CHANGED_SINCE_OPTION = "changed-since";
     private static final String STATISTIC_REPORT_OPTION = "statistic-report";
     private static final String RULES_SEPARATOR = ",";
     private static final String TRUE = "true";
@@ -114,7 +117,12 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         }
 
         String threads = optionValue(args, THREADS_OPTION);
-        session.setThreads(parseThreads(threads == null ? settings.threads() : threads));
+        session.setThreads(SessionSettings.parseThreads(threads == null ? settings.threads() : threads));
+
+        // --changed-since=ветка задает точку отсчета и заодно включает проверку только измененных файлов
+        String changedSince = optionValue(args, CHANGED_SINCE_OPTION);
+        session.setChangedSince(GitChangedFiles.validate(changedSince == null ? settings.changedSince() : changedSince));
+        session.setChangedOnly(resolveChangedOnly(args, changedSince != null));
 
         for (FileKind kind : FileKind.values()) {
             session.setScanned(kind, resolveScanned(args, kind));
@@ -145,23 +153,6 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         return Path.of(value.trim());
     }
 
-    // Пустое значение - один поток; 0 - по числу ядер процессора
-    private int parseThreads(String value) {
-        if (value.isBlank()) {
-            return 1;
-        }
-        try {
-            int threads = Integer.parseInt(value.trim());
-            if (threads >= 0) {
-                return threads;
-            }
-        } catch (NumberFormatException exception) {
-            // Сообщение ниже общее для "не число" и "отрицательное число"
-        }
-        throw new IllegalArgumentException("Число потоков должно быть целым неотрицательным числом, а задано '"
-                + value.trim() + "'");
-    }
-
     // --scan-sql и --scan-sql=true включают проверку, --scan-sql=false отключает; без аргумента решает zond.scan.sql.
     // Вид файлов, о котором ничего не сказано, проверяется
     private boolean resolveScanned(ApplicationArguments args, FileKind kind) {
@@ -183,6 +174,16 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
             return settings.skipTests();
         }
         String value = optionValue(args, SKIP_TESTS_OPTION);
+        return value == null || value.isBlank() || Boolean.parseBoolean(value.trim());
+    }
+
+    // --changed-only и --changed-only=true включают, --changed-only=false отключает; без аргумента решает
+    // zond.scan.changed-only
+    private boolean resolveChangedOnly(ApplicationArguments args, boolean sinceGiven) {
+        if (!args.containsOption(CHANGED_ONLY_OPTION)) {
+            return sinceGiven || settings.changedOnly();
+        }
+        String value = optionValue(args, CHANGED_ONLY_OPTION);
         return value == null || value.isBlank() || Boolean.parseBoolean(value.trim());
     }
 
