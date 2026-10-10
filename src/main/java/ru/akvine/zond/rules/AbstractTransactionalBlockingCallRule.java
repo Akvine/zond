@@ -35,6 +35,13 @@ public abstract class AbstractTransactionalBlockingCallRule extends AbstractRule
      */
     protected abstract String message(String method, String call);
 
+    /**
+     * @return true, если этот транзакционный метод нужно проверять; по умолчанию проверяются все
+     */
+    protected boolean applies(MethodDeclaration method) {
+        return true;
+    }
+
     @Override
     public List<RuleParameter> parameters() {
         return List.of(MAX_CALL_DEPTH);
@@ -46,7 +53,7 @@ public abstract class AbstractTransactionalBlockingCallRule extends AbstractRule
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
-                if (isTransactional(method)) {
+                if (isTransactional(method) && applies(method)) {
                     check(sourceFile, method, graph, violations);
                 }
             }

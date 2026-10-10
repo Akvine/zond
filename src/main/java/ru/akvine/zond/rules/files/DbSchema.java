@@ -18,7 +18,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Схема базы данных, какой она получается после всех миграций проекта: таблицы, их колонки и первичные ключи.
+ * Схема базы данных, какой она получается после всех миграций проекта: таблицы, их колонки, первичные ключи,
+ * уникальные ограничения и индексы.
  * Миграции (SQL и журналы Liquibase) применяются по порядку имен файлов. Разбор намеренно терпимый:
  * команда, которую понять не удалось, пропускается, а таблица с неизвестным составом помечается как неясная.
  */
@@ -33,6 +34,31 @@ public final class DbSchema {
     private static final Pattern DROP_TABLE = Pattern.compile(
             "^drop\\s+table\\s+(?:if\\s+exists\\s+)?(.+?)(?:\\s+(?:cascade|restrict))?$", FLAGS);
     private static final Pattern RENAME_TABLE = Pattern.compile("^rename\\s+table\\s+(\\S+)\\s+to\\s+(\\S+)$", FLAGS);
+    // create [unique] [bitmap] index [concurrently] [if not exists] [имя] on [only] таблица [using btree] (колонки)
+    private static final Pattern CREATE_INDEX = Pattern.compile(
+            "^create\\s+(unique\\s+)?(?:(?!index\\b)\\w+\\s+)?index\\s+(?:concurrently\\s+)?(?:if\\s+not\\s+exists\\s+)?"
+                    + "(?:(?!on\\s)(\\S+)\\s+)?on\\s+(?:only\\s+)?([^\\s(]+)\\s*(?:using\\s+\\w+\\s*)?(\\(.*)$", FLAGS);
+    // index idx_name (a, b), key idx_name (a) - обычный индекс, объявленный вместе с таблицей либо в alter table ... add
+    private static final int INDEX_UNIQUE = 1;
+    private static final int INDEX_NAME = 2;
+    private static final int INDEX_TABLE = 3;
+    private static final int INDEX_COLUMNS = 4;
+    private static final Pattern PLAIN_INDEX = Pattern.compile(
+            "^(?:add\\s+)?(?:index|key)\\s+(?:(?!\\()([\\w\"`]+)\\s*)?\\(([^)]*)\\)", FLAGS);
+    // drop index [concurrently] [if exists] имя [on таблица]
+    private static final Pattern DROP_INDEX = Pattern.compile(
+            "^drop\\s+index\\s+(?:concurrently\\s+)?(?:if\\s+exists\\s+)?(\\S+?)(?:\\s+on\\s+(\\S+))?"
+                    + "(?:\\s+(?:cascade|restrict))?$", FLAGS);
+    private static final Pattern DROP_CONSTRAINT = Pattern.compile(
+            "^drop\\s+(?:constraint|index|key)\\s+(?:if\\s+exists\\s+)?(\\S+).*$", FLAGS);
+    private static final Pattern CONSTRAINT_NAME = Pattern.compile("\\bconstraint\\s+(\\S+)\\s+(?:unique|primary)\\b", FLAGS);
+    private static final String UNKNOWN_TABLE = "";
+    // unique (a, b), unique key uq_name (a), primary key (a, b) - отдельным ограничением таблицы
+    private static final Pattern UNIQUE_KEY = Pattern.compile(
+            "\\b(?:unique(?:\\s+(?:key|index))?(?:\\s+(?!key\\b|index\\b)[\\w\"`]+)?|primary\\s+key)\\s*\\(([^)]*)\\)", FLAGS);
+    private static final Pattern UNIQUE = Pattern.compile("\\bunique\\b", FLAGS);
+    private static final Pattern IDENTIFIER = Pattern.compile("[\\w\"`]+");
+    private static final String COLUMNS_DELIMITER = ",";
 
     private static final Pattern CONSTRAINT_START = Pattern.compile(
             "^(constraint|primary|foreign|unique|check|index|key|exclude|like)\\b.*", FLAGS);
@@ -74,7 +100,7 @@ public final class DbSchema {
 
     public enum Kind {
         CREATE_TABLE, DROP_TABLE, RENAME_TABLE, ADD_COLUMN, DROP_COLUMN, RENAME_COLUMN, CHANGE_TYPE,
-        SET_NOT_NULL, DROP_NOT_NULL, ADD_PRIMARY_KEY, ADD_FOREIGN_KEY
+        SET_NOT_NULL, DROP_NOT_NULL, ADD_PRIMARY_KEY, ADD_FOREIGN_KEY, ADD_UNIQUE, ADD_INDEX, DROP_KEY
     }
 
     /**
@@ -86,7 +112,9 @@ public final class DbSchema {
     /**
      * Одно изменение схемы, прочитанное из команды SQL
      *
-     * @param column  колонка, к которой относится изменение; для CREATE_TABLE - null
+     * @param column  колонка, к которой относится изменение; для CREATE_TABLE - null, для ADD_UNIQUE и ADD_INDEX -
+     *                колонки ключа через запятую, в том порядке, в каком они в нем стоят
+     * @param table   таблица; у DROP_KEY может быть пустой: индекс удаляют по имени, не называя таблицу
      * @param value   новое имя либо новый тип
      * @param columns колонки создаваемой таблицы
      * @param opaque  состав таблицы по команде не виден: create table ... as select
@@ -100,12 +128,24 @@ public final class DbSchema {
         }
     }
 
+    /**
+     * Ограничение или индекс таблицы
+     *
+     * @param name    имя: по нему их удаляют; пустое, если имя не задано
+     * @param columns колонки в том порядке, в каком они стоят в ключе, в виде, пригодном для сравнения
+     * @param unique  значения в этих колонках не повторяются: уникальное ограничение, уникальный индекс, первичный ключ
+     */
+    private record Key(String name, List<String> columns, boolean unique) {
+    }
+
     public static final class Table {
         private final String name;
         private final Path file;
         private final int line;
         private final Map<String, Column> columns = new LinkedHashMap<>();
         private final Set<String> foreignKeys = new LinkedHashSet<>();
+        // Уникальные ограничения, первичный ключ и индексы
+        private final List<Key> keys = new ArrayList<>();
         private boolean primaryKey;
         private boolean opaque;
 
@@ -148,6 +188,26 @@ public final class DbSchema {
         public boolean isLinkTable() {
             return columns.size() > 1 && columns.values().stream()
                     .allMatch(column -> column.references() || foreignKeys.contains(column.name()));
+        }
+
+        /**
+         * @return true, если строки с одинаковыми значениями в этих колонках база не примет: на них (или на часть
+         * из них) есть уникальное ограничение, уникальный индекс либо первичный ключ
+         */
+        public boolean isUnique(Collection<String> columnNames) {
+            Set<String> wanted = new LinkedHashSet<>();
+            columnNames.forEach(column -> wanted.add(loose(column)));
+            return keys.stream().filter(Key::unique).anyMatch(key -> wanted.containsAll(key.columns()));
+        }
+
+        /**
+         * @return true, если поиску по этим колонкам поможет индекс: он начинается с одной из них. Индекс, в котором
+         * колонка стоит второй или дальше, для поиска только по ней бесполезен
+         */
+        public boolean hasIndexOn(Collection<String> columnNames) {
+            Set<String> wanted = new LinkedHashSet<>();
+            columnNames.forEach(column -> wanted.add(loose(column)));
+            return keys.stream().anyMatch(key -> wanted.contains(key.columns().get(0)));
         }
 
         /**
@@ -207,9 +267,30 @@ public final class DbSchema {
         Matcher create = CREATE_TABLE.matcher(statement);
         if (create.matches()) {
             // Временная таблица живет до конца сеанса: частью схемы она не становится
-            return create.group(1) != null && !create.group(1).toLowerCase(Locale.ROOT).startsWith("unlogged")
+            if (create.group(1) != null && !create.group(1).toLowerCase(Locale.ROOT).startsWith("unlogged")) {
+                return List.of();
+            }
+            String created = name(create.group(2));
+            List<Change> changes = new ArrayList<>();
+            changes.add(createTable(created, create.group(3)));
+            keysOf(create.group(3)).forEach(key -> changes.add(Change.of(
+                    key.unique() ? Kind.ADD_UNIQUE : Kind.ADD_INDEX, created, key.columns(), key.name())));
+            return changes;
+        }
+        Matcher index = CREATE_INDEX.matcher(statement);
+        if (index.matches()) {
+            String columns = index.group(INDEX_COLUMNS);
+            int end = closingParenthesis(columns);
+            return end < 0
                     ? List.of()
-                    : List.of(createTable(name(create.group(2)), create.group(3)));
+                    : List.of(Change.of(index.group(INDEX_UNIQUE) == null ? Kind.ADD_INDEX : Kind.ADD_UNIQUE,
+                            name(index.group(INDEX_TABLE)), keyColumns(columns.substring(1, end)),
+                            index.group(INDEX_NAME) == null ? null : name(index.group(INDEX_NAME))));
+        }
+        Matcher dropIndex = DROP_INDEX.matcher(statement);
+        if (dropIndex.matches()) {
+            return List.of(Change.of(Kind.DROP_KEY,
+                    dropIndex.group(2) == null ? UNKNOWN_TABLE : name(dropIndex.group(2)), null, name(dropIndex.group(1))));
         }
         Matcher drop = DROP_TABLE.matcher(statement);
         if (drop.matches()) {
@@ -282,12 +363,88 @@ public final class DbSchema {
         return new Change(Kind.CREATE_TABLE, table, null, null, resolved, primaryKey, false);
     }
 
+    // Ключи создаваемой таблицы: объявленные у колонки, отдельным ограничением и обычные индексы
+    private static List<DeclaredKey> keysOf(String rest) {
+        List<DeclaredKey> keys = new ArrayList<>();
+        int end = rest.startsWith("(") ? closingParenthesis(rest) : -1;
+        if (end < 0) {
+            return keys;
+        }
+        for (String part : splitTopLevel(rest.substring(1, end))) {
+            String definition = part.trim();
+            if (definition.isEmpty()) {
+                continue;
+            }
+            if (CONSTRAINT_START.matcher(definition).matches()) {
+                tableKey(definition).ifPresent(keys::add);
+            } else if (UNIQUE.matcher(definition).find() || PRIMARY_KEY.matcher(definition).find()) {
+                keys.add(new DeclaredKey(constraintName(definition), keyColumns(definition.split("\\s+")[0]), true));
+            }
+        }
+        return keys;
+    }
+
+    // Ключ, объявленный отдельной строкой таблицы: unique (a, b), primary key (a), index idx (a)
+    private static Optional<DeclaredKey> tableKey(String definition) {
+        Matcher unique = UNIQUE_KEY.matcher(definition);
+        if (unique.find()) {
+            return Optional.of(new DeclaredKey(constraintName(definition), keyColumns(unique.group(1)), true));
+        }
+        Matcher plain = PLAIN_INDEX.matcher(definition);
+        if (!plain.find()) {
+            return Optional.empty();
+        }
+        String name = plain.group(1) == null ? null : name(plain.group(1));
+        return Optional.of(new DeclaredKey(name, keyColumns(plain.group(2)), false));
+    }
+
+    /**
+     * @param name    имя ограничения или индекса либо null, если оно не задано
+     * @param columns колонки ключа через запятую
+     * @param unique  ключ уникальный
+     */
+    private record DeclaredKey(String name, String columns, boolean unique) {
+    }
+
+    // constraint uq_email unique (email) -> uq_email
+    private static String constraintName(String definition) {
+        Matcher constraint = CONSTRAINT_NAME.matcher(definition);
+        return constraint.find() ? name(constraint.group(1)) : null;
+    }
+
+    // email, lower(email), email desc -> email: из выражения индекса берется сама колонка
+    private static String keyColumns(String list) {
+        List<String> columns = new ArrayList<>();
+        for (String part : splitTopLevel(list)) {
+            String item = part.trim();
+            int open = item.indexOf('(');
+            Matcher identifier = IDENTIFIER.matcher(open < 0 ? item : item.substring(open + 1));
+            if (identifier.find()) {
+                columns.add(name(identifier.group()));
+            }
+        }
+        return String.join(COLUMNS_DELIMITER, columns);
+    }
+
     private static void alterAction(String table, String action, List<Change> changes) {
         if (ADD_CONSTRAINT.matcher(action).matches()) {
+            Matcher key = UNIQUE_KEY.matcher(action);
+            Matcher plain = PLAIN_INDEX.matcher(action);
+            if (key.find()) {
+                changes.add(Change.of(Kind.ADD_UNIQUE, table, keyColumns(key.group(1)), constraintName(action)));
+            } else if (plain.find()) {
+                changes.add(Change.of(Kind.ADD_INDEX, table, keyColumns(plain.group(2)),
+                        plain.group(1) == null ? null : name(plain.group(1))));
+            }
             if (PRIMARY_KEY.matcher(action).find()) {
                 changes.add(Change.of(Kind.ADD_PRIMARY_KEY, table, null, null));
             }
             foreignKeyColumns(action).forEach(column -> changes.add(Change.of(Kind.ADD_FOREIGN_KEY, table, column, null)));
+            return;
+        }
+        Matcher dropConstraint = DROP_CONSTRAINT.matcher(action);
+        if (dropConstraint.matches()) {
+            changes.add(Change.of(Kind.DROP_KEY, table, null, name(dropConstraint.group(1))));
             return;
         }
         Matcher renameTo = RENAME_TO.matcher(action);
@@ -345,6 +502,9 @@ public final class DbSchema {
             if (column != null) {
                 changes.add(new Change(Kind.ADD_COLUMN, table, column.name(), null, List.of(column),
                         PRIMARY_KEY.matcher(action).find(), false));
+                if (UNIQUE.matcher(action).find() || PRIMARY_KEY.matcher(action).find()) {
+                    changes.add(Change.of(Kind.ADD_UNIQUE, table, column.name(), null));
+                }
             }
             return;
         }
@@ -408,12 +568,16 @@ public final class DbSchema {
                 }
             }
             case DROP_TABLE -> tables.remove(change.table());
+            // Индекс удаляют по имени, не называя таблицу: ищем его во всех
+            case DROP_KEY -> (table == null ? tables.values() : List.of(table))
+                    .forEach(found -> found.keys.removeIf(key -> change.value().equals(key.name())));
             case RENAME_TABLE -> {
                 if (table != null) {
                     tables.remove(change.table());
                     Table renamed = new Table(change.value(), table.file, table.line);
                     renamed.columns.putAll(table.columns);
                     renamed.foreignKeys.addAll(table.foreignKeys);
+                    renamed.keys.addAll(table.keys);
                     renamed.primaryKey = table.primaryKey;
                     renamed.opaque = table.opaque;
                     tables.put(change.value(), renamed);
@@ -434,7 +598,24 @@ public final class DbSchema {
                 change.columns().forEach(added -> table.columns.putIfAbsent(added.name(), placed(added, file, line)));
                 table.primaryKey |= change.primaryKey();
             }
-            case DROP_COLUMN -> table.columns.remove(change.column());
+            case DROP_COLUMN -> {
+                table.columns.remove(change.column());
+                // Вместе с колонкой исчезают ограничение и индекс, в которые она входила
+                table.keys.removeIf(key -> key.columns().contains(loose(change.column())));
+            }
+            case ADD_UNIQUE, ADD_INDEX -> {
+                // Набор с порядком вставки: колонка в ключе одна, а ее место в нем важно
+                Set<String> key = new LinkedHashSet<>();
+                for (String name : change.column().split(COLUMNS_DELIMITER)) {
+                    if (!name.isBlank()) {
+                        key.add(loose(name));
+                    }
+                }
+                if (!key.isEmpty()) {
+                    table.keys.add(new Key(change.value() == null ? "" : change.value(), new ArrayList<>(key),
+                            change.kind() == Kind.ADD_UNIQUE));
+                }
+            }
             case ADD_PRIMARY_KEY -> table.primaryKey = true;
             case ADD_FOREIGN_KEY -> table.foreignKeys.add(change.column());
             case RENAME_COLUMN -> {
@@ -442,6 +623,10 @@ public final class DbSchema {
                     table.columns.remove(change.column());
                     table.columns.put(change.value(), new Column(change.value(), column.type(), column.length(),
                             column.notNull(), column.references(), column.file(), column.line()));
+                    // Место колонки в ключе при переименовании сохраняется: от него зависит, поможет ли индекс
+                    for (Key key : table.keys) {
+                        key.columns().replaceAll(name -> name.equals(loose(change.column())) ? loose(change.value()) : name);
+                    }
                 }
             }
             case CHANGE_TYPE -> {
