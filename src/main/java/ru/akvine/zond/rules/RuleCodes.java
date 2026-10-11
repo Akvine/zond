@@ -400,4 +400,8 @@ public class RuleCodes {
     public final static String COMPARE_TO_EQUALS_ONE_RULE_CODE = "jr:394";
     public final static String ERROR_MASKING_SETTING_RULE_CODE = "jr:395";
     public final static String RABBIT_ACKNOWLEDGE_MODE_NONE_RULE_CODE = "jr:396";
+    public final static String UNHANDLED_REQUEST_VALUE_PARSE_RULE_CODE = "jr:397";
+    public final static String CATCH_RETURNS_DEFAULT_RULE_CODE = "jr:398";
+    public final static String OPTIONAL_PRIMITIVE_PARAMETER_RULE_CODE = "jr:399";
+    public final static String TRANSACTIONAL_EVENT_OUTSIDE_TRANSACTION_RULE_CODE = "jr:400";
 }

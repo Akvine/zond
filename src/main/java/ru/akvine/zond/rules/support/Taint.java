@@ -191,6 +191,11 @@ public final class Taint {
     }
 
     private final CallGraph graph;
+    private final ProjectClasses classes;
+    // Узлы дерева сравниваются по содержимому, а два одинаковых по тексту метода - разные методы.
+    // Отслеживанием пользуются несколько правил сразу, каждое в своем потоке
+    private final Map<MethodDeclaration, Optional<Handlers.Handler>> handlers =
+            Collections.synchronizedMap(new IdentityHashMap<>());
     // "Тип.свойство" -> значения, которые в него записывают по всему проекту
     private final Map<String, List<Expression>> writes = new HashMap<>();
     // Классы проекта по простому имени: по ним выясняется, в какое свойство попадает аргумент конструктора
@@ -202,6 +207,7 @@ public final class Taint {
 
     private Taint(List<SourceFile> sources) {
         this.graph = CallGraph.of(sources);
+        this.classes = ProjectClasses.of(sources);
         for (SourceFile source : sources) {
             for (TypeDeclaration<?> type : source.unit().findAll(TypeDeclaration.class).stream()
                     .map(found -> (TypeDeclaration<?>) found).toList()) {
@@ -656,24 +662,48 @@ public final class Taint {
     }
 
     private boolean isRequestParameter(Parameter parameter, MethodDeclaration method) {
+        Optional<Handlers.Handler> handler = handlerOf(method);
+        Parameter declared = handler.map(found -> found.declared(parameter)).orElse(parameter);
         // @Pattern проверил значение до входа в метод; значение enum не может быть ничем, кроме своих констант
-        if (Annotations.has(parameter, PATTERN_ANNOTATION) || isEnum(parameter)) {
+        if (Annotations.has(parameter, PATTERN_ANNOTATION) || Annotations.has(declared, PATTERN_ANNOTATION)
+                || isEnum(parameter)) {
             return false;
         }
         // Объект, собранный из тела запроса, целиком состоит из данных клиента
-        if (Annotations.hasAny(parameter, REQUEST_ANNOTATIONS) || Annotations.hasAny(parameter, BODY_ANNOTATIONS)) {
+        if (isBoundToRequest(parameter) || isBoundToRequest(declared)) {
             return true;
         }
         // Строковый параметр обработчика без аннотаций Spring берет из параметров запроса по имени
-        return parameter.getAnnotations().isEmpty()
-                && Annotations.hasAny(method, MAPPING_ANNOTATIONS)
+        return parameter.getAnnotations().isEmpty() && declared.getAnnotations().isEmpty()
+                && (handler.isPresent() || Annotations.hasAny(method, MAPPING_ANNOTATIONS))
                 && STRING.equals(LocalTypes.typeName(parameter.getType()));
+    }
+
+    private boolean isBoundToRequest(Parameter parameter) {
+        return Annotations.hasAny(parameter, REQUEST_ANNOTATIONS) || Annotations.hasAny(parameter, BODY_ANNOTATIONS);
     }
 
     private boolean isRequestBody(Expression scope) {
         return scope.isNameExpr() && LocalTypes.findDeclaration(scope)
-                .filter(node -> node instanceof Parameter parameter && Annotations.hasAny(parameter, BODY_ANNOTATIONS))
+                .filter(node -> node instanceof Parameter)
+                .map(node -> (Parameter) node)
+                .filter(parameter -> Annotations.hasAny(parameter, BODY_ANNOTATIONS)
+                        || Annotations.hasAny(declaredIn(parameter), BODY_ANNOTATIONS))
                 .isPresent();
+    }
+
+    // Адрес и аннотации параметров обработчика бывают объявлены в интерфейсе, который реализует контроллер:
+    // Spring берет их оттуда, значит и данные запроса приходят в такие параметры
+    private Optional<Handlers.Handler> handlerOf(MethodDeclaration method) {
+        return handlers.computeIfAbsent(method, key -> Handlers.of(key, classes));
+    }
+
+    private Parameter declaredIn(Parameter parameter) {
+        return parameter.getParentNode()
+                .filter(parent -> parent instanceof MethodDeclaration)
+                .flatMap(parent -> handlerOf((MethodDeclaration) parent))
+                .map(handler -> handler.declared(parameter))
+                .orElse(parameter);
     }
 
     private boolean isField(VariableDeclarator variable) {
