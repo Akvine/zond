@@ -7,7 +7,9 @@ import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import ru.akvine.zond.models.SourceFile;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -183,9 +185,9 @@ public final class ProjectClasses {
     public List<ClassOrInterfaceDeclaration> subclasses(ClassOrInterfaceDeclaration type) {
         List<ClassOrInterfaceDeclaration> found = new ArrayList<>();
         Set<ClassOrInterfaceDeclaration> seen = new HashSet<>(Set.of(type));
-        List<ClassOrInterfaceDeclaration> queue = new ArrayList<>(List.of(type));
+        Deque<ClassOrInterfaceDeclaration> queue = new ArrayDeque<>(List.of(type));
         while (!queue.isEmpty()) {
-            ClassOrInterfaceDeclaration current = queue.remove(0);
+            ClassOrInterfaceDeclaration current = queue.removeFirst();
             for (ClassOrInterfaceDeclaration candidate : all()) {
                 boolean extendsCurrent = !candidate.isInterface() && parent(candidate).filter(current::equals).isPresent();
                 if (extendsCurrent && seen.add(candidate)) {

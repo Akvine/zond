@@ -9,6 +9,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CheckThenAdd;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Loops;
 
@@ -49,7 +50,9 @@ public class ListContainsInLoopRule extends AbstractRule {
             // Список, созданный внутри цикла, обычно мал и живет одну итерацию
             boolean isOuterList = LocalTypes.declaredType(declaration.get()).filter(LIST_TYPES::contains).isPresent()
                     && Loops.isDeclaredOutside(iteration.get(), declaration.get());
-            if (isOuterList) {
+            // О проверке на повтор перед добавлением сообщает ContainsBeforeAddRule: там совет точнее -
+            // проверять результат Set.add
+            if (isOuterList && CheckThenAdd.addAfter(call).isEmpty()) {
                 violations.add(violation(sourceFile, call,
                         "'" + call + "' в цикле: поиск по списку линейный, вместе с циклом выходит O(N²);"
                                 + " сложите элементы в HashSet перед циклом"));

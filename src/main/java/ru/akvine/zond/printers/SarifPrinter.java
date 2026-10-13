@@ -8,6 +8,7 @@ import ru.akvine.zond.models.Violation;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,12 +63,16 @@ public class SarifPrinter implements Printer {
                             + pair("type", string(rule.errorType().name())) + " }")));
         }
 
-        List<String> ruleIds = new ArrayList<>(rules.keySet());
+        // Находка ссылается на правило по его позиции в списке; позиции собираются один раз
+        Map<String, Integer> ruleIndexes = new HashMap<>();
+        for (String ruleCode : rules.keySet()) {
+            ruleIndexes.put(ruleCode, ruleIndexes.size());
+        }
         List<String> resultItems = new ArrayList<>();
         for (Violation violation : result.violations()) {
             List<String> fields = new ArrayList<>(List.of(
                     pair("ruleId", string(violation.ruleCode())),
-                    pair("ruleIndex", String.valueOf(ruleIds.indexOf(violation.ruleCode()))),
+                    pair("ruleIndex", String.valueOf(ruleIndexes.get(violation.ruleCode()))),
                     pair("level", string(levelOf(violation.errorLevel()))),
                     pair("message", "{ " + pair("text", string(violation.message())) + " }")));
             if (showConfidence) {

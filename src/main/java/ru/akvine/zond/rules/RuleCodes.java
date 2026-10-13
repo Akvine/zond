@@ -413,4 +413,17 @@ public class RuleCodes {
     public final static String FILE_CONTENT_IN_ENTITY_RULE_CODE = "jr:407";
     public final static String FILES_HELD_IN_BEAN_RULE_CODE = "jr:408";
     public final static String DELETE_ON_EXIT_RULE_CODE = "jr:409";
+    public final static String CONTAINS_BEFORE_ADD_RULE_CODE = "jr:410";
+    public final static String RANDOM_PICK_WITH_RETRY_RULE_CODE = "jr:411";
+    public final static String SORT_IN_LOOP_RULE_CODE = "jr:412";
+    public final static String SHARED_RANDOM_CONTENTION_RULE_CODE = "jr:413";
+    public final static String AGGREGATE_RECOMPUTED_IN_LOOP_RULE_CODE = "jr:414";
+    public final static String INDEX_OF_IN_LOOP_RULE_CODE = "jr:415";
+    public final static String MAP_DOUBLE_LOOKUP_RULE_CODE = "jr:416";
+    public final static String BULK_OPERATION_WITH_LIST_RULE_CODE = "jr:417";
+    public final static String LIST_SHIFT_IN_LOOP_RULE_CODE = "jr:418";
+    public final static String EXPENSIVE_OBJECT_IN_LOOP_RULE_CODE = "jr:419";
+    public final static String RANDOM_UUID_IN_PARALLEL_TASK_RULE_CODE = "jr:420";
+    public final static String SORT_FOR_SINGLE_ELEMENT_RULE_CODE = "jr:421";
+    public final static String FIXED_THREAD_POOL_SIZE_RULE_CODE = "jr:422";
 }

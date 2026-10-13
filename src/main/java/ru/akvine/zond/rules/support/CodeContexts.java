@@ -221,6 +221,24 @@ public class CodeContexts {
     }
 
     /**
+     * Ищет цикл по данным, в котором заново используется коллекция, объявленная до него: на каждой
+     * итерации это одна и та же коллекция, а не новая короткая. Циклы повторных попыток пропускаются.
+     *
+     * @param usage       место, где коллекцией пользуются
+     * @param declaration объявление коллекции
+     */
+    public Optional<Node> loopOverOuter(Node usage, Node declaration) {
+        Optional<Node> loop = Loops.enclosingIteration(usage);
+        while (loop.isPresent()) {
+            if (Loops.isDeclaredOutside(loop.get(), declaration) && !isRetryLoop(loop.get())) {
+                return loop;
+            }
+            loop = Loops.enclosingIteration(loop.get());
+        }
+        return Optional.empty();
+    }
+
+    /**
      * Граница задачи: выше этого catch исключение ловить некому либо незачем. Это метод, с которого задача
      * начинается ({@code @Scheduled}, слушатель, run() потока), лямбда, отданная исполнителю, и обработка одного
      * элемента в цикле, где ошибка одного не должна останавливать остальные, и уборка в блоке finally.
