@@ -5,19 +5,26 @@ import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.InitializerDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
-import com.github.javaparser.ast.comments.Comment;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.stmt.DoStmt;
 import com.github.javaparser.ast.stmt.ForEachStmt;
 import com.github.javaparser.ast.stmt.ForStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
+import com.github.javaparser.printer.DefaultPrettyPrinter;
+import com.github.javaparser.printer.configuration.DefaultConfigurationOption;
+import com.github.javaparser.printer.configuration.DefaultPrinterConfiguration;
 import lombok.experimental.UtilityClass;
 
 import java.util.Optional;
 
 @UtilityClass
 public class Nodes {
+    // Печать без комментариев. Копию узла ради этого не делаем: копирование читает данные узлов, а их
+    // в это же время пополняют другие потоки (кеш типов) - и сканирование срывалось с ошибкой
+    private final static DefaultPrettyPrinter PLAIN_PRINTER = new DefaultPrettyPrinter(new DefaultPrinterConfiguration()
+            .removeOption(new DefaultConfigurationOption(DefaultPrinterConfiguration.ConfigOption.PRINT_COMMENTS))
+            .removeOption(new DefaultConfigurationOption(DefaultPrinterConfiguration.ConfigOption.PRINT_JAVADOC)));
 
     // ((x)) -> x
     public Expression unwrap(Expression expression) {
@@ -32,10 +39,7 @@ public class Nodes {
      * @return текст узла без комментариев - для сравнения двух фрагментов кода
      */
     public String text(Node node) {
-        Node copy = node.clone();
-        copy.getAllContainedComments().forEach(Comment::remove);
-        copy.removeComment();
-        return copy.toString();
+        return PLAIN_PRINTER.print(node);
     }
 
     /**

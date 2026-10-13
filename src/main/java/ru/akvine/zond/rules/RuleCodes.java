@@ -404,4 +404,13 @@ public class RuleCodes {
     public final static String CATCH_RETURNS_DEFAULT_RULE_CODE = "jr:398";
     public final static String OPTIONAL_PRIMITIVE_PARAMETER_RULE_CODE = "jr:399";
     public final static String TRANSACTIONAL_EVENT_OUTSIDE_TRANSACTION_RULE_CODE = "jr:400";
+    public final static String FILE_ASSEMBLED_IN_MEMORY_RULE_CODE = "jr:401";
+    public final static String TEXT_FILE_ASSEMBLED_IN_STRING_RULE_CODE = "jr:402";
+    public final static String FILE_BYTES_IN_RESPONSE_RULE_CODE = "jr:403";
+    public final static String FILE_IN_MESSAGE_BODY_RULE_CODE = "jr:404";
+    public final static String WHOLE_FILE_READ_INTO_MEMORY_RULE_CODE = "jr:405";
+    public final static String REMOTE_FILE_INTO_MEMORY_RULE_CODE = "jr:406";
+    public final static String FILE_CONTENT_IN_ENTITY_RULE_CODE = "jr:407";
+    public final static String FILES_HELD_IN_BEAN_RULE_CODE = "jr:408";
+    public final static String DELETE_ON_EXIT_RULE_CODE = "jr:409";
 }
