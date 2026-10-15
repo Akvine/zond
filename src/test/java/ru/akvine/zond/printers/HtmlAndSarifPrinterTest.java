@@ -83,6 +83,12 @@ class HtmlAndSarifPrinterTest {
                 .contains("value=\"CRITICAL\" checked")
                 .contains("value=\"INFO\" checked")
                 .doesNotContain("value=\"MAJOR\"")
+                // Кнопки по типам правил: только типы с находками, у каждой - число находок
+                .contains("data-type=\"\" aria-pressed=\"true\">Все <b>4</b>")
+                .contains("data-type=\"LOGICAL\" aria-pressed=\"false\">Логические ошибки <b>2</b>")
+                .contains("data-type=\"CODE_SMELL\" aria-pressed=\"false\">Качество кода <b>2</b>")
+                .doesNotContain("data-type=\"SECURITY\"")
+                .contains("data-level=\"INFO\" data-type=\"CODE_SMELL\"")
                 .contains("<details class=\"file\" open>")
                 .contains("<summary>src/main/java/Order.java <span>(3)</span></summary>")
                 .contains("<summary>src/main/java/Item.java <span>(1)</span></summary>")
@@ -100,6 +106,7 @@ class HtmlAndSarifPrinterTest {
         assertThat(Files.readString(report))
                 .contains("Проблем не найдено")
                 .doesNotContain("id=\"search\"")
+                .doesNotContain("class=\"types\"")
                 .doesNotContain("<script>");
     }
 
@@ -125,7 +132,8 @@ class HtmlAndSarifPrinterTest {
     }
 
     private Violation violation(ErrorLevel level, String code, String rule, Path file, int line, String message) {
-        return new Violation(level, ErrorType.LOGICAL, code, rule, file, line, message);
+        ErrorType type = "jr:40".equals(code) ? ErrorType.CODE_SMELL : ErrorType.LOGICAL;
+        return new Violation(level, type, code, rule, file, line, message);
     }
 
     // Грубая проверка целостности JSON: скобки вне строк закрыты в том же порядке, в каком открыты

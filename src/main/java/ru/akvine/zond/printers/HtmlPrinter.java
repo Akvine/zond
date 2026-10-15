@@ -9,13 +9,15 @@ import ru.akvine.zond.models.Violation;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
- * Отчет одной веб-страницей: сводка, находки по файлам, отбор по уровню и поиск по тексту.
+ * Отчет одной веб-страницей: сводка, находки по файлам, отбор по уровню и типу правила, поиск по тексту.
  * Страница самодостаточна - стили и скрипт внутри, ее можно переслать или приложить к сборке.
  */
 @RequiredArgsConstructor
@@ -46,6 +48,13 @@ public class HtmlPrinter implements Printer {
             .level input { margin: 0; }
             .level b { font-variant-numeric: tabular-nums; }
             .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color); }
+            .types { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+            .types .label { color: var(--muted); margin-right: 2px; }
+            .type { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border: 1px solid var(--border);
+                    border-radius: 999px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+            .type b { font-variant-numeric: tabular-nums; color: var(--muted); }
+            .type[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: var(--bg); }
+            .type[aria-pressed="true"] b { color: inherit; }
             #search { flex: 1 1 220px; min-width: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
                       background: var(--panel); color: var(--text); font: inherit; }
             #shown { color: var(--muted); }
@@ -67,6 +76,8 @@ public class HtmlPrinter implements Printer {
             @media (max-width: 640px) {
               .row { grid-template-columns: auto auto minmax(0, 1fr); }
               .row .text { grid-column: 1 / -1; }
+              .types { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 2px; }
+              .type { flex: none; }
             }
             """;
 
@@ -74,6 +85,9 @@ public class HtmlPrinter implements Printer {
             const rows = [...document.querySelectorAll('.row')];
             const files = [...document.querySelectorAll('details.file')];
             const levels = [...document.querySelectorAll('.level input')];
+            const types = [...document.querySelectorAll('.type')];
+            // Ни один тип не выбран - показываются все; нажатые кнопки сужают отбор до своих типов
+            const chosen = new Set();
             const search = document.getElementById('search');
             const shown = document.getElementById('shown');
             const none = document.getElementById('none');
@@ -82,7 +96,9 @@ public class HtmlPrinter implements Printer {
               const query = search.value.trim().toLowerCase();
               let count = 0;
               for (const row of rows) {
-                const visible = enabled.has(row.dataset.level) && (!query || row.dataset.text.includes(query));
+                const visible = enabled.has(row.dataset.level)
+                    && (chosen.size === 0 || chosen.has(row.dataset.type))
+                    && (!query || row.dataset.text.includes(query));
                 row.hidden = !visible;
                 if (visible) count++;
               }
@@ -96,7 +112,22 @@ public class HtmlPrinter implements Printer {
               shown.textContent = 'Показано: ' + count + ' из ' + rows.length;
               none.hidden = count > 0;
             }
+            function choose(type) {
+              if (!type) {
+                chosen.clear();
+              } else if (chosen.has(type)) {
+                chosen.delete(type);
+              } else {
+                chosen.add(type);
+              }
+              for (const button of types) {
+                const pressed = button.dataset.type ? chosen.has(button.dataset.type) : chosen.size === 0;
+                button.setAttribute('aria-pressed', String(pressed));
+              }
+              apply();
+            }
             levels.forEach(box => box.addEventListener('change', apply));
+            types.forEach(button => button.addEventListener('click', () => choose(button.dataset.type)));
             search.addEventListener('input', apply);
             apply();
             """;
@@ -172,7 +203,29 @@ public class HtmlPrinter implements Printer {
             }
         }
         html.append("<input id=\"search\" type=\"search\" placeholder=\"Поиск: файл, код правила, текст\">\n")
-                .append("<span id=\"shown\"></span>\n</div>\n");
+                .append("<span id=\"shown\"></span>\n");
+        appendTypes(html, result);
+        html.append("</div>\n");
+    }
+
+    /**
+     * Кнопки по типам правил: производительность, безопасность, логические ошибки и другие.
+     * Типы без находок не показываются; самые частые - первыми.
+     */
+    private void appendTypes(StringBuilder html, ScanResult result) {
+        Map<ErrorType, Long> counts = result.violations().stream()
+                .collect(Collectors.groupingBy(Violation::errorType, () -> new EnumMap<>(ErrorType.class),
+                        Collectors.counting()));
+        html.append("<div class=\"types\" role=\"group\" aria-label=\"Тип правила\"><span class=\"label\">Тип:</span>\n")
+                .append("<button type=\"button\" class=\"type\" data-type=\"\" aria-pressed=\"true\">Все <b>")
+                .append(result.violations().size()).append("</b></button>\n");
+        counts.entrySet().stream()
+                .sorted(Map.Entry.<ErrorType, Long>comparingByValue().reversed())
+                .forEach(entry -> html.append("<button type=\"button\" class=\"type\" data-type=\"")
+                        .append(entry.getKey()).append("\" aria-pressed=\"false\">")
+                        .append(escape(describe(entry.getKey()))).append(" <b>").append(entry.getValue())
+                        .append("</b></button>\n"));
+        html.append("</div>\n");
     }
 
     private void appendFiles(StringBuilder html, ScanResult result) {
@@ -197,10 +250,11 @@ public class HtmlPrinter implements Printer {
         // Текст для поиска: по нему находку можно найти по файлу, правилу и сообщению
         String confidence = showConfidence ? violation.confidenceOrDefault().getTitle() : "";
         String searchText = String.join(" ", file, violation.ruleCode(), violation.ruleName(), violation.message(),
-                        confidence)
+                        describe(violation.errorType()), confidence)
                 .toLowerCase(Locale.ROOT);
         html.append("<div class=\"row ").append(violation.errorLevel()).append("\" data-level=\"")
-                .append(violation.errorLevel()).append("\" data-text=\"").append(escape(searchText)).append("\">")
+                .append(violation.errorLevel()).append("\" data-type=\"").append(violation.errorType())
+                .append("\" data-text=\"").append(escape(searchText)).append("\">")
                 .append("<span class=\"badge\">").append(violation.errorLevel()).append("</span>")
                 .append("<span class=\"line\">").append(violation.line() > 0 ? ":" + violation.line() : "").append("</span>")
                 .append("<span class=\"code\">").append(escape(violation.ruleCode())).append("</span>")
