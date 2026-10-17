@@ -15,6 +15,7 @@ import java.util.Set;
 @Component
 public class IncompleteAssertionRule extends AbstractRule {
     // AssertJ и Truth: сам вызов ничего не проверяет, проверка - в методе, который идет следом
+    private static final int HAMCREST_ARGUMENTS = 2;
     private static final Set<String> ASSERTION_STARTS = Set.of("assertThat", "assertThatThrownBy", "assertThatCode");
 
     @Override
@@ -34,6 +35,8 @@ public class IncompleteAssertionRule extends AbstractRule {
                 .filter(statement -> statement.getExpression().isMethodCallExpr())
                 .map(statement -> statement.getExpression().asMethodCallExpr())
                 .filter(call -> ASSERTION_STARTS.contains(call.getNameAsString()))
+                // assertThat(actual, lessThan(0)) из Hamcrest и JUnit 4 - проверка целиком: сравнение в матчере
+                .filter(call -> call.getArguments().size() < HAMCREST_ARGUMENTS)
                 .map(call -> violation(sourceFile, call,
                         "'" + call + "' без проверки: вызов только готовит проверку, но ничего не сравнивает -"
                                 + " тест пройдет при любом значении; добавьте проверку: .isEqualTo(...),"

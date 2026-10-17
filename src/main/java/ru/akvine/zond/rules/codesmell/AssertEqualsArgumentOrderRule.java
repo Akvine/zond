@@ -9,6 +9,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.AssertMessages;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 
@@ -52,7 +53,7 @@ public class AssertEqualsArgumentOrderRule extends AbstractRule {
             }
             // В JUnit 4 сообщение идет первым аргументом, в JUnit 5 - последним
             boolean messageFirst = junit4 && call.getArguments().size() == WITH_MESSAGE
-                    && call.getArgument(0).isStringLiteralExpr();
+                    && AssertMessages.isText(call.getArgument(0));
             Expression expected = call.getArgument(messageFirst ? 1 : 0);
             Expression actual = call.getArgument(messageFirst ? 2 : 1);
             if (isConstant(actual) && !isConstant(expected)) {

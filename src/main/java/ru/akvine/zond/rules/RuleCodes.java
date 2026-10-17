@@ -426,4 +426,5 @@ public class RuleCodes {
     public final static String RANDOM_UUID_IN_PARALLEL_TASK_RULE_CODE = "jr:420";
     public final static String SORT_FOR_SINGLE_ELEMENT_RULE_CODE = "jr:421";
     public final static String FIXED_THREAD_POOL_SIZE_RULE_CODE = "jr:422";
+    public final static String STATIC_CONTAINER_HOLDER_RULE_CODE = "jr:423";
 }

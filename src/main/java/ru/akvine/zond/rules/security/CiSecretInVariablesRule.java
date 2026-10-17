@@ -15,12 +15,15 @@ import ru.akvine.zond.rules.support.Secrets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class CiSecretInVariablesRule extends AbstractContextRule {
     // variables - GitLab CI; env и with - GitHub Actions
     private static final Set<String> VARIABLE_BLOCKS = Set.of("variables", "env", "with");
     private static final String VALUE = "value";
+    private static final Pattern FLAG = Pattern.compile("(?i)^(true|false|yes|no|on|off|\\d+)$");
+    private static final Pattern ENVIRONMENT_NAME = Pattern.compile("^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$");
 
     @Override
     public String code() {
@@ -61,7 +64,10 @@ public class CiSecretInVariablesRule extends AbstractContextRule {
         // В GitLab CI переменную записывают и словарем: {value: ..., description: ...}
         String value = variable.isScalar() ? variable.text() : variable.get(VALUE).text();
         // $DB_PASSWORD и ${{ secrets.TOKEN }} - значение хранится в настройках CI, в репозитории его нет
-        if (Secrets.isSecretName(name) && !value.contains("$") && Secrets.isSecretValue(value)) {
+        // persist-credentials: false - флаг; server-password: MAVEN_REPO_API_KEY - имя переменной окружения,
+        // из которой setup-java возьмет пароль
+        if (Secrets.isSecretName(name) && !value.contains("$") && Secrets.isSecretValue(value)
+                && !FLAG.matcher(value).matches() && !ENVIRONMENT_NAME.matcher(value).matches()) {
             violations.add(violation(file.path(), variable.line(),
                     "Секрет '" + name + "' записан в файле CI открытым текстом: его видит каждый, у кого есть"
                             + " доступ к репозиторию, и он остается в истории; перенесите значение в защищенные"

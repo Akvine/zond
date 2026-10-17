@@ -23,6 +23,7 @@ public class IteratorNextWithoutHasNextRule extends AbstractRule {
     private static final Set<String> ITERATOR_TYPES = Set.of("Iterator", "ListIterator");
     private static final Set<String> HAS_NEXT_CHECKS = Set.of("hasNext");
     private static final Set<String> SIZE_CHECKS = Set.of("isEmpty", "size", "isNotEmpty");
+    private static final Set<String> MAP_VIEWS = Set.of("values", "keySet", "entrySet");
 
     @Override
     public String code() {
@@ -58,14 +59,26 @@ public class IteratorNextWithoutHasNextRule extends AbstractRule {
     private boolean isUnchecked(Expression scope, MethodCallExpr call) {
         Expression value = Nodes.unwrap(scope);
 
-        // items.iterator().next(): защитой считаем проверку размера самой коллекции
+        // items.iterator().next(): защитой считаем проверку размера самой коллекции, а у map.values() -
+        // и проверку самой карты
         if (value.isMethodCallExpr() && ITERATOR.equals(value.asMethodCallExpr().getNameAsString())) {
             return value.asMethodCallExpr().getScope()
-                    .filter(collection -> !hasCheck(collection.toString(), call, SIZE_CHECKS))
+                    .filter(collection -> checkTargets(collection).stream()
+                            .noneMatch(target -> hasCheck(target, call, SIZE_CHECKS)))
                     .isPresent();
         }
         return LocalTypes.typeOf(value).filter(ITERATOR_TYPES::contains).isPresent()
                 && !hasCheck(value.toString(), call, HAS_NEXT_CHECKS);
+    }
+
+    private List<String> checkTargets(Expression collection) {
+        Expression value = Nodes.unwrap(collection);
+        if (value.isMethodCallExpr() && MAP_VIEWS.contains(value.asMethodCallExpr().getNameAsString())) {
+            return value.asMethodCallExpr().getScope()
+                    .map(map -> List.of(value.toString(), map.toString()))
+                    .orElse(List.of(value.toString()));
+        }
+        return List.of(value.toString());
     }
 
     // Проверка должна стоять на пути к next(): охватывать его (while, if) либо обрывать выполнение выше

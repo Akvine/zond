@@ -18,7 +18,7 @@ public class ConfigKeys {
             "spring.", "server.", "management.", "logging.", "debug", "trace", "info.", "eureka.", "feign.",
             "resilience4j.", "springdoc.", "swagger.", "hibernate.", "jakarta.", "javax.", "mybatis.", "camel.",
             "micrometer.", "otel.", "sentry.", "zuul.", "ribbon.", "hystrix.", "vaadin.", "grpc.", "kafka.",
-            "flyway.", "liquibase.", "jasypt.", "banner.", "application.");
+            "flyway.", "liquibase.", "jasypt.", "banner.", "application.", "jmix.", "eclipselink.", "main.liquibase.");
 
     // application-dev.properties -> application и dev; application.yml -> application и пустой профиль
     private static final Pattern CONFIG_NAME = Pattern.compile("^([A-Za-z]+?)(?:-([\\w-]+))?\\.(properties|ya?ml)$");

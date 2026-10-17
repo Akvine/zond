@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules.exceptions;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.TryStmt;
 import org.springframework.stereotype.Component;
@@ -10,10 +11,15 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.MethodCalls;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -28,9 +34,16 @@ public class SingleResultWithoutHandlingRule extends AbstractRule {
             "IncorrectResultSizeDataAccessException", "DataAccessException", "RuntimeException", "Exception",
             "Throwable");
 
-    // Запрос с агрегатом без GROUP BY всегда возвращает ровно одну строку
-    private static final Pattern AGGREGATE = Pattern.compile(".*\\b(count|sum|max|min|avg|exists)\\s*\\(.*", Pattern.DOTALL);
+    // Запрос с агрегатом без GROUP BY всегда возвращает ровно одну строку, как и запрос значения последовательности
+    // или текущего времени (select nextval('seq'), select current_timestamp) и вставка одной строки с returning
+    private static final Pattern AGGREGATE = Pattern.compile(
+            ".*(\\b(count|sum|max|min|avg|exists|nextval|now)\\s*\\(|current_timestamp|current_date|localtimestamp"
+                    + "|\\bsysdate\\b|next\\s+value\\s+for|buildexists|\\binsert(?!.*do\\s*nothing).*\\breturning\\b).*",
+            Pattern.DOTALL);
     private static final String GROUP_BY = "group by";
+    // Запрос лежит в переменной или константе, названной по смыслу: COUNT_PENDING, nextValueSql, existsQuery
+    private static final Pattern SINGLE_ROW_NAME =
+            Pattern.compile("(?i).*(count|exists|next_?val|next_?value|sequence|sum|total).*");
 
     @Override
     public String code() {
@@ -71,10 +84,36 @@ public class SingleResultWithoutHandlingRule extends AbstractRule {
                 || QUERY_FOR_OBJECT.equals(method) && !call.getArguments().isEmpty();
     }
 
-    // Текст запроса стоит в той же цепочке: createQuery("select count(u) ...").getSingleResult()
+    /**
+     * Текст запроса стоит в той же цепочке ({@code createQuery("select count(u) ...").getSingleResult()}) либо
+     * лежит в переменной или константе, которую передают первым аргументом.
+     */
     private boolean isAggregate(MethodCallExpr call) {
-        String text = call.toString().toLowerCase(Locale.ROOT);
-        return AGGREGATE.matcher(text).matches() && !text.contains(GROUP_BY);
+        List<String> texts = new ArrayList<>();
+        texts.add(call.toString());
+        queryArgument(call).ifPresent(query -> {
+            texts.add(query.toString());
+            LocalTypes.findInitializer(query).ifPresent(initializer -> texts.add(initializer.toString()));
+        });
+        boolean byText = texts.stream()
+                .map(text -> text.toLowerCase(Locale.ROOT))
+                .anyMatch(text -> AGGREGATE.matcher(text).matches() && !text.contains(GROUP_BY));
+        return byText || queryArgument(call)
+                .filter(query -> query.isNameExpr() || query.isFieldAccessExpr())
+                .filter(query -> SINGLE_ROW_NAME.matcher(MethodCalls.receiverName(query)).matches())
+                .isPresent();
+    }
+
+    // queryForObject(sql, ...) - сам запрос; у getSingleResult() - аргумент createQuery(...) в цепочке
+    private Optional<Expression> queryArgument(MethodCallExpr call) {
+        if (QUERY_FOR_OBJECT.equals(call.getNameAsString())) {
+            return Optional.of(Nodes.unwrap(call.getArgument(0)));
+        }
+        return call.getScope()
+                .filter(Expression::isMethodCallExpr)
+                .map(Expression::asMethodCallExpr)
+                .filter(scope -> !scope.getArguments().isEmpty())
+                .map(scope -> Nodes.unwrap(scope.getArgument(0)));
     }
 
     private boolean isHandled(MethodCallExpr call) {

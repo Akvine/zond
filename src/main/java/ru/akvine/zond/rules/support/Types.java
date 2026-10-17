@@ -49,6 +49,8 @@ public class Types {
     };
     private static final DataKey<Optional<ResolvedType>> RESOLVED_TYPE_NAME = new DataKey<>() {
     };
+    private static final DataKey<CallTarget> CALL_TARGET = new DataKey<>() {
+    };
 
     private static final String JDK_PACKAGE = "java.";
     private static final String JAVA_LANG = "java.lang.";
@@ -69,6 +71,16 @@ public class Types {
 
         // false, если какого-то предка разрешить не удалось и список может быть неполным
         private boolean complete = true;
+    }
+
+    /**
+     * Чем закончилось разрешение вызова
+     *
+     * @param resolved    решатель нашел вызванный метод
+     * @param declaration узел его объявления; пусто для метода из JDK или библиотеки
+     */
+    private record CallTarget(boolean resolved, Optional<Node> declaration) {
+        private static final CallTarget UNRESOLVED = new CallTarget(false, Optional.empty());
     }
 
     /**
@@ -252,33 +264,39 @@ public class Types {
 
     /**
      * @return объявление вызванного метода, если оно найдено в исходниках проекта. Узел может принадлежать
-     * не тому дереву, что проверяют правила: решатель разбирает файлы сам. Сопоставлять нужно по файлу и строке
+     * не тому дереву, что проверяют правила: файл, которого загрузчик не читал, решатель разбирает сам.
+     * Сопоставлять нужно по файлу и строке
      */
     public synchronized Optional<MethodDeclaration> declaration(MethodCallExpr call) {
-        if (!hasSolver(call)) {
-            return Optional.empty();
-        }
-        try {
-            return call.resolve().toAst()
-                    .filter(node -> node instanceof MethodDeclaration)
-                    .map(node -> (MethodDeclaration) node);
-        } catch (RuntimeException | StackOverflowError exception) {
-            return Optional.empty();
-        }
+        return target(call).declaration()
+                .filter(node -> node instanceof MethodDeclaration)
+                .map(node -> (MethodDeclaration) node);
     }
 
     /**
      * @return true, если вызов разрешен и ведет в JDK или библиотеку, а не в исходники проекта
      */
     public synchronized boolean isLibraryCall(MethodCallExpr call) {
-        if (!hasSolver(call)) {
-            return false;
+        CallTarget target = target(call);
+        return target.resolved() && target.declaration().isEmpty();
+    }
+
+    // Один и тот же вызов разрешают граф вызовов и несколько правил, а это самая дорогая операция решателя
+    private CallTarget target(MethodCallExpr call) {
+        if (call.containsData(CALL_TARGET)) {
+            return call.getData(CALL_TARGET);
         }
-        try {
-            return call.resolve().toAst().isEmpty();
-        } catch (RuntimeException | StackOverflowError exception) {
-            return false;
+
+        CallTarget target = CallTarget.UNRESOLVED;
+        if (hasSolver(call)) {
+            try {
+                target = new CallTarget(true, call.resolve().toAst());
+            } catch (RuntimeException | StackOverflowError exception) {
+                // Метод не найден либо решатель не справился с перегрузками и обобщениями
+            }
         }
+        call.setData(CALL_TARGET, target);
+        return target;
     }
 
     private boolean hasSolver(Node node) {

@@ -9,6 +9,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.AssertMessages;
 import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.List;
@@ -57,8 +58,17 @@ public class ConstantAssertionRule extends AbstractRule {
             return false;
         }
         Expression first = Nodes.unwrap(call.getArgument(0));
-        if (ASSERT_TRUE.equals(method) || ASSERT_FALSE.equals(method) || ASSERT_THAT.equals(method)) {
-            return first.isLiteralExpr();
+        // assertTrue("metric was not sent", count >= 1): в JUnit 4 первым идет сообщение, а не условие
+        if (ASSERT_TRUE.equals(method) || ASSERT_FALSE.equals(method)) {
+            Expression condition = call.getArguments().size() > 1 && AssertMessages.isText(first)
+                    ? Nodes.unwrap(call.getArgument(1))
+                    : first;
+            return condition.isLiteralExpr();
+        }
+        // assertThat("reason", actual, matcher) в Hamcrest: строка - пояснение, а не проверяемое значение
+        if (ASSERT_THAT.equals(method)) {
+            return call.getArguments().size() == 1 ? first.isLiteralExpr()
+                    : !AssertMessages.isText(first) && first.isLiteralExpr();
         }
         // assertEquals(5, 5); третий аргумент - сообщение
         return COMPARING_ASSERTIONS.contains(method)

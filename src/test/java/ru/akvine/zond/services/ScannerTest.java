@@ -198,6 +198,28 @@ class ScannerTest {
     }
 
     @Test
+    void serviceDirectoriesAreNotScanned(@TempDir Path dir) throws IOException {
+        String code = """
+                class Sample {
+                    @Transactional
+                    private void save() {}
+                }
+                """;
+        // Копия проекта в git worktree и обертка Maven - не код проекта
+        for (String path : List.of("src/main/java/Main.java",
+                ".claude/worktrees/feature/src/main/java/Main.java", ".mvn/wrapper/MavenWrapperDownloader.java")) {
+            Path file = dir.resolve(path);
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, code);
+        }
+
+        ScanResult result = scanner.scan(dir);
+
+        assertThat(result.filesCount()).isEqualTo(1);
+        assertThat(result.violations()).hasSize(1);
+    }
+
+    @Test
     void skipsTestDirectoriesWhenAsked(@TempDir Path dir) throws IOException {
         String code = """
                 class Sample {

@@ -38,7 +38,8 @@ import java.util.regex.Pattern;
  * Что в проекте используется: до каких классов и методов выполнение может дойти от точек входа.
  * <p>
  * Точки входа - то, что вызывает не код проекта: классы и методы с аннотациями фреймворков, main, тесты,
- * геттеры и сеттеры, переопределенные методы. От них использование распространяется по ссылкам и вызовам:
+ * геттеры и сеттеры, переопределенные методы. В библиотеке - проекте без main и {@code @SpringBootApplication} -
+ * точки входа еще и открытые классы с их открытыми методами: ими пользуются проекты, которые ее подключают. От них использование распространяется по ссылкам и вызовам:
  * метод, который вызывается только из неиспользуемого метода, тоже не используется.
  * <p>
  * Ответ "используется" дается с запасом. Вызов, который не удалось сопоставить с конкретным методом,
@@ -49,6 +50,7 @@ public final class ProjectUsages {
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
     private static final String TEST_DIRECTORY = "test";
     private static final String MAIN = "main";
+    private static final String SPRING_BOOT_APPLICATION = "SpringBootApplication";
 
     // Аннотации, которые не означают, что кодом пользуется фреймворк
     private static final Set<String> NEUTRAL_ANNOTATIONS = Set.of(
@@ -75,6 +77,8 @@ public final class ProjectUsages {
     // Слова из строк: Class.forName("demo.Report"), @PreAuthorize("@access.check(#id)")
     private final Set<String> stringWords = new HashSet<>();
     private final Set<CompilationUnit> testUnits = identitySet();
+    // В проекте нет ни main, ни @SpringBootApplication: это библиотека
+    private final boolean library;
 
     // Что вызывает каждый метод. Ключ null - код вне методов: конструкторы, инициализаторы, значения полей
     private final Map<MethodDeclaration, Calls> callsByMethod = new IdentityHashMap<>();
@@ -135,6 +139,10 @@ public final class ProjectUsages {
                 collectCalls(node, graph);
             }
         }
+        library = types.stream()
+                .filter(type -> !isInTests(type))
+                .noneMatch(type -> Annotations.has(type, SPRING_BOOT_APPLICATION)
+                        || type.getMethods().stream().anyMatch(this::isMain));
         markLiveTypes();
         markLiveMethods();
     }
@@ -312,7 +320,8 @@ public final class ProjectUsages {
         return type instanceof AnnotationDeclaration
                 || isInTests(type)
                 || isFrameworkEntry(type)
-                || type.getMethods().stream().anyMatch(this::isMain);
+                || type.getMethods().stream().anyMatch(this::isMain)
+                || library && isPublicApi(type);
     }
 
     /**
@@ -330,7 +339,20 @@ public final class ProjectUsages {
                 || ACCESSOR.matcher(name).matches()
                 || STANDARD_METHODS.contains(name)
                 || stringWords.contains(name)
+                || library && (method.isPublic() || method.isProtected()) && isPublicApi(owner)
                 || mayOverride(method, owner, new HashSet<>());
+    }
+
+    // Открытый класс, вложенный только в открытые: виден снаружи библиотеки
+    private boolean isPublicApi(TypeDeclaration<?> type) {
+        Node current = type;
+        while (current != null) {
+            if (current instanceof TypeDeclaration<?> declaration && !declaration.isPublic()) {
+                return false;
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return true;
     }
 
     // Любая аннотация, кроме заведомо нейтральных (@Deprecated, аннотации Lombok), - возможный вызов из фреймворка

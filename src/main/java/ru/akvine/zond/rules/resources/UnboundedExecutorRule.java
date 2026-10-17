@@ -3,6 +3,9 @@ package ru.akvine.zond.rules.resources;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -16,6 +19,7 @@ import ru.akvine.zond.rules.support.Nodes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Component
@@ -31,6 +35,12 @@ public class UnboundedExecutorRule extends AbstractRule {
     private static final Set<String> UNBOUNDED_QUEUE_FACTORIES = Set.of(
             "newFixedThreadPool", "newSingleThreadExecutor", "newScheduledThreadPool",
             "newSingleThreadScheduledExecutor");
+
+    private static final Set<String> SCHEDULED_FACTORIES =
+            Set.of("newScheduledThreadPool", "newSingleThreadScheduledExecutor");
+    // Повторяющаяся задача ставится в очередь один раз и сама себя переставляет
+    private static final Set<String> PERIODIC = Set.of("scheduleAtFixedRate", "scheduleWithFixedDelay");
+    private static final Set<String> ONE_SHOT = Set.of("schedule", "submit", "execute", "invokeAll", "invokeAny");
 
     private static final Set<String> UNBOUNDED_QUEUES = Set.of("LinkedBlockingQueue", "LinkedBlockingDeque");
 
@@ -58,7 +68,7 @@ public class UnboundedExecutorRule extends AbstractRule {
                         "Executors." + name + "(): число потоков не ограничено, под нагрузкой пул создаст их"
                                 + " столько, сколько придет задач; используйте ThreadPoolExecutor с явными пределами"));
             }
-            if (UNBOUNDED_QUEUE_FACTORIES.contains(name)) {
+            if (UNBOUNDED_QUEUE_FACTORIES.contains(name) && !(SCHEDULED_FACTORIES.contains(name) && isOnlyPeriodic(call))) {
                 violations.add(violation(sourceFile, call,
                         "Executors." + name + "(...): очередь задач не ограничена, при медленной обработке задачи"
                                 + " копятся до OutOfMemoryError; используйте ThreadPoolExecutor с ограниченной"
@@ -87,6 +97,27 @@ public class UnboundedExecutorRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.RESOURCE;
+    }
+
+    /**
+     * Планировщик, которому только расписывают повторяющиеся задачи: его очередь не растет. Разовые задачи
+     * (schedule, submit, execute) могут копиться, как и в обычном пуле.
+     */
+    private boolean isOnlyPeriodic(MethodCallExpr creation) {
+        Optional<String> name = creation.getParentNode()
+                .flatMap(parent -> parent instanceof VariableDeclarator variable
+                        ? Optional.of(variable.getNameAsString())
+                        : parent instanceof AssignExpr assign ? Optional.of(MethodCalls.receiverName(assign.getTarget()))
+                        : Optional.empty());
+        Optional<CompilationUnit> unit = creation.findCompilationUnit();
+        if (name.isEmpty() || unit.isEmpty()) {
+            return false;
+        }
+        List<String> used = unit.get().findAll(MethodCallExpr.class).stream()
+                .filter(call -> call.getScope().filter(scope -> MethodCalls.receiverName(scope).equals(name.get())).isPresent())
+                .map(MethodCallExpr::getNameAsString)
+                .toList();
+        return used.stream().anyMatch(PERIODIC::contains) && used.stream().noneMatch(ONE_SHOT::contains);
     }
 
     // new LinkedBlockingQueue<>() без емкости либо Integer.MAX_VALUE

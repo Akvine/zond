@@ -13,6 +13,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Constraints;
 import ru.akvine.zond.rules.support.LocalTypes;
 
 import java.util.ArrayList;
@@ -84,6 +85,10 @@ public class ConstraintOnWrongTypeRule extends AbstractRule {
             SourceFile sourceFile, T node, Type declaredType, String name, List<Violation> violations) {
         String type = LocalTypes.typeName(declaredType);
         for (AnnotationExpr annotation : node.getAnnotations()) {
+            // @NotNull из org.jetbrains.annotations - подсказка для IDE, а не проверка
+            if (!Constraints.isBeanValidation(annotation)) {
+                continue;
+            }
             String constraint = annotation.getName().getIdentifier();
             describeProblem(constraint, type).ifPresent(problem -> violations.add(violation(sourceFile, node,
                     "@" + constraint + " на '" + name + "' типа " + type + ": " + problem)));

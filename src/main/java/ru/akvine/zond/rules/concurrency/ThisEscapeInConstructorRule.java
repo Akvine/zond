@@ -30,6 +30,11 @@ import java.util.Set;
 
 @Component
 public class ThisEscapeInConstructorRule extends AbstractRule {
+    private static final Set<String> IMMEDIATE_CALLS = Set.of(
+            "forEach", "anyMatch", "allMatch", "noneMatch", "filter", "map", "flatMap", "mapToInt", "mapToLong",
+            "mapToObj", "collect", "reduce", "peek", "sorted", "sort", "removeIf", "replaceAll", "computeIfAbsent",
+            "computeIfPresent", "compute", "merge", "ifPresent", "ifPresentOrElse", "orElseGet", "min", "max",
+            "takeWhile", "dropWhile");
     private static final int SNIPPET_LENGTH = 80;
 
     @Override
@@ -111,10 +116,12 @@ public class ThisEscapeInConstructorRule extends AbstractRule {
         if (parent instanceof ObjectCreationExpr creation) {
             return isArgument(value, creation.getArguments());
         }
-        // listeners.add(this) на собственном поле - объект остается внутри себя
+        // listeners.add(this) на собственном поле - объект остается внутри себя. Стрим и коллекция вызывают
+        // функцию сразу, в этом же потоке: ids.forEach(this::addMember) ничего наружу не выносит
         return parent instanceof MethodCallExpr call
                 && isArgument(value, call.getArguments())
-                && call.getScope().filter(scope -> isOwnState(scope, false)).isEmpty();
+                && call.getScope().filter(scope -> isOwnState(scope, false)).isEmpty()
+                && (value.isThisExpr() || !IMMEDIATE_CALLS.contains(call.getNameAsString()));
     }
 
     // Запись в локальную переменную this наружу не выносит

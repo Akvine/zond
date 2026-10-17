@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.models.ConfigFile;
+import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.rules.logical.DdlAutoRule;
 import ru.akvine.zond.rules.performance.OpenInViewRule;
 import ru.akvine.zond.rules.security.ActuatorExposureRule;
@@ -80,8 +81,26 @@ class ConfigRulesTest {
 
     @Test
     void openInView() {
-        // В .properties свойство не задано (по умолчанию включено), в .yml включено явно
-        assertThat(check(new OpenInViewRule())).containsExactly("application.properties:1", "application.yml:3");
+        // В .properties свойство не задано (по умолчанию включено), в .yml включено явно. Кода в проверке нет -
+        // о JPA судим по настройкам
+        List<String> lines = new OpenInViewRule().checkContext(new ScanContext(dir, List.of(), configFiles, List.of())).stream()
+                .map(violation -> violation.file().getFileName() + ":" + violation.line())
+                .toList();
+        assertThat(lines).containsExactly("application.properties:1", "application.yml:3");
+    }
+
+    @Test
+    void openInViewNeedsJpaInCode(@TempDir Path projects) {
+        String config = "spring.datasource.url=jdbc:postgresql://localhost/app\n";
+        assertThat(new ProjectFixture(projects.resolve("jpa"))
+                .source("Order.java", "import jakarta.persistence.Entity;\n@Entity\nclass Order {}")
+                .write("src/main/resources/application.properties", config)
+                .lines(new OpenInViewRule())).containsExactly("application.properties:1");
+        // JdbcTemplate тоже настраивает spring.datasource.*, но сессии Hibernate у него нет
+        assertThat(new ProjectFixture(projects.resolve("jdbc"))
+                .source("Orders.java", "import org.springframework.jdbc.core.JdbcTemplate;\nclass Orders { JdbcTemplate jdbc; }")
+                .write("src/main/resources/application.properties", config)
+                .lines(new OpenInViewRule())).isEmpty();
     }
 
     @Test

@@ -44,6 +44,8 @@ public record ScanOptions(
     private static final String TEST_DIRECTORY = "test";
     private static final String SOURCE_DIRECTORY = "src";
     private static final Set<String> BUILD_DIRECTORIES = Set.of("build", "target", "out");
+    private static final Set<String> SERVICE_DIRECTORIES =
+            Set.of(".claude", ".git", ".idea", ".gradle", ".mvn", ".vscode", ".svn", ".hg");
     private static final String OLD_NAME_PREFIX = "Check";
 
     /**
@@ -124,7 +126,7 @@ public record ScanOptions(
      * @return true, если файл нужно проверять
      */
     public boolean includes(Path root, Path file) {
-        if (exclusions.matches(root, file)) {
+        if (exclusions.matches(root, file) || isServiceCopy(root, file)) {
             return false;
         }
         if (!skipTests) {
@@ -132,6 +134,22 @@ public record ScanOptions(
         }
 
         return !isTestFile(root, file);
+    }
+
+    /**
+     * @return true для файла из служебного каталога: копия проекта в git worktree (.claude/worktrees),
+     * файлы git, IDE и обертки сборщика. Каталог .github сюда не входит: в нем описан CI
+     */
+    public boolean isServiceCopy(Path root, Path file) {
+        Path absoluteRoot = root.toAbsolutePath().normalize();
+        Path absoluteFile = file.toAbsolutePath().normalize();
+        Path relative = absoluteFile.startsWith(absoluteRoot) ? absoluteRoot.relativize(absoluteFile) : file;
+        for (Path part : relative) {
+            if (SERVICE_DIRECTORIES.contains(part.toString())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

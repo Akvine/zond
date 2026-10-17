@@ -60,7 +60,7 @@ public class NullableDereferenceRule extends AbstractRule {
             }
 
             String name = variable.getNameAsString();
-            findUncheckedUse(name, callable.get()).ifPresent(use -> violations.add(violation(sourceFile, use,
+            findUncheckedUse(variable, callable.get()).ifPresent(use -> violations.add(violation(sourceFile, use,
                     "'" + name + "' получена из " + source.get() + " и может быть null, а '" + use.getParentNode()
                             .map(Node::toString).orElse(name) + "' обращается к ней без проверки: будет"
                             + " NullPointerException; проверьте значение на null")));
@@ -143,9 +143,12 @@ public class NullableDereferenceRule extends AbstractRule {
     }
 
     // Первое обращение value.method() или value.field, до которого выполнение доходит без проверки на null
-    private Optional<NameExpr> findUncheckedUse(String name, Node callable) {
+    private Optional<NameExpr> findUncheckedUse(VariableDeclarator variable, Node callable) {
+        String name = variable.getNameAsString();
         for (NameExpr usage : callable.findAll(NameExpr.class)) {
-            if (!usage.getNameAsString().equals(name)) {
+            // Та же переменная, а не другая с тем же именем: for (Override override : ...) в соседнем цикле
+            if (!usage.getNameAsString().equals(name)
+                    || LocalTypes.findDeclaration(usage).filter(declaration -> declaration != variable).isPresent()) {
                 continue;
             }
             Node parent = usage.getParentNode().orElse(null);

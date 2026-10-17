@@ -6,7 +6,6 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
-import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.stmt.SynchronizedStmt;
 import org.springframework.stereotype.Component;
@@ -21,6 +20,7 @@ import ru.akvine.zond.rules.support.LocalTypes;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 @Component
 public class VolatileNonAtomicRule extends AbstractRule {
@@ -49,9 +49,7 @@ public class VolatileNonAtomicRule extends AbstractRule {
 
         for (AssignExpr assign : sourceFile.unit().findAll(AssignExpr.class)) {
             // x += 1 либо x = x + 1: новое значение зависит от старого
-            boolean readsItself = assign.getOperator() != AssignExpr.Operator.ASSIGN
-                    || assign.getValue().findAll(NameExpr.class).stream()
-                    .anyMatch(name -> name.toString().equals(fieldName(assign.getTarget())));
+            boolean readsItself = assign.getOperator() != AssignExpr.Operator.ASSIGN || readsField(assign);
             if (readsItself && isUnprotectedVolatile(assign.getTarget(), assign)) {
                 violations.add(report(sourceFile, assign));
             }
@@ -99,7 +97,15 @@ public class VolatileNonAtomicRule extends AbstractRule {
         return false;
     }
 
-    private String fieldName(Expression target) {
-        return target.isFieldAccessExpr() ? target.asFieldAccessExpr().getNameAsString() : target.toString();
+    // В правой части стоит само поле, а не параметр с тем же именем: this.timer = timer - простая запись
+    private boolean readsField(AssignExpr assign) {
+        Optional<Node> field = LocalTypes.findDeclaration(assign.getTarget());
+        if (field.isEmpty()) {
+            return false;
+        }
+        return assign.getValue().findAll(Expression.class).stream()
+                .filter(value -> value.isNameExpr()
+                        || value.isFieldAccessExpr() && value.asFieldAccessExpr().getScope().isThisExpr())
+                .anyMatch(value -> LocalTypes.findDeclaration(value).filter(found -> found == field.get()).isPresent());
     }
 }

@@ -4,10 +4,11 @@ import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.PackageDeclaration;
 import com.github.javaparser.resolution.TypeSolver;
+import com.github.javaparser.symbolsolver.cache.GuavaCache;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.CombinedTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.JarTypeSolver;
-import com.github.javaparser.symbolsolver.resolution.typesolvers.JavaParserTypeSolver;
 import com.github.javaparser.symbolsolver.resolution.typesolvers.ReflectionTypeSolver;
+import com.google.common.cache.CacheBuilder;
 import ru.akvine.zond.models.SourceFile;
 
 import java.io.IOException;
@@ -30,8 +31,14 @@ class ProjectTypeSolver {
     private static final String JAR_EXTENSION = ".jar";
     private static final String PACKAGE_SEPARATOR = "\\.";
 
-    // Ошибку в одном источнике (битый jar, незнакомый синтаксис) не считаем причиной прекращать поиск в остальных
-    private final CombinedTypeSolver solver = new CombinedTypeSolver(CombinedTypeSolver.ExceptionHandlers.IGNORE_ALL);
+    // Ошибку в одном источнике (битый jar, незнакомый синтаксис) не считаем причиной прекращать поиск в остальных.
+    // Найденное запоминаем сами: встроенный кэш держит имена в WeakHashMap, а имя почти всегда собрано заново
+    // и больше ничем не удерживается - запись пропадает при первой же сборке мусора, и поиск того же типа
+    // снова идет по всем jar и всем корням исходников
+    private final CombinedTypeSolver solver = new CombinedTypeSolver(
+            CombinedTypeSolver.ExceptionHandlers.IGNORE_ALL,
+            List.of(),
+            GuavaCache.create(CacheBuilder.newBuilder().build()));
     private final Set<Path> sourceRoots = new LinkedHashSet<>();
 
     /**
@@ -58,10 +65,11 @@ class ProjectTypeSolver {
      * вычисляются по разобранным файлам: путь к файлу минус каталоги его пакета.
      */
     void addSources(List<SourceFile> sources, ParserConfiguration configuration) {
+        SourceTree tree = new SourceTree(sources, configuration);
         for (SourceFile source : sources) {
             sourceRoot(source)
                     .filter(sourceRoots::add)
-                    .ifPresent(root -> solver.add(new JavaParserTypeSolver(root, configuration)));
+                    .ifPresent(root -> solver.add(new SourceRootTypeSolver(root, tree)));
         }
     }
 

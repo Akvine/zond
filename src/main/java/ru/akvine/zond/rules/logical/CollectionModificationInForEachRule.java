@@ -13,6 +13,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
@@ -68,10 +69,11 @@ public class CollectionModificationInForEachRule extends AbstractRule {
         return ErrorType.LOGICAL;
     }
 
-    private void report(SourceFile sourceFile, Node body, String collection, List<Violation> violations) {
+    private void report(SourceFile sourceFile, Node body, Expression iterated, List<Violation> violations) {
+        String collection = name(iterated).orElseThrow();
         for (MethodCallExpr call : body.findAll(MethodCallExpr.class)) {
             boolean modifies = MODIFYING_METHODS.contains(call.getNameAsString())
-                    && call.getScope().flatMap(this::name).filter(collection::equals).isPresent();
+                    && call.getScope().filter(scope -> isSameCollection(scope, iterated)).isPresent();
             if (modifies && !isFollowedByExit(call)) {
                 violations.add(violation(sourceFile, call,
                         "Коллекция '" + collection + "' изменяется методом " + call.getNameAsString()
@@ -82,12 +84,27 @@ public class CollectionModificationInForEachRule extends AbstractRule {
     }
 
     // items, this.items, map.keySet() / values() / entrySet()
-    private Optional<String> iteratedCollection(Expression iterable) {
+    private Optional<Expression> iteratedCollection(Expression iterable) {
         Expression value = Nodes.unwrap(iterable);
         if (value.isMethodCallExpr() && MAP_VIEWS.contains(value.asMethodCallExpr().getNameAsString())) {
-            return value.asMethodCallExpr().getScope().flatMap(this::name);
+            value = value.asMethodCallExpr().getScope().map(Nodes::unwrap).orElse(value);
         }
-        return name(value);
+        return name(value).isPresent() ? Optional.of(value) : Optional.empty();
+    }
+
+    /**
+     * Та же коллекция, а не одноименная: в {@code for (String uuid : uuids) this.uuids.add(uuid);} обходят
+     * параметр, а пополняют поле
+     */
+    private boolean isSameCollection(Expression modified, Expression iterated) {
+        Optional<String> name = name(Nodes.unwrap(modified));
+        if (name.isEmpty() || !name.equals(name(iterated))) {
+            return false;
+        }
+        Optional<Node> modifiedDeclaration = LocalTypes.findDeclaration(modified);
+        Optional<Node> iteratedDeclaration = LocalTypes.findDeclaration(iterated);
+        return modifiedDeclaration.isEmpty() || iteratedDeclaration.isEmpty()
+                || modifiedDeclaration.get() == iteratedDeclaration.get();
     }
 
     private Optional<String> name(Expression expression) {

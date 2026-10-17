@@ -23,6 +23,10 @@ public class SecretInConfigRule extends AbstractConfigRule {
     // ENC(...), {cipher}...: значение зашифровано
     private static final Pattern ENCRYPTED = Pattern.compile("^(ENC\\(.*\\)|\\{cipher}.*)$");
 
+    // refill-tokens: 60, token-ttl: 15m - число или срок, а не секрет. Пароль из цифр - секрет
+    private static final Pattern AMOUNT = Pattern.compile("(?i)^-?\\d+(\\.\\d+)?(ms|ns|us|s|m|h|d|kb|mb|gb)?$|^P(T)?[\\d.HMSD]+$");
+    private static final Pattern PASSWORD_LIKE = Pattern.compile("(?i).*(pass|pwd|pin|secret|credential).*");
+
     private static final Set<String> NOT_SECRET_VALUES = Set.of("true", "false", "null", "none", "changeme", "");
 
     @Override
@@ -65,6 +69,7 @@ public class SecretInConfigRule extends AbstractConfigRule {
         return Secrets.isSecretName(lastSegment(property.key()))
                 && !NOT_SECRET_VALUES.contains(value.toLowerCase())
                 && !Secrets.isStub(value)
+                && !(AMOUNT.matcher(value).matches() && !PASSWORD_LIKE.matcher(lastSegment(property.key())).matches())
                 && !PLACEHOLDER.matcher(value).matches()
                 && !ENCRYPTED.matcher(value).matches();
     }

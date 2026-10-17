@@ -5,6 +5,7 @@ import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.stmt.CatchClause;
 import com.github.javaparser.ast.stmt.ThrowStmt;
+import com.github.javaparser.ast.type.Type;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -23,6 +24,8 @@ import java.util.Set;
 public class LostExceptionCauseRule extends AbstractRule {
     // Способы привязать исходное исключение помимо конструктора
     private static final Set<String> CAUSE_METHODS = Set.of("initCause", "addSuppressed");
+    private static final Set<String> BAD_INPUT = Set.of(
+            "NumberFormatException", "DateTimeParseException", "ParseException", "InputMismatchException");
 
     @Override
     public String code() {
@@ -40,7 +43,8 @@ public class LostExceptionCauseRule extends AbstractRule {
         for (CatchClause clause : sourceFile.unit().findAll(CatchClause.class)) {
             String caught = clause.getParameter().getNameAsString();
             // Исключение записано в лог целиком: стек и причина сохранены, хоть и не едут дальше
-            if (attachesCauseManually(clause, caught) || CodeContexts.logsException(clause)) {
+            // Неверный ввод (не число, не дата): причина - сама строка, а место видно по стеку нового исключения
+            if (attachesCauseManually(clause, caught) || CodeContexts.logsException(clause) || isBadInput(clause)) {
                 continue;
             }
 
@@ -93,5 +97,11 @@ public class LostExceptionCauseRule extends AbstractRule {
             current = current.getParentNode().orElse(null);
         }
         return current;
+    }
+
+    private boolean isBadInput(CatchClause clause) {
+        Type type = clause.getParameter().getType();
+        List<Type> caught = type.isUnionType() ? List.copyOf(type.asUnionType().getElements()) : List.of(type);
+        return caught.stream().allMatch(element -> BAD_INPUT.contains(element.asString()));
     }
 }

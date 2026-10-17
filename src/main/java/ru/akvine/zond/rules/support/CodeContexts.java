@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.support;
 
+import com.github.javaparser.ast.DataKey;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
@@ -28,8 +29,12 @@ import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import lombok.experimental.UtilityClass;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -51,12 +56,20 @@ public class CodeContexts {
     private static final String ON_APPLICATION_EVENT = "onApplicationEvent";
     private static final String RUN = "run";
     private static final Set<String> RUNNER_INTERFACES = Set.of("CommandLineRunner", "ApplicationRunner");
+    // Методы запуска считаются по классу целиком, а спрашивают о них про каждый вызов в классе: ответ запоминается
+    // на самом классе. Правила работают в нескольких потоках, поэтому пометка читается и пишется под замком
+    private static final DataKey<Set<MethodDeclaration>> STARTUP_METHODS = new DataKey<>() {
+    };
+    private static final Object STARTUP_LOCK = new Object();
 
     // Счетчик или предел цикла назван попыткой: attempt, retry, retries, maxTries.
     // "tries" берется только отдельным словом: иначе подошли бы entries и countries
     private static final Pattern RETRY_NAME = Pattern.compile("(?i:attempt|retry|retries)|(?<![a-zA-Z])tries|Tries");
 
     // Переменная, которой листают страницы: offset, page, pageNumber, cursor, lastId
+    private static final Set<String> CHAIN_STEPS = Set.of(
+            "getSuperclass", "getEnclosingClass", "getDeclaringClass", "getCause", "getParent", "getParentFile",
+            "getParentNode");
     private static final Pattern PAGING_NAME = Pattern.compile("(?i)offset|page|cursor|lastId|chunk");
 
     // Метод, с которого начинается самостоятельная задача: выше него исключение ловить уже некому
@@ -119,17 +132,40 @@ public class CodeContexts {
      * которые вызываются только из них, из конструктора бина или из блока инициализации
      */
     public Set<MethodDeclaration> startupMethods(ClassOrInterfaceDeclaration type) {
+        synchronized (STARTUP_LOCK) {
+            if (type.containsData(STARTUP_METHODS)) {
+                return type.getData(STARTUP_METHODS);
+            }
+        }
+        Set<MethodDeclaration> startup = Collections.unmodifiableSet(findStartupMethods(type));
+        synchronized (STARTUP_LOCK) {
+            type.setData(STARTUP_METHODS, startup);
+        }
+        return startup;
+    }
+
+    private Set<MethodDeclaration> findStartupMethods(ClassOrInterfaceDeclaration type) {
         Set<MethodDeclaration> startup = new HashSet<>();
         for (MethodDeclaration method : type.getMethods()) {
             if (isStartupEntry(method, type)) {
                 startup.add(method);
             }
         }
+        // Вызовы своих методов (без объекта либо через this) по имени: класс обходится один раз, а не заново
+        // для каждого закрытого метода на каждом круге
+        Map<String, List<MethodCallExpr>> ownCalls = new HashMap<>();
+        for (MethodCallExpr call : type.findAll(MethodCallExpr.class)) {
+            if (call.getScope().filter(scope -> !scope.isThisExpr()).isEmpty()) {
+                ownCalls.computeIfAbsent(call.getNameAsString(), name -> new ArrayList<>()).add(call);
+            }
+        }
+        boolean createdAtStartup = isCreatedAtStartup(type);
         boolean added = true;
         while (added) {
             added = false;
             for (MethodDeclaration method : type.getMethods()) {
-                if (method.isPrivate() && !startup.contains(method) && isCalledOnlyAtStartup(method, type, startup)) {
+                if (method.isPrivate() && !startup.contains(method) && isCalledOnlyAtStartup(
+                        ownCalls.getOrDefault(method.getNameAsString(), List.of()), createdAtStartup, startup)) {
                     startup.add(method);
                     added = true;
                 }
@@ -206,13 +242,31 @@ public class CodeContexts {
     }
 
     /**
+     * Подъем по цепочке: {@code for (Class<?> c = type; c != null; c = c.getSuperclass())}, от исключения к
+     * причине, от узла к родителю. Итераций столько, какова глубина иерархии, а не объем данных.
+     */
+    public boolean isChainWalk(Node iteration) {
+        if (!(iteration instanceof ForStmt || iteration instanceof WhileStmt || iteration instanceof DoStmt)) {
+            return false;
+        }
+        return iteration.findAll(AssignExpr.class).stream()
+                .filter(assignment -> assignment.getValue().isMethodCallExpr())
+                .anyMatch(assignment -> {
+                    MethodCallExpr step = assignment.getValue().asMethodCallExpr();
+                    return CHAIN_STEPS.contains(step.getNameAsString()) && step.getScope()
+                            .filter(scope -> scope.toString().equals(assignment.getTarget().toString()))
+                            .isPresent();
+                });
+    }
+
+    /**
      * @return true, если узел повторяется по числу элементов данных: он лежит в цикле или в поэлементной
      * лямбде, и это не цикл повторных попыток
      */
     public boolean isRepeatedOverData(Node node) {
         Optional<Node> iteration = Loops.enclosingIteration(node);
         while (iteration.isPresent()) {
-            if (!isRetryLoop(iteration.get()) && !isPagingLoop(iteration.get())) {
+            if (!isRetryLoop(iteration.get()) && !isPagingLoop(iteration.get()) && !isChainWalk(iteration.get())) {
                 return true;
             }
             iteration = Loops.enclosingIteration(iteration.get());
@@ -230,7 +284,8 @@ public class CodeContexts {
     public Optional<Node> loopOverOuter(Node usage, Node declaration) {
         Optional<Node> loop = Loops.enclosingIteration(usage);
         while (loop.isPresent()) {
-            if (Loops.isDeclaredOutside(loop.get(), declaration) && !isRetryLoop(loop.get())) {
+            if (Loops.isDeclaredOutside(loop.get(), declaration) && !isRetryLoop(loop.get())
+                    && !isChainWalk(loop.get())) {
                 return loop;
             }
             loop = Loops.enclosingIteration(loop.get());
@@ -334,12 +389,7 @@ public class CodeContexts {
                 .anyMatch(implemented -> RUNNER_INTERFACES.contains(implemented.getNameAsString()));
     }
 
-    private boolean isCalledOnlyAtStartup(MethodDeclaration method, ClassOrInterfaceDeclaration type, Set<MethodDeclaration> startup) {
-        List<MethodCallExpr> calls = type.findAll(MethodCallExpr.class).stream()
-                .filter(call -> call.getNameAsString().equals(method.getNameAsString()))
-                .filter(call -> call.getScope().filter(scope -> !scope.isThisExpr()).isEmpty())
-                .toList();
-        boolean createdAtStartup = isCreatedAtStartup(type);
+    private boolean isCalledOnlyAtStartup(List<MethodCallExpr> calls, boolean createdAtStartup, Set<MethodDeclaration> startup) {
         return !calls.isEmpty() && calls.stream().allMatch(call -> Nodes.enclosingCallable(call)
                 .filter(callable -> callable instanceof MethodDeclaration ? startup.contains(callable) : createdAtStartup)
                 .isPresent());

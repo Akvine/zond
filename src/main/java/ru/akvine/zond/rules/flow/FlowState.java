@@ -149,7 +149,7 @@ public final class FlowState {
         // Стало известно, null переменная или нет: применяем все, что из этого следует для других
         for (Implication implication : implications) {
             if (implication.variable().equals(name) && implication.whenNull() == value.isNull()
-                    && values.containsKey(implication.target())) {
+                    && values.containsKey(implication.target()) && !isDefinite(values.get(implication.target()))) {
                 values.put(implication.target(), implication.value());
             }
         }
@@ -312,6 +312,11 @@ public final class FlowState {
                 joined.imply(new Implication(subject, !inSecond, target, other.getValue()));
             }
         }
+    }
+
+    // Прямая проверка значения важнее вывода из связи: связь строится по путям, а проверка - факт
+    private static boolean isDefinite(FlowValue value) {
+        return definiteNull(value) != null;
     }
 
     private static Boolean definiteNull(FlowValue value) {

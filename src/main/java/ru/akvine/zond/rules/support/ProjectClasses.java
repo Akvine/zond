@@ -47,6 +47,10 @@ public final class ProjectClasses {
     private final Map<String, List<ClassOrInterfaceDeclaration>> bySimpleName = new HashMap<>();
     private final Map<ClassOrInterfaceDeclaration, SourceFile> files = new HashMap<>();
 
+    // Прямые наследники по классу-предку: составляются при первом вопросе о наследниках. Ключи сравниваются
+    // по содержимому, как и предок с классом при поиске: у одинаковых копий класса общие наследники
+    private Map<ClassOrInterfaceDeclaration, List<ClassOrInterfaceDeclaration>> children;
+
     private ProjectClasses() {
     }
 
@@ -188,15 +192,28 @@ public final class ProjectClasses {
         Deque<ClassOrInterfaceDeclaration> queue = new ArrayDeque<>(List.of(type));
         while (!queue.isEmpty()) {
             ClassOrInterfaceDeclaration current = queue.removeFirst();
-            for (ClassOrInterfaceDeclaration candidate : all()) {
-                boolean extendsCurrent = !candidate.isInterface() && parent(candidate).filter(current::equals).isPresent();
-                if (extendsCurrent && seen.add(candidate)) {
+            for (ClassOrInterfaceDeclaration candidate : children().getOrDefault(current, List.of())) {
+                if (seen.add(candidate)) {
                     found.add(candidate);
                     queue.add(candidate);
                 }
             }
         }
         return found;
+    }
+
+    // Наследников спрашивают про каждый класс проекта: перебор всех классов на каждый вопрос - квадрат от их числа
+    private Map<ClassOrInterfaceDeclaration, List<ClassOrInterfaceDeclaration>> children() {
+        if (children == null) {
+            children = new HashMap<>();
+            for (ClassOrInterfaceDeclaration candidate : all()) {
+                if (!candidate.isInterface()) {
+                    parent(candidate).ifPresent(parent ->
+                            children.computeIfAbsent(parent, key -> new ArrayList<>()).add(candidate));
+                }
+            }
+        }
+        return children;
     }
 
     /**

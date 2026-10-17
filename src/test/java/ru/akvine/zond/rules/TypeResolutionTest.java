@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules;
 
+import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.assertj.core.api.SoftAssertions;
@@ -13,6 +14,7 @@ import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Loggers;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Repositories;
+import ru.akvine.zond.rules.support.Types;
 
 import java.io.IOException;
 import java.net.URISyntaxException;
@@ -275,6 +277,46 @@ class TypeResolutionTest {
                 .toList();
 
         assertThat(lines).containsExactly(5);
+    }
+
+    @Test
+    void solverReusesLoadedTrees() throws IOException {
+        List<SourceFile> sources = load(Map.of(
+                "Storage", """
+                        package demo;
+
+                        public class Storage {
+                            public void store(String value) {}
+                        }
+                        """,
+                "Sample", """
+                        package demo;
+
+                        class Sample {
+                            void run(Storage storage) {
+                                storage.store("x");
+                                "x".trim();
+                                storage.missing();
+                            }
+                        }
+                        """));
+        CompilationUnit storage = sources.stream()
+                .filter(source -> source.path().getFileName().toString().equals("Storage.java"))
+                .map(SourceFile::unit)
+                .findFirst()
+                .orElseThrow();
+        MethodCallExpr projectCall = call(sources, "storage.store(\"x\")");
+
+        // Файл, который уже загружен, решатель второй раз не разбирает: объявление - узел того же дерева
+        assertThat(Types.declaration(projectCall))
+                .hasValueSatisfying(method -> assertThat(method.findCompilationUnit()).containsSame(storage));
+        assertThat(Types.isLibraryCall(projectCall)).isFalse();
+        assertThat(Types.isLibraryCall(call(sources, "\"x\".trim()"))).isTrue();
+        // Неразрешенный вызов не считается ни своим, ни библиотечным - и при повторном вопросе тоже
+        MethodCallExpr missing = call(sources, "storage.missing()");
+        assertThat(Types.declaration(missing)).isEmpty();
+        assertThat(Types.isLibraryCall(missing)).isFalse();
+        assertThat(Types.isLibraryCall(missing)).isFalse();
     }
 
     private List<SourceFile> load(Map<String, String> files) throws IOException {

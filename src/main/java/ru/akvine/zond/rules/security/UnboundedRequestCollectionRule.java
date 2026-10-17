@@ -46,6 +46,8 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
 
     // Запасной признак, когда в проверку не попал ни один контроллер: имя класса либо аннотации валидации
     private static final Pattern REQUEST_NAME = Pattern.compile(".*(Request|Form|Command|Payload)$");
+    private static final Set<String> PERSISTENT =
+            Set.of("Entity", "JmixEntity", "Embeddable", "MappedSuperclass", "Document", "Table");
     private static final Set<String> VALIDATION_ANNOTATIONS = Set.of(
             "NotNull", "NotBlank", "NotEmpty", "Valid", "Min", "Max", "Pattern", "Positive", "PositiveOrZero",
             "Email", "Size");
@@ -167,6 +169,10 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
     }
 
     private boolean looksLikeRequest(ClassOrInterfaceDeclaration type) {
+        // @Email и @NotNull на полях сущности - проверка перед сохранением, а не признак запроса
+        if (Annotations.hasAny(type, PERSISTENT)) {
+            return false;
+        }
         return REQUEST_NAME.matcher(type.getNameAsString()).matches()
                 || type.getFields().stream().anyMatch(field -> Annotations.hasAny(field, VALIDATION_ANNOTATIONS));
     }

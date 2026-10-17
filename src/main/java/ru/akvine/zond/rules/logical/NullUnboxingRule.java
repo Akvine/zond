@@ -1,8 +1,10 @@
 package ru.akvine.zond.rules.logical;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.ConditionalExpr;
 import com.github.javaparser.ast.expr.Expression;
@@ -30,6 +32,8 @@ import java.util.Set;
 @Component
 public class NullUnboxingRule extends AbstractRule {
     private static final String BOOLEAN = "Boolean";
+    private static final String VALUE = "Value";
+    private static final String EMPTY_DEFAULT = ":}";
 
     @Override
     public String code() {
@@ -86,10 +90,26 @@ public class NullUnboxingRule extends AbstractRule {
                 && (binary.getOperator() == BinaryExpr.Operator.AND || binary.getOperator() == BinaryExpr.Operator.OR);
     }
 
+    /**
+     * {@code @Value("${redis.cluster-on}") Boolean isCluster}: без свойства приложение не запустится, а значение
+     * по умолчанию задано явно. null бывает только при пустом значении по умолчанию: {@code ${flag:}}
+     */
+    private boolean isInjectedProperty(Node declaration) {
+        Optional<AnnotationExpr> value = declaration instanceof Parameter parameter
+                ? parameter.getAnnotationByName(VALUE)
+                : declaration.getParentNode()
+                .filter(parent -> parent instanceof FieldDeclaration)
+                .flatMap(parent -> ((FieldDeclaration) parent).getAnnotationByName(VALUE));
+        return value.isPresent() && !value.get().toString().contains(EMPTY_DEFAULT);
+    }
+
     // Параметр, поле или переменная, объявленные как Boolean; переменная, которой сразу задан литерал, не null
     private boolean isNullableBoolean(NameExpr name) {
         Optional<Node> declaration = LocalTypes.findDeclaration(name);
         if (declaration.isEmpty() || LocalTypes.declaredType(declaration.get()).filter(BOOLEAN::equals).isEmpty()) {
+            return false;
+        }
+        if (isInjectedProperty(declaration.get())) {
             return false;
         }
         if (declaration.get() instanceof Parameter) {

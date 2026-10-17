@@ -2,7 +2,9 @@ package ru.akvine.zond.rules.concurrency;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.InitializerDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -15,6 +17,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
@@ -97,7 +100,8 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
     private Set<String> findWriters(ClassOrInterfaceDeclaration bean, String collection) {
         Set<String> writers = new LinkedHashSet<>();
         for (MethodDeclaration method : bean.getMethods()) {
-            if (method.isSynchronized() || Annotations.has(method, POST_CONSTRUCT)) {
+            if (method.isSynchronized() || Annotations.has(method, POST_CONSTRUCT) || CodeContexts.isStartupMethod(method)
+                    || isCalledOnlyOnStartup(bean, method)) {
                 continue;
             }
             boolean writes = method.findAll(MethodCallExpr.class).stream()
@@ -111,6 +115,36 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
             }
         }
         return writers;
+    }
+
+    /**
+     * Закрытый метод, который вызывают только при создании: из static-блока, конструктора или @PostConstruct.
+     * {@code static { register(Kind.DATE, "date"); }} заполняет коллекцию до того, как ее увидит другой поток.
+     */
+    private boolean isCalledOnlyOnStartup(ClassOrInterfaceDeclaration bean, MethodDeclaration method) {
+        if (!method.isPrivate()) {
+            return false;
+        }
+        List<MethodCallExpr> calls = bean.findAll(MethodCallExpr.class).stream()
+                .filter(call -> call.getNameAsString().equals(method.getNameAsString()))
+                .filter(call -> call.getScope().isEmpty() || call.getScope().get().isThisExpr()
+                        || call.getScope().get().toString().equals(bean.getNameAsString()))
+                .toList();
+        return !calls.isEmpty() && calls.stream().allMatch(this::isOnStartup);
+    }
+
+    private boolean isOnStartup(Node node) {
+        Node current = node.getParentNode().orElse(null);
+        while (current != null) {
+            if (current instanceof InitializerDeclaration || current instanceof ConstructorDeclaration) {
+                return true;
+            }
+            if (current instanceof MethodDeclaration method) {
+                return Annotations.has(method, POST_CONSTRUCT) || CodeContexts.isStartupMethod(method);
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
     }
 
     private boolean isInsideSynchronized(Node node, MethodDeclaration method) {
