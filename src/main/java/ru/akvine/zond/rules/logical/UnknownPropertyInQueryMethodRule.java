@@ -97,7 +97,7 @@ public class UnknownPropertyInQueryMethodRule extends AbstractRule implements Pr
 
     // interface OrderRepository extends JpaRepository<Order, Long> -> Order
     private Optional<ClassOrInterfaceDeclaration> entityOf(ClassOrInterfaceDeclaration repository, ProjectClasses classes) {
-        if (!Queries.isRepositoryInterface(repository)) {
+        if (!Queries.isSpringDataRepository(repository, classes)) {
             return Optional.empty();
         }
         return repository.getExtendedTypes().stream()

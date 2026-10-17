@@ -16,6 +16,7 @@ import ru.akvine.zond.rules.support.MethodCalls;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class ToMapWithoutMergeRule extends AbstractRule {
@@ -26,6 +27,8 @@ public class ToMapWithoutMergeRule extends AbstractRule {
     private static final int ARGUMENTS_WITHOUT_MERGE = 2;
     private static final String ENTRY_KEY = "getKey";
     private static final Set<String> IDENTIFIER_GETTERS = Set.of("getId", "getUuid", "id", "uuid");
+    private static final Set<String> ENUM_KEYS = Set.of("name", "ordinal");
+    private static final Pattern ENUM_SOURCE = Pattern.compile("\\.values\\(\\)|getEnumConstants\\(\\)|EnumSet\\.allOf");
 
     @Override
     public String code() {
@@ -49,6 +52,8 @@ public class ToMapWithoutMergeRule extends AbstractRule {
                 .filter(call -> !CodeContexts.isStartup(call))
                 // Ключи записей другой Map повторяться не могут
                 .filter(call -> keyGetter(call).filter(ENTRY_KEY::equals).isEmpty())
+                // Имена констант перечисления различны по определению: Arrays.stream(Type.values()), Enum::name
+                .filter(call -> !(keyGetter(call).filter(ENUM_KEYS::contains).isPresent() && isOverEnumConstants(call)))
                 .map(call -> report(sourceFile, call))
                 .toList();
     }
@@ -59,6 +64,14 @@ public class ToMapWithoutMergeRule extends AbstractRule {
         return keyGetter(call).filter(IDENTIFIER_GETTERS::contains).isPresent()
                 ? violation.withConfidence(Confidence.SUSPICION)
                 : violation;
+    }
+
+    private boolean isOverEnumConstants(MethodCallExpr toMap) {
+        return toMap.getParentNode()
+                .filter(parent -> parent instanceof MethodCallExpr)
+                .flatMap(parent -> ((MethodCallExpr) parent).getScope())
+                .filter(source -> ENUM_SOURCE.matcher(source.toString()).find())
+                .isPresent();
     }
 
     // Order::getId либо order -> order.getId()

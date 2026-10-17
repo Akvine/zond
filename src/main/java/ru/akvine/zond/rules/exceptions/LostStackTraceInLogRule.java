@@ -48,7 +48,9 @@ public class LostStackTraceInLogRule extends AbstractRule {
             String caught = clause.getParameter().getNameAsString();
             // Исключение выбрасывается дальше - стек уходит с ним и будет записан там, где его обработают.
             // У InterruptedException стек ничего не говорит: это просьба остановиться, а не ошибка
-            if (CodeContexts.rethrowsWithCause(clause)
+            // Исключение целиком отдано дальше - logAndPersist("onStop", e), callback.onFailure(e): стек сохранит тот,
+            // кто его получил
+            if (CodeContexts.rethrowsWithCause(clause) || handsOver(clause, caught)
                     || INTERRUPTED.equals(clause.getParameter().getType().asString())
                     || isExpectedFailure(clause)) {
                 continue;
@@ -117,6 +119,13 @@ public class LostStackTraceInLogRule extends AbstractRule {
             current = current.getParentNode().orElse(null);
         }
         return false;
+    }
+
+    // logAndPersist("onStop", e): исключение целиком ушло в свой метод, а не в логгер
+    private boolean handsOver(CatchClause clause, String caught) {
+        return clause.getBody().findAll(MethodCallExpr.class).stream()
+                .filter(call -> !Loggers.isLogCall(call))
+                .anyMatch(call -> passesException(call, caught));
     }
 
     // Само исключение передано отдельным аргументом

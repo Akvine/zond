@@ -3,16 +3,20 @@ package ru.akvine.zond.services;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.config.RuleSettings;
+import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.loaders.FileSystemConfigLoader;
 import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.loaders.FileSystemTextFileLoader;
 import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
+import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.printers.FilePrinter;
 import ru.akvine.zond.printers.ReportFormatter;
+import ru.akvine.zond.rules.Rule;
 import ru.akvine.zond.rules.codesmell.FieldInjectionRule;
 import ru.akvine.zond.rules.logical.AutowiredOnStaticFieldRule;
+import ru.akvine.zond.rules.logical.CircularDependencyRule;
 import ru.akvine.zond.rules.logical.DdlAutoRule;
 import ru.akvine.zond.rules.logical.SqlDestructiveStatementRule;
 import ru.akvine.zond.rules.logical.TransactionOnPrivateMethodRule;
@@ -25,6 +29,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -94,6 +99,29 @@ class ScannerTest {
                 .contains("[jr:1]")
                 .contains("Bad.java:2")
                 .contains("Broken.java");
+    }
+
+    @Test
+    void softenedFindingKeepsItsLevel(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("AssetService.java"),
+                "@Service class AssetService { @Autowired private ProfileService profiles; }");
+        Files.writeString(dir.resolve("ProfileService.java"),
+                "@Service class ProfileService { @Autowired private AssetService assets; }");
+        Files.writeString(dir.resolve("application.yml"), "spring.main.allow-circular-references: true\n");
+        // jr:147 - CRITICAL, но цикл при разрешенных циклических ссылках правило понижает до MINOR
+        List<Rule> rules = List.of(new CircularDependencyRule());
+        Scanner defaults = new Scanner(new FileSystemSourceLoader(), new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(), rules, (number, total, rule) -> {}, RuleSettings.empty());
+
+        assertThat(defaults.scan(dir).violations()).extracting(Violation::errorLevel).containsExactly(ErrorLevel.MINOR);
+        // Отсев по уровню смотрит на саму находку, а не только на уровень правила
+        assertThat(defaults.scan(dir, ScanOptions.parse("", "MAJOR")).violations()).isEmpty();
+
+        // Уровень из настроек заменяет уровень всех находок правила
+        Scanner configured = new Scanner(new FileSystemSourceLoader(), new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(), rules, (number, total, rule) -> {},
+                RuleSettings.of(Map.of("jr-147.level", "MAJOR")));
+        assertThat(configured.scan(dir).violations()).extracting(Violation::errorLevel).containsExactly(ErrorLevel.MAJOR);
     }
 
     @Test

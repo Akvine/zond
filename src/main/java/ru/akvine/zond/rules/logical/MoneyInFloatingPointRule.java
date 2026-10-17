@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import org.springframework.stereotype.Component;
@@ -9,17 +10,22 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.LocalTypes;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
 @Component
 public class MoneyInFloatingPointRule extends AbstractRule {
     private static final String AMOUNT = "amount";
+    // LoanApiResourceSwagger.GetLoansResponse: класс только описывает JSON для OpenAPI, денег в нем не считают
+    private static final String SCHEMA = "Schema";
+    private static final Pattern DOCUMENTATION_CLASS = Pattern.compile(".*(Swagger|ApiDocs?|Documentation)$");
     private static final String PRICE = "price";
     private static final Set<String> FLOATING_TYPES = Set.of("double", "float", "Double", "Float");
 
@@ -42,6 +48,9 @@ public class MoneyInFloatingPointRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+            if (isApiDocumentation(field)) {
+                continue;
+            }
             for (VariableDeclarator variable : field.getVariables()) {
                 String type = LocalTypes.typeName(variable.getType());
                 if (FLOATING_TYPES.contains(type) && MONEY_NAME.matcher(variable.getNameAsString()).matches()
@@ -57,6 +66,18 @@ public class MoneyInFloatingPointRule extends AbstractRule {
     }
 
     // amount рядом с ценой - это количество (2.5 кг, 0.5 порции), а деньги лежат в price
+    // Класс с @Schema внутри LoanApiResourceSwagger: его экземпляров не создают, по нему строится описание API
+    private boolean isApiDocumentation(FieldDeclaration field) {
+        Optional<ClassOrInterfaceDeclaration> owner = field.findAncestor(ClassOrInterfaceDeclaration.class);
+        Optional<ClassOrInterfaceDeclaration> outermost = owner;
+        while (outermost.flatMap(type -> type.getParentNode())
+                .filter(parent -> parent instanceof ClassOrInterfaceDeclaration).isPresent()) {
+            outermost = outermost.flatMap(type -> type.getParentNode()).map(parent -> (ClassOrInterfaceDeclaration) parent);
+        }
+        return owner.filter(type -> Annotations.has(type, SCHEMA)).isPresent()
+                && outermost.filter(type -> DOCUMENTATION_CLASS.matcher(type.getNameAsString()).matches()).isPresent();
+    }
+
     private boolean isQuantity(VariableDeclarator variable, FieldDeclaration field) {
         if (!AMOUNT.equalsIgnoreCase(variable.getNameAsString())) {
             return false;

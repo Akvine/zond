@@ -10,10 +10,12 @@ import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.InitializerDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.ConditionalExpr;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithArguments;
@@ -27,6 +29,7 @@ import com.github.javaparser.ast.stmt.SwitchEntry;
 import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import lombok.experimental.UtilityClass;
 
 import java.util.ArrayList;
@@ -50,12 +53,21 @@ public class CodeContexts {
     // Методы, которые контейнер вызывает один раз, пока приложение запускается
     private static final Set<String> STARTUP_ANNOTATIONS = Set.of("PostConstruct", "Bean", "Autowired", "Inject");
     private static final String EVENT_LISTENER = "EventListener";
+    // Аннотации методов из библиотек: свое объявление в исходниках проекта бывает только у аннотаций проекта
+    private static final Set<String> LIBRARY_METHOD_ANNOTATIONS = Set.of(
+            "Override", "Deprecated", "SuppressWarnings", "SafeVarargs", "Transactional", "Bean", "Autowired", "Value",
+            "Scheduled", "Async", "EventListener", "PostConstruct", "PreDestroy", "Test", "ParameterizedTest",
+            "GetMapping", "PostMapping", "PutMapping", "DeleteMapping", "PatchMapping", "RequestMapping", "ResponseBody",
+            "PreAuthorize", "Cacheable", "CacheEvict", "Nullable", "NonNull", "Nonnull", "Primary",
+            "KafkaListener", "RabbitListener", "JsonProperty", "JsonIgnore", "Getter", "Setter", "Builder", "Lazy");
     private static final Pattern STARTUP_EVENT = Pattern.compile(
             "Application(Ready|Started|Starting|Prepared|EnvironmentPrepared)Event|Context(Refreshed|Started)Event");
     private static final String AFTER_PROPERTIES_SET = "afterPropertiesSet";
     private static final String ON_APPLICATION_EVENT = "onApplicationEvent";
     private static final String RUN = "run";
     private static final Set<String> RUNNER_INTERFACES = Set.of("CommandLineRunner", "ApplicationRunner");
+    private static final String SETTER = "set";
+    private static final String AWARE = "Aware";
     // Методы запуска считаются по классу целиком, а спрашивают о них про каждый вызов в классе: ответ запоминается
     // на самом классе. Правила работают в нескольких потоках, поэтому пометка читается и пишется под замком
     private static final DataKey<Set<MethodDeclaration>> STARTUP_METHODS = new DataKey<>() {
@@ -66,10 +78,13 @@ public class CodeContexts {
     // "tries" берется только отдельным словом: иначе подошли бы entries и countries
     private static final Pattern RETRY_NAME = Pattern.compile("(?i:attempt|retry|retries)|(?<![a-zA-Z])tries|Tries");
 
-    // Переменная, которой листают страницы: offset, page, pageNumber, cursor, lastId
+    // Пауза в бесконечном цикле: цикл ждет события, а не перебирает данные
+    private static final Set<String> SLEEP_METHODS = Set.of("sleep", "await", "wait", "park", "parkNanos");
+    // Шаг вверх по цепочке: класс - его родитель, исключение - его причина
     private static final Set<String> CHAIN_STEPS = Set.of(
             "getSuperclass", "getEnclosingClass", "getDeclaringClass", "getCause", "getParent", "getParentFile",
             "getParentNode");
+    // Переменная, которой листают страницы: offset, page, pageNumber, cursor, lastId
     private static final Pattern PAGING_NAME = Pattern.compile("(?i)offset|page|cursor|lastId|chunk");
 
     // Метод, с которого начинается самостоятельная задача: выше него исключение ловить уже некому
@@ -153,10 +168,16 @@ public class CodeContexts {
         }
         // Вызовы своих методов (без объекта либо через this) по имени: класс обходится один раз, а не заново
         // для каждого закрытого метода на каждом круге
-        Map<String, List<MethodCallExpr>> ownCalls = new HashMap<>();
+        Map<String, List<Node>> ownCalls = new HashMap<>();
         for (MethodCallExpr call : type.findAll(MethodCallExpr.class)) {
             if (call.getScope().filter(scope -> !scope.isThisExpr()).isEmpty()) {
                 ownCalls.computeIfAbsent(call.getNameAsString(), name -> new ArrayList<>()).add(call);
+            }
+        }
+        // allowedBanks.forEach(this::initServicesForBank) - тоже вызов своего метода
+        for (MethodReferenceExpr reference : type.findAll(MethodReferenceExpr.class)) {
+            if (reference.getScope().isThisExpr()) {
+                ownCalls.computeIfAbsent(reference.getIdentifier(), name -> new ArrayList<>()).add(reference);
             }
         }
         boolean createdAtStartup = isCreatedAtStartup(type);
@@ -222,7 +243,7 @@ public class CodeContexts {
             // for-each и лямбда стрима перебирают данные
             return false;
         }
-        return RETRY_NAME.matcher(header).find() || repeatsUntilSuccess(body);
+        return RETRY_NAME.matcher(header).find() || repeatsUntilSuccess(body) || isPolling(iteration);
     }
 
     /**
@@ -385,11 +406,37 @@ public class CodeContexts {
         if (listensToStartup && (Annotations.has(method, EVENT_LISTENER) || ON_APPLICATION_EVENT.equals(method.getNameAsString()))) {
             return true;
         }
+        if (isAwareCallback(method, type) || method.getAnnotations().stream().anyMatch(CodeContexts::isStartupAnnotation)) {
+            return true;
+        }
         return RUN.equals(method.getNameAsString()) && type.getImplementedTypes().stream()
                 .anyMatch(implemented -> RUNNER_INTERFACES.contains(implemented.getNameAsString()));
     }
 
-    private boolean isCalledOnlyAtStartup(List<MethodCallExpr> calls, boolean createdAtStartup, Set<MethodDeclaration> startup) {
+    // @AfterStartUp, объявленная в проекте с @EventListener(ApplicationReadyEvent.class) либо @PostConstruct:
+    // помеченный ею метод выполняется при запуске. Известные аннотации библиотек не разрешаются - их объявления
+    // в исходниках нет
+    private boolean isStartupAnnotation(AnnotationExpr annotation) {
+        return !LIBRARY_METHOD_ANNOTATIONS.contains(annotation.getNameAsString())
+                && Types.projectAnnotation(annotation)
+                .filter(declaration -> declaration.getAnnotations().stream().anyMatch(meta ->
+                        STARTUP_ANNOTATIONS.contains(meta.getNameAsString())
+                                || EVENT_LISTENER.equals(meta.getNameAsString()) && STARTUP_EVENT.matcher(meta.toString()).find()))
+                .isPresent();
+    }
+
+    // setApplicationContext у ApplicationContextAware, setBeanFactory у BeanFactoryAware: контейнер вызывает их
+    // один раз, пока создает бин
+    private boolean isAwareCallback(MethodDeclaration method, ClassOrInterfaceDeclaration type) {
+        String name = method.getNameAsString();
+        return name.startsWith(SETTER) && type.getImplementedTypes().stream()
+                .map(ClassOrInterfaceType::getNameAsString)
+                .filter(implemented -> implemented.endsWith(AWARE))
+                .map(implemented -> SETTER + implemented.substring(0, implemented.length() - AWARE.length()))
+                .anyMatch(name::equals);
+    }
+
+    private boolean isCalledOnlyAtStartup(List<Node> calls, boolean createdAtStartup, Set<MethodDeclaration> startup) {
         return !calls.isEmpty() && calls.stream().allMatch(call -> Nodes.enclosingCallable(call)
                 .filter(callable -> callable instanceof MethodDeclaration ? startup.contains(callable) : createdAtStartup)
                 .isPresent());
@@ -410,6 +457,16 @@ public class CodeContexts {
             current = current.getParentNode().orElse(null);
         }
         return Optional.empty();
+    }
+
+    // while (true) { if (tryLock(id)) return; Thread.sleep(100); }: бесконечный цикл с паузой ждет события,
+    // и итераций в нем столько, сколько длится ожидание
+    private boolean isPolling(Node iteration) {
+        boolean endless = iteration instanceof WhileStmt whileLoop && whileLoop.getCondition().isBooleanLiteralExpr()
+                || iteration instanceof DoStmt doLoop && doLoop.getCondition().isBooleanLiteralExpr()
+                || iteration instanceof ForStmt forLoop && forLoop.getCompare().isEmpty();
+        return endless && iteration.findAll(MethodCallExpr.class).stream()
+                .anyMatch(call -> SLEEP_METHODS.contains(call.getNameAsString()));
     }
 
     // while (true) { try { ...; return result; } catch (...) { подождать } }: выход из цикла - последней строкой try

@@ -59,9 +59,19 @@ public class IndexOfPositiveRule extends AbstractRule {
                 && isZero(comparison.getLeft()) && isIndexOf(comparison.getRight());
     }
 
+    // relativeUrl.indexOf('?') > 0, email.indexOf("@") > 0: разделитель в самом начале значит, что перед ним
+    // ничего нет, и > 0 исключает этот случай намеренно
     private boolean isIndexOf(Expression expression) {
         Expression value = Nodes.unwrap(expression);
-        return value.isMethodCallExpr() && INDEX_METHODS.contains(value.asMethodCallExpr().getNameAsString());
+        return value.isMethodCallExpr() && INDEX_METHODS.contains(value.asMethodCallExpr().getNameAsString())
+                && !(value.asMethodCallExpr().getArguments().size() == 1
+                && isSeparator(Nodes.unwrap(value.asMethodCallExpr().getArgument(0))));
+    }
+
+    private boolean isSeparator(Expression argument) {
+        String text = argument.isCharLiteralExpr() ? argument.asCharLiteralExpr().asChar() + ""
+                : argument.isStringLiteralExpr() ? argument.asStringLiteralExpr().asString() : "";
+        return text.length() == 1 && !Character.isLetterOrDigit(text.charAt(0));
     }
 
     private boolean isZero(Expression expression) {

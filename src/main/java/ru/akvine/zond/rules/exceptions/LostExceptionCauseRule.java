@@ -2,9 +2,12 @@ package ru.akvine.zond.rules.exceptions;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.stmt.CatchClause;
+import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.ThrowStmt;
+import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.type.Type;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -25,7 +28,15 @@ public class LostExceptionCauseRule extends AbstractRule {
     // Способы привязать исходное исключение помимо конструктора
     private static final Set<String> CAUSE_METHODS = Set.of("initCause", "addSuppressed");
     private static final Set<String> BAD_INPUT = Set.of(
-            "NumberFormatException", "DateTimeParseException", "ParseException", "InputMismatchException");
+            "NumberFormatException", "DateTimeParseException", "ParseException", "InputMismatchException",
+            // Невозможная ситуация: класс клонируемый, кодировка UTF-8 есть всегда
+            "CloneNotSupportedException", "UnsupportedEncodingException",
+            // В стеке таймаута только место ожидания - его видно и по стеку нового исключения
+            "TimeoutException");
+    // EntityType.valueOf(type), UUID.fromString(id), Integer.parseInt(page): в try только разбор строки
+    private static final String ILLEGAL_ARGUMENT = "IllegalArgumentException";
+    private static final Set<String> PARSE_METHODS = Set.of("valueOf", "fromString");
+    private static final String PARSE_PREFIX = "parse";
 
     @Override
     public String code() {
@@ -57,7 +68,7 @@ public class LostExceptionCauseRule extends AbstractRule {
                 }
 
                 ObjectCreationExpr created = throwStmt.getExpression().asObjectCreationExpr();
-                if (!passesCause(created, caught)) {
+                if (!passesCause(created, caught) && !isClassified(throwStmt, clause, caught)) {
                     violations.add(violation(sourceFile, throwStmt,
                             "Новое исключение " + created.getType().getNameAsString() + " создается без исходного '"
                                     + caught + "': стек и причина первоначальной ошибки теряются, найти ее по логу"
@@ -99,9 +110,44 @@ public class LostExceptionCauseRule extends AbstractRule {
         return current;
     }
 
+    // if (e.getStatus() == 400) throw new InvalidCredentialsException(...): исключение уже разобрано, это известный исход
+    private boolean isClassified(ThrowStmt throwStmt, CatchClause clause, String caught) {
+        Node child = throwStmt;
+        Node current = throwStmt.getParentNode().orElse(null);
+        while (current != null && current != clause) {
+            if (current instanceof IfStmt branch && branch.getThenStmt() == child
+                    && branch.getCondition().findAll(NameExpr.class).stream()
+                    .anyMatch(name -> name.getNameAsString().equals(caught))) {
+                return true;
+            }
+            child = current;
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
+    }
+
     private boolean isBadInput(CatchClause clause) {
         Type type = clause.getParameter().getType();
         List<Type> caught = type.isUnionType() ? List.copyOf(type.asUnionType().getElements()) : List.of(type);
-        return caught.stream().allMatch(element -> BAD_INPUT.contains(element.asString()));
+        return caught.stream().allMatch(element -> BAD_INPUT.contains(element.asString()))
+                || ILLEGAL_ARGUMENT.equals(type.asString()) && isParsingTry(clause);
+    }
+
+    // try { groupType = RoleType.valueOf(strGroupType); } catch (IllegalArgumentException e): неверное значение
+    // параметра, и новое исключение его называет
+    private boolean isParsingTry(CatchClause clause) {
+        return clause.getParentNode()
+                .filter(parent -> parent instanceof TryStmt)
+                .map(parent -> ((TryStmt) parent).getTryBlock().getStatements())
+                .filter(statements -> statements.size() == 1)
+                .filter(statements -> statements.get(0).findAll(MethodCallExpr.class).stream()
+                        .anyMatch(call -> isParse(call.getNameAsString())
+                                || call.getScope().filter(scope -> isParse(scope.toString())).isPresent()))
+                .isPresent();
+    }
+
+    // valueOf.apply(param): функция разбора передана параметром
+    private boolean isParse(String name) {
+        return PARSE_METHODS.contains(name) || name.startsWith(PARSE_PREFIX);
     }
 }

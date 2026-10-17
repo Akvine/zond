@@ -1,8 +1,11 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.SwitchEntry;
 import com.github.javaparser.ast.stmt.SwitchStmt;
+import com.github.javaparser.ast.stmt.TryStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -63,12 +66,31 @@ public class SwitchFallThroughRule extends AbstractRule {
     }
 
     private boolean endsWithJump(SwitchEntry entry) {
-        Statement last = entry.getStatements().get(entry.getStatements().size() - 1);
-        while (last.isBlockStmt() && !last.asBlockStmt().getStatements().isEmpty()) {
-            last = last.asBlockStmt().getStatements().get(last.asBlockStmt().getStatements().size() - 1);
+        return isJump(entry.getStatements().get(entry.getStatements().size() - 1));
+    }
+
+    // Из команды нельзя выйти к следующей: break, return, throw, а также if / else и try, все ветки которых
+    // так заканчиваются - if (x) { return a; } else { return b; }
+    private boolean isJump(Statement statement) {
+        if (statement.isBlockStmt()) {
+            NodeList<Statement> statements = statement.asBlockStmt().getStatements();
+            return !statements.isEmpty() && isJump(statements.get(statements.size() - 1));
         }
-        return last.isBreakStmt() || last.isReturnStmt() || last.isThrowStmt() || last.isContinueStmt()
-                || last.isYieldStmt();
+        if (statement.isIfStmt()) {
+            IfStmt branch = statement.asIfStmt();
+            return branch.getElseStmt().isPresent() && isJump(branch.getThenStmt()) && isJump(branch.getElseStmt().get());
+        }
+        if (statement.isTryStmt()) {
+            TryStmt attempt = statement.asTryStmt();
+            boolean allBranches = isJump(attempt.getTryBlock())
+                    && attempt.getCatchClauses().stream().allMatch(clause -> isJump(clause.getBody()));
+            return allBranches || attempt.getFinallyBlock().filter(this::isJump).isPresent();
+        }
+        if (statement.isSynchronizedStmt()) {
+            return isJump(statement.asSynchronizedStmt().getBody());
+        }
+        return statement.isBreakStmt() || statement.isReturnStmt() || statement.isThrowStmt()
+                || statement.isContinueStmt() || statement.isYieldStmt();
     }
 
     private boolean isMarkedIntentional(SwitchEntry entry, SwitchEntry next) {

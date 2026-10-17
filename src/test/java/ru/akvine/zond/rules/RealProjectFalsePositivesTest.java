@@ -2,35 +2,61 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.codesmell.AssertEqualsArgumentOrderRule;
+import ru.akvine.zond.rules.codesmell.InternalCollectionExposureRule;
 import ru.akvine.zond.rules.codesmell.UnusedClassRule;
+import ru.akvine.zond.rules.logical.EntityFieldWithoutColumnRule;
 import ru.akvine.zond.rules.codesmell.UnusedConfigPropertyRule;
 import ru.akvine.zond.rules.codesmell.UnusedMethodRule;
 import ru.akvine.zond.rules.concurrency.LockWithoutFinallyRule;
+import ru.akvine.zond.rules.concurrency.MutableStateInSingletonBeanRule;
 import ru.akvine.zond.rules.concurrency.NonThreadSafeCollectionInBeanRule;
 import ru.akvine.zond.rules.concurrency.ScheduledWithoutLockRule;
 import ru.akvine.zond.rules.concurrency.ThisEscapeInConstructorRule;
+import ru.akvine.zond.rules.concurrency.UnsynchronizedLazyInitRule;
 import ru.akvine.zond.rules.concurrency.VolatileNonAtomicRule;
+import ru.akvine.zond.rules.exceptions.BroadCatchRule;
+import ru.akvine.zond.rules.exceptions.CatchReturnsDefaultRule;
+import ru.akvine.zond.rules.exceptions.EmptyCatchRule;
 import ru.akvine.zond.rules.exceptions.LostExceptionCauseRule;
 import ru.akvine.zond.rules.exceptions.LostStackTraceInLogRule;
 import ru.akvine.zond.rules.exceptions.SingleResultWithoutHandlingRule;
+import ru.akvine.zond.rules.exceptions.UnhandledNumberFormatRule;
 import ru.akvine.zond.rules.logical.CaseWithoutLocaleRule;
 import ru.akvine.zond.rules.logical.CastWithoutInstanceofRule;
 import ru.akvine.zond.rules.logical.CollectionModificationInForEachRule;
 import ru.akvine.zond.rules.logical.ConstantAssertionRule;
+import ru.akvine.zond.rules.logical.ConstantConditionRule;
 import ru.akvine.zond.rules.logical.ConstraintOnWrongTypeRule;
+import ru.akvine.zond.rules.logical.ConstraintWithoutValidatedRule;
 import ru.akvine.zond.rules.logical.IncompleteAssertionRule;
+import ru.akvine.zond.rules.logical.IndexWithoutLengthCheckRule;
 import ru.akvine.zond.rules.logical.IteratorNextWithoutHasNextRule;
+import ru.akvine.zond.rules.logical.MessageBundleMismatchRule;
 import ru.akvine.zond.rules.logical.NarrowingCastRule;
 import ru.akvine.zond.rules.logical.NullUnboxingRule;
 import ru.akvine.zond.rules.logical.NullableDereferenceRule;
+import ru.akvine.zond.rules.logical.OptionalMisuseRule;
 import ru.akvine.zond.rules.logical.PossibleNullDereferenceRule;
+import ru.akvine.zond.rules.logical.ReferenceEqualityRule;
+import ru.akvine.zond.rules.logical.SqlChangeWithoutWhereRule;
+import ru.akvine.zond.rules.logical.SqlDestructiveStatementRule;
+import ru.akvine.zond.rules.logical.TransactionalOnFinalRule;
+import ru.akvine.zond.rules.logical.TransactionalSelfInvocationRule;
+import ru.akvine.zond.rules.logical.UpdateWithoutWhereRule;
+import ru.akvine.zond.rules.performance.ListContainsInLoopRule;
 import ru.akvine.zond.rules.performance.ListShiftInLoopRule;
+import ru.akvine.zond.rules.performance.RepositoryCallInLoopRule;
 import ru.akvine.zond.rules.resources.UnboundedExecutorRule;
+import ru.akvine.zond.rules.security.AuthorizationHeaderLoggingRule;
 import ru.akvine.zond.rules.security.CiSecretInVariablesRule;
+import ru.akvine.zond.rules.security.PathTraversalRule;
 import ru.akvine.zond.rules.security.RequestBodyWithoutValidRule;
 import ru.akvine.zond.rules.security.SecretInConfigRule;
+import ru.akvine.zond.rules.security.SsrfRule;
+import ru.akvine.zond.rules.streams.ToMapWithoutMergeRule;
 import ru.akvine.zond.rules.security.UnboundedRequestCollectionRule;
 
 import java.nio.file.Path;
@@ -637,6 +663,682 @@ class RealProjectFalsePositivesTest {
 
         // Стрим вызывает функцию сразу в этом потоке; подписка хранит ее и вызовет из другого
         assertThat(RuleTests.lines(new ThisEscapeInConstructorRule(), code)).containsExactly(6);
+    }
+
+    @Test
+    void migrationColumnsAreReadLikeLiquibaseDoes() {
+        String entity = """
+                @Entity
+                @Table(name = "PROPERTY_ENTITY")
+                class PropertyEntity {
+                    @Id
+                    @Column(name = "ID")
+                    private Long id;
+                    @Column(name = "KEY")
+                    private String key;
+                    @Column(name = "NOTE")
+                    private String note;
+                    @Column(name = "STATE")
+                    private String state;
+                    @Column(name = "SELECTED")
+                    private Boolean selected;
+                    @Column(name = "MISSING")
+                    private String missing;
+                }
+                """;
+        List<String> lines = new ProjectFixture(dir)
+                .source("PropertyEntity.java", entity)
+                // KEY - колонка, а не индекс MySQL; у ALTER перед следующим changeset нет ';'
+                .write("src/main/resources/db/changelog/changelog.sql", """
+                        --liquibase formatted sql
+                        --changeset akvine:1
+                        CREATE TABLE PROPERTY_ENTITY (
+                            ID          BIGINT NOT NULL PRIMARY KEY,
+                            KEY         VARCHAR(255) NOT NULL
+                        );
+                        --changeset akvine:2
+                        ALTER TABLE PROPERTY_ENTITY ADD NOTE VARCHAR(64)
+
+                        --changeset akvine:3
+                        ALTER TABLE PROPERTY_ENTITY ADD STATE VARCHAR(256);
+                        """)
+                // features/ по пути идет раньше loaders/, но Liquibase применит ее после создания таблицы
+                .write("src/main/resources/db/changelog/features/add-selected.xml", """
+                        <databaseChangeLog>
+                            <changeSet id="2" author="tdm">
+                                <addColumn tableName="PROPERTY_ENTITY">
+                                    <column name="SELECTED" type="boolean"/>
+                                </addColumn>
+                            </changeSet>
+                        </databaseChangeLog>
+                        """)
+                .lines(new EntityFieldWithoutColumnRule());
+
+        assertThat(lines).containsExactly("PropertyEntity.java:16");
+    }
+
+    @Test
+    void singletonFieldWrittenOnStartupIsSafe() {
+        String code = """
+                @Service
+                class DataSourceService implements ApplicationContextAware {
+                    private ConnectionPoolStore store;
+                    private Metadata metadata;
+                    private SortedMap<String, String> variables;
+                    private String lastUser;
+                    @EventListener(ApplicationReadyEvent.class)
+                    public void runAfterStartup() {
+                        store = new ConnectionPoolStore();
+                    }
+                    public void setApplicationContext(ApplicationContext context) {
+                        metadata = context.getBean(Metadata.class);
+                    }
+                    public SortedMap<String, String> getVariables() {
+                        if (variables == null) {
+                            variables = new TreeMap<>();
+                        }
+                        return variables;
+                    }
+                    public void login(String user) {
+                        lastUser = user;
+                    }
+                }
+                """;
+
+        // Запуск и Aware-колбэк выполняются один раз; ленивую инициализацию отмечает jr:175
+        assertThat(RuleTests.lines(new MutableStateInSingletonBeanRule(), code)).containsExactly(6);
+    }
+
+    @Test
+    void privateMethodOfTransactionalClassRunsInTransaction() {
+        String code = """
+                @Transactional
+                public class ConceptService {
+                    public List<Concept> explode(Concept concept) {
+                        return explodeHelper(concept);
+                    }
+                    private List<Concept> explodeHelper(Concept concept) {
+                        return getSets(concept);
+                    }
+                    @Transactional(readOnly = true)
+                    public List<Concept> getSets(Concept concept) {
+                        return dao.getSets(concept);
+                    }
+                }
+                @Service
+                class OtpService {
+                    public int getOneTimePassword(String login) {
+                        return (int) getNextOtpNumber(login);
+                    }
+                    @Transactional
+                    public long getNextOtpNumber(String login) {
+                        return repository.next(login);
+                    }
+                }
+                """;
+
+        // Закрытый метод вызывается только из открытых методов @Transactional-класса: транзакция уже открыта
+        assertThat(RuleTests.lines(new TransactionalSelfInvocationRule(), code)).containsExactly(17);
+    }
+
+    @Test
+    void comparisonWithBooleanConstantIsSafe() {
+        String code = """
+                class Flags {
+                    boolean check(Boolean sourceOnly, Long price, Long modifiers) {
+                        return sourceOnly == Boolean.TRUE && modifiers != price;
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.check(new ReferenceEqualityRule(), code)).extracting(Violation::message)
+                .singleElement().asString().contains("modifiers != price");
+    }
+
+    @Test
+    void collectionOfPrototypeOrNewObjectIsNotShared() {
+        String code = """
+                @Component
+                @Scope(value = ConfigurableBeanFactory.SCOPE_PROTOTYPE)
+                class MaskingWriter {
+                    private final List<String> errors = new ArrayList<>();
+                    public void write(Chunk chunk) {
+                        errors.add(chunk.error());
+                    }
+                }
+                @Component
+                class RuleSettings {
+                    private final Map<String, String> common = new LinkedHashMap<>();
+                    static RuleSettings of(Map<String, String> values) {
+                        RuleSettings settings = new RuleSettings();
+                        settings.common.putAll(values);
+                        return settings;
+                    }
+                }
+                @Configuration
+                class RemoteConfig {
+                    private final Map<String, Object> services = new HashMap<>();
+                    private final Map<String, Object> cache = new HashMap<>();
+                    @Bean
+                    public ServiceManager serviceManager() {
+                        banks.forEach(this::initForBank);
+                        return new ServiceManager(services);
+                    }
+                    private void initForBank(String bank) {
+                        services.put(bank, new Object());
+                    }
+                    public void remember(String key) {
+                        cache.put(key, key);
+                    }
+                }
+                """;
+
+        // prototype-бин свой у каждого; объект из фабричного метода еще никому не виден; initForBank вызывается
+        // только из @Bean (через ссылку на метод)
+        assertThat(RuleTests.lines(new NonThreadSafeCollectionInBeanRule(), code)).containsExactly(21);
+    }
+
+    @Test
+    void resolveOfOtherClassIsNotPathSink() {
+        String code = """
+                @RestController
+                class SchemaController {
+                    @PostMapping("/convert")
+                    Schema convert(@RequestParam MultipartFile file, @RequestParam String type) {
+                        return new Schema(SchemaType.resolve(type, file.getOriginalFilename()));
+                    }
+                    @PostMapping("/save")
+                    void save(@RequestParam MultipartFile file) throws IOException {
+                        Path target = baseDir.resolve(file.getOriginalFilename());
+                        file.transferTo(target);
+                    }
+                }
+                """;
+
+        // SchemaType.resolve по имени файла определяет тип, а не строит путь
+        assertThat(RuleTests.lines(new PathTraversalRule(), code)).containsExactly(9);
+    }
+
+    @Test
+    void uriParsedForValidationIsNotRequest() {
+        String code = """
+                @RestController
+                class LinkController {
+                    @PostMapping("/trim")
+                    String trim(@RequestBody TrimRequest request) throws Exception {
+                        String link = request.getLink();
+                        try {
+                            new URI(link);
+                        } catch (URISyntaxException exception) {
+                            throw new ValidationException("bad link");
+                        }
+                        return restTemplate.getForObject(link, String.class);
+                    }
+                }
+                """;
+
+        // Разбор адреса ради проверки формата - не обращение по нему; запрос ниже - находка
+        assertThat(RuleTests.lines(new SsrfRule(), code)).containsExactly(11);
+    }
+
+    @Test
+    void oauthRequestObjectIsNotAuthorizationHeader() {
+        String code = """
+                class SberIdResolver {
+                    OAuth2AuthorizationRequest resolve(HttpServletRequest request) {
+                        OAuth2AuthorizationRequest authorizationRequest = defaultResolver.resolve(request);
+                        logger.debug("Auth request=[{}]", authorizationRequest);
+                        String authorization = request.getHeader("Authorization");
+                        logger.debug("Header=[{}]", authorization);
+                        return authorizationRequest;
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new AuthorizationHeaderLoggingRule(), code)).containsExactly(6);
+    }
+
+    @Test
+    void javaMigrationUpdatesAllRowsOnPurpose() {
+        String code = """
+                class MigrateTermsChangeSet implements CustomTaskChange {
+                    public void execute(Database database) throws CustomChangeException {
+                        connection.prepareStatement("update concept_reference_map set source_code = trim(source_code)").execute();
+                    }
+                }
+                class Cleaner {
+                    void clean() {
+                        jdbc.update("update orders set archived = true");
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new UpdateWithoutWhereRule(), code)).containsExactly(8);
+    }
+
+    @Test
+    void staticMethodOfTransactionalClassIsNotTransactional() {
+        String code = """
+                @Transactional
+                public class AdministrationService {
+                    public static List<Class<?>> whitelist() {
+                        return List.of();
+                    }
+                    @Transactional
+                    public static void reset() {
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new TransactionalOnFinalRule(), code)).containsExactly(6);
+    }
+
+    @Test
+    void repositoryCallThatEndsLoopOrWaitsIsNotNPlusOne() {
+        Map<String, String> sources = Map.of(
+                "TaskService.java", """
+                        @Service
+                        class TaskService {
+                            private final TaskRepository taskRepository;
+                            void restart(List<Task> claimed) {
+                                for (Task task : claimed) {
+                                    if (task.isRestartable()) {
+                                        taskRepository.markRestarted(task.getId());
+                                        return;
+                                    }
+                                }
+                            }
+                            void lock(String id) throws InterruptedException {
+                                while (true) {
+                                    if (taskRepository.tryLock(id)) {
+                                        return;
+                                    }
+                                    Thread.sleep(100);
+                                }
+                            }
+                            void unlockAll(List<Task> tasks) {
+                                for (Task task : tasks) {
+                                    taskRepository.save(task.unlock());
+                                }
+                            }
+                        }
+                        """,
+                "TaskRepository.java", "interface TaskRepository extends JpaRepository<Task, Long> {}");
+
+        // После markRestarted цикл кончается; while (true) с паузой - ожидание замка, а не перебор данных
+        assertThat(RuleTests.checkProject(new RepositoryCallInLoopRule(), sources)).extracting(Violation::line)
+                .containsExactly(22);
+    }
+
+    @Test
+    void recognizedOrImpossibleExceptionNeedsNoCause() {
+        String code = """
+                class Gateway {
+                    void login(String user) {
+                        try {
+                            api.login(user);
+                        } catch (ApiException e) {
+                            if (e.getStatus() == 400) {
+                                throw new InvalidCredentialsException("rejected: " + e.getMessage());
+                            }
+                            throw new GatewayException("login failed");
+                        }
+                    }
+                    public Object clone() {
+                        try {
+                            return super.clone();
+                        } catch (CloneNotSupportedException e) {
+                            throw new InternalError("should be cloneable");
+                        }
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new LostExceptionCauseRule(), code)).containsExactly(9);
+    }
+
+    @Test
+    void missingTranslationFallsBackToBaseBundle(@TempDir Path other) {
+        List<Violation> withBase = new MessageBundleMismatchRule().checkContext(new ProjectFixture(dir)
+                .write("src/main/resources/messages.properties", "title=OpenMRS\n")
+                .write("src/main/resources/messages_ar.properties", "title=OpenMRS\nlegacy.key=x\n")
+                .write("src/main/resources/messages_de.properties", "other.key=y\n")
+                .context());
+        // Переводу без ключа хватит основного файла; в основном нет ключей из переводов - устарели или забыты
+        assertThat(withBase).singleElement().satisfies(violation -> {
+            assertThat(violation.file().getFileName().toString()).isEqualTo("messages.properties");
+            assertThat(violation.errorLevel()).isEqualTo(ErrorLevel.MINOR);
+            assertThat(violation.message()).contains("legacy.key").contains("other.key");
+        });
+
+        List<Violation> withoutBase = new MessageBundleMismatchRule().checkContext(new ProjectFixture(other)
+                .write("src/main/resources/messages_en.properties", "title=Title\n")
+                .write("src/main/resources/messages_ru.properties", "title=Заголовок\nview.title=Вид\n")
+                .context());
+        assertThat(withoutBase).extracting(violation -> violation.file().getFileName().toString())
+                .containsExactly("messages_en.properties");
+    }
+
+    @Test
+    void recreatedTableAndSampleSchemaAreNotDestructiveMigrations() {
+        List<String> lines = new ProjectFixture(dir)
+                .write("src/main/resources/schema.sql", """
+                        DROP TABLE IF EXISTS card_tag;
+                        CREATE TABLE card_tag (card_id BIGINT, tag VARCHAR(64));
+                        DROP TABLE legacy_cards;
+                        """)
+                .write("samples/schemas/changelog.sql", "ALTER TABLE employees DROP COLUMN legacy_code;\n")
+                .lines(new SqlDestructiveStatementRule());
+
+        // schema.sql пересоздает таблицу при каждом запуске; samples - входные данные, а не миграции проекта
+        assertThat(lines).containsExactly("schema.sql:3");
+    }
+
+    @Test
+    void releasingResourcesOnShutdownMayCatchEverything() {
+        String code = """
+                class KeepAliveService {
+                    public void destroy() {
+                        try {
+                            scheduler.shutdownNow();
+                        } catch (Exception ex) {
+                            logger.error("Can't stop scheduler");
+                        }
+                    }
+                    public Location find(String text) {
+                        try {
+                            return service.find(text);
+                        } catch (Exception e) {
+                            return null;
+                        }
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new BroadCatchRule(), code)).containsExactly(12);
+    }
+
+    @Test
+    void nullTiedToConditionOrHasCheckIsKnown() {
+        String code = """
+                class Reader {
+                    @Nullable
+                    Token peek() { return index < tokens.size() ? tokens.get(index) : null; }
+                    boolean hasNext() { return index < tokens.size(); }
+                }
+                class Query {
+                    void read(List<String> fetches, ResultSet rs, Reader reader) throws SQLException {
+                        Map<String, Object> identity = fetches.isEmpty() ? null : new HashMap<>();
+                        while (rs.next()) {
+                            if (fetches.isEmpty()) {
+                                continue;
+                            }
+                            identity.put("a", 1);
+                        }
+                        while (reader.hasNext()) {
+                            reader.peek().kind();
+                        }
+                        reader.peek().kind();
+                    }
+                    void unchecked(List<String> fetches) {
+                        Map<String, Object> identity = fetches.isEmpty() ? null : new HashMap<>();
+                        identity.put("a", 1);
+                    }
+                }
+                """;
+
+        // null у identity связан с fetches.isEmpty(), а у peek() - с hasNext(): обе проверки стоят выше
+        assertThat(RuleTests.checkProject(new PossibleNullDereferenceRule(), Map.of("Query.java", code)))
+                .extracting(Violation::line).containsExactlyInAnyOrder(18, 22);
+    }
+
+    @Test
+    void enumNamesAndShortLiteralListsAreSafe() {
+        String code = """
+                class Utils {
+                    private static final List<String> CONDITIONS = List.of("<", ">", "=");
+                    <E extends Enum<E>> Map<String, E> enumMap(Class<E> type) {
+                        return Arrays.stream(type.getEnumConstants()).collect(Collectors.toMap(Enum::name, Function.identity()));
+                    }
+                    Map<String, Weight> byDate(List<Weight> weights) {
+                        return weights.stream().collect(Collectors.toMap(weight -> weight.getDate(), Function.identity()));
+                    }
+                    void validate(List<String> parts, List<String> allowed) {
+                        for (String part : parts) {
+                            if (!CONDITIONS.contains(part) || !allowed.contains(part)) {
+                                throw new IllegalArgumentException(part);
+                            }
+                        }
+                    }
+                }
+                """;
+
+        // Имена констант различны; список из трех знаков не растет вместе с данными
+        assertThat(RuleTests.lines(new ToMapWithoutMergeRule(), code)).containsExactly(7);
+        assertThat(RuleTests.check(new ListContainsInLoopRule(), code)).extracting(Violation::message)
+                .singleElement().asString().contains("allowed.contains");
+    }
+
+    @Test
+    void mapValueAfterKeySetOrIdentityCheckIsPresent() {
+        String code = """
+                class Exporter {
+                    void export(Map<String, List<String>> byProfile) {
+                        Set<String> profiles = byProfile.keySet();
+                        for (String profile : profiles) {
+                            List<String> properties = byProfile.get(profile);
+                            properties.size();
+                        }
+                    }
+                    void unlock(Map<String, Lock> cache, String id) {
+                        Lock lock = cache.get(id);
+                        if (lock != this) {
+                            throw new IllegalArgumentException("wrong instance");
+                        }
+                        lock.unlock();
+                        Lock other = cache.get(id + "-other");
+                        other.unlock();
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new NullableDereferenceRule(), code)).containsExactly(16);
+    }
+
+    @Test
+    void optionalGetInsideCatchingTryIsHandled() {
+        String code = """
+                class Generator {
+                    Segment next(Map<String, Segment> line) {
+                        try {
+                            return line.values().stream().filter(Segment::isFree).findFirst().get();
+                        } catch (NoSuchElementException e) {
+                            return null;
+                        }
+                    }
+                    Rod find(long id) {
+                        return rodService.findById(id).get();
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new OptionalMisuseRule(), code)).containsExactly(10);
+    }
+
+    @Test
+    void constraintWithManualCheckIsJustDocumentation() {
+        String code = """
+                import jakarta.validation.constraints.NotNull;
+                @Component
+                class GuidUtils {
+                    public String toWsFormat(@NotNull String guid) {
+                        Assert.notNull(guid, "guid is null");
+                        return guid.toUpperCase();
+                    }
+                    public String toRkFormat(@NotNull String guid) {
+                        return guid.toLowerCase();
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new ConstraintWithoutValidatedRule(), code)).containsExactly(8);
+    }
+
+    @Test
+    void backfillAndReferenceReloadNeedNoWhere() {
+        List<String> lines = new ProjectFixture(dir)
+                .write("src/main/resources/db/changelog/users.xml", """
+                        <databaseChangeLog>
+                            <changeSet id="1" author="openmrs">
+                                <addColumn tableName="users">
+                                    <column name="person_id" type="int"/>
+                                </addColumn>
+                                <update tableName="users">
+                                    <column name="person_id" valueNumeric="user_id"/>
+                                </update>
+                            </changeSet>
+                        </databaseChangeLog>
+                        """)
+                .write("src/main/resources/db/changelog/policies.sql", """
+                        DELETE FROM public.data_policy;
+                        INSERT INTO public.data_policy (id, name) VALUES (1, 'mask');
+                        DELETE FROM sessions;
+                        """)
+                .lines(new SqlChangeWithoutWhereRule());
+
+        // Заполнение только что добавленной колонки и перезагрузка справочника - намеренно все строки
+        assertThat(lines).containsExactly("policies.sql:3");
+    }
+
+    @Test
+    void ignoredBadNumberAndRacyImmutableCacheAreBenign() {
+        String code = """
+                class Settings {
+                    private static String hostname;
+                    private static Map<String, String> cache;
+                    long keepAlive(String header, long fallback) {
+                        try {
+                            return Long.parseLong(header) * 1000;
+                        } catch (NumberFormatException exception) {
+                        }
+                        try {
+                            return load();
+                        } catch (IOException exception) {
+                        }
+                        return fallback;
+                    }
+                    static String hostname() throws UnknownHostException {
+                        if (hostname == null) {
+                            hostname = InetAddress.getLocalHost().getCanonicalHostName();
+                        }
+                        return hostname;
+                    }
+                    static Map<String, String> cache() {
+                        if (cache == null) {
+                            cache = new HashMap<>();
+                        }
+                        return cache;
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new EmptyCatchRule(), code)).containsExactly(11);
+        // Строку оба потока вычислят одинаково; карту - создадут две разные
+        assertThat(RuleTests.lines(new UnsynchronizedLazyInitRule(), code)).containsExactly(22);
+    }
+
+    @Test
+    void recordAccessorNamedLengthMayBeNull() {
+        String code = """
+                record Column(String name, Integer length) {
+                }
+                class Mismatch {
+                    boolean longer(Column column, String text, int max) {
+                        return column.length() != null && column.length() > max && text.length() != 0;
+                    }
+                }
+                """;
+
+        // length() своей записи - поле Integer, а не длина строки: проверка на null нужна
+        assertThat(RuleTests.checkProject(new ConstantConditionRule(), Map.of("Mismatch.java", code))).isEmpty();
+    }
+
+    @Test
+    void numberFromSettingsAtStartupMayFailFast() {
+        String code = """
+                @Configuration
+                class BotConfig {
+                    @Bean
+                    BotOptions botOptions(Environment environment) {
+                        int port = Integer.parseInt(environment.getProperty("proxy.port"));
+                        return new BotOptions(port);
+                    }
+                }
+                @Service
+                class Converter {
+                    long start(Request request) {
+                        return Long.parseLong(request.getStart());
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new UnhandledNumberFormatRule(), code)).containsExactly(12);
+    }
+
+    @Test
+    void uuidStringHasKnownLength() {
+        String code = """
+                class FileStore {
+                    String newPath() {
+                        String id = UUID.randomUUID().toString().replace("-", "");
+                        return id.substring(0, 2) + "/" + id;
+                    }
+                    boolean isValidInn(String inn) {
+                        return inn.substring(0, 9).chars().allMatch(Character::isDigit);
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new IndexWithoutLengthCheckRule(), code)).containsExactly(7);
+    }
+
+    @Test
+    void invalidPathIsParseFailure() {
+        String code = """
+                class SourceTree {
+                    Optional<Path> resolve(Path directory, String name) {
+                        try {
+                            return Optional.of(directory.resolve(name));
+                        } catch (InvalidPathException exception) {
+                            return Optional.empty();
+                        }
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.check(new CatchReturnsDefaultRule(), code)).isEmpty();
+    }
+
+    @Test
+    void immutableCopyFromConstructorMayBeReturned() {
+        String code = """
+                class EntityMeta {
+                    private final List<ColumnMeta> columns;
+                    private final List<String> names;
+                    EntityMeta(List<ColumnMeta> columns, List<String> names) {
+                        this.columns = List.copyOf(columns);
+                        this.names = names;
+                    }
+                    public List<ColumnMeta> columns() {
+                        return columns;
+                    }
+                    public List<String> names() {
+                        return names;
+                    }
+                }
+                """;
+
+        assertThat(RuleTests.lines(new InternalCollectionExposureRule(), code)).containsExactly(11);
     }
 
     @Test

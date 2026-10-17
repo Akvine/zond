@@ -3,6 +3,8 @@ package ru.akvine.zond.rules.performance;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.ast.stmt.Statement;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -54,7 +56,9 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
             for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
                 // В цикле повторных попыток запрос повторяется по числу попыток, а не по числу элементов
                 // Запрос в catch выполняется, только когда обработка элемента сорвалась, а не для каждого
-                if (!CodeContexts.isRepeatedOverData(call) || CodeContexts.isInCatch(call)) {
+                // Загрузка справочников при запуске выполняется один раз; вызов, за которым цикл кончается, - тоже
+                if (!CodeContexts.isRepeatedOverData(call) || CodeContexts.isInCatch(call) || CodeContexts.isStartup(call)
+                        || isLastInLoop(call)) {
                     continue;
                 }
                 describe(call, graph)
@@ -66,6 +70,29 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
             }
         }
         return violations;
+    }
+
+    // restartClaimedTask(task); return; - после вызова цикл заканчивается, запрос уходит один раз
+    private boolean isLastInLoop(MethodCallExpr call) {
+        Optional<Statement> statement = call.findAncestor(Statement.class);
+        if (statement.isEmpty()) {
+            return false;
+        }
+        if (statement.get().isReturnStmt() || statement.get().isThrowStmt()) {
+            return true;
+        }
+        Optional<Node> parent = statement.get().getParentNode();
+        if (parent.isEmpty() || !(parent.get() instanceof BlockStmt block)) {
+            return false;
+        }
+        List<Statement> statements = block.getStatements();
+        for (int index = 0; index < statements.size() - 1; index++) {
+            if (statements.get(index) == statement.get()) {
+                Statement next = statements.get(index + 1);
+                return next.isReturnStmt() || next.isBreakStmt() || next.isThrowStmt();
+            }
+        }
+        return false;
     }
 
     @Override

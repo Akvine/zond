@@ -17,8 +17,10 @@ import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.TransactionalAnnotations;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Component
 public class TransactionalSelfInvocationRule implements Rule {
@@ -112,7 +114,7 @@ public class TransactionalSelfInvocationRule implements Rule {
         String prefix = "Вызов @Transactional-метода '" + callee.getNameAsString() + "' из метода '"
                 + caller.getNameAsString() + "' того же класса идет в обход Spring-прокси: ";
 
-        if (!isTransactional(type, caller)) {
+        if (!isTransactional(type, caller, new HashSet<>())) {
             return Optional.of(prefix + "транзакция не будет открыта");
         }
 
@@ -122,11 +124,26 @@ public class TransactionalSelfInvocationRule implements Rule {
                 .map(propagation -> prefix + propagation + " не сработает, метод выполнится в транзакции вызывающего");
     }
 
-    private boolean isTransactional(ClassOrInterfaceDeclaration type, MethodDeclaration method) {
-        if (method.isPrivate()) {
+    /**
+     * Метод выполняется в транзакции: помечен сам, открыт в классе с @Transactional либо это закрытый метод,
+     * который вызывают только из таких: explodeConceptSetHelper вызывается из открытых методов
+     * @Transactional-класса, и вызов из него уже идет внутри транзакции
+     */
+    private boolean isTransactional(ClassOrInterfaceDeclaration type, MethodDeclaration method, Set<String> visited) {
+        if (!method.isPrivate()) {
+            Optional<AnnotationExpr> onMethod = TransactionalAnnotations.find(method);
+            if (onMethod.isPresent() || (method.isPublic() && TransactionalAnnotations.isPresent(type))) {
+                return true;
+            }
+        }
+        if (!method.isPrivate() || !visited.add(method.getNameAsString())) {
             return false;
         }
-        Optional<AnnotationExpr> onMethod = TransactionalAnnotations.find(method);
-        return onMethod.isPresent() || (method.isPublic() && TransactionalAnnotations.isPresent(type));
+        List<MethodDeclaration> callers = type.getMethods().stream()
+                .filter(candidate -> candidate != method && candidate.findAll(MethodCallExpr.class).stream()
+                        .anyMatch(call -> call.getNameAsString().equals(method.getNameAsString())
+                                && isSelfCall(call, type)))
+                .toList();
+        return !callers.isEmpty() && callers.stream().allMatch(other -> isTransactional(type, other, new HashSet<>(visited)));
     }
 }

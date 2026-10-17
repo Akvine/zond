@@ -113,8 +113,9 @@ class ProjectFilesRulesTest {
                 .containsExactly("changelog.xml:14", "changes.yaml:9");
         // Индекс по manager_id создан отдельным изменением
         assertThat(check(new SqlForeignKeyWithoutIndexRule(), context)).containsExactly("changelog.xml:4");
+        // update status заполняет колонку, добавленную выше в этом же changeSet, - так и задумано
         assertThat(check(new SqlChangeWithoutWhereRule(), context))
-                .containsExactly("changelog.xml:19", "changelog.xml:22", "changes.yaml:18");
+                .containsExactly("changelog.xml:22", "changes.yaml:18");
     }
 
     @Test

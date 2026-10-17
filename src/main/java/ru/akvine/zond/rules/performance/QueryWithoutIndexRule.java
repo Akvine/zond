@@ -65,7 +65,7 @@ public class QueryWithoutIndexRule extends AbstractContextRule {
         ProjectClasses classes = ProjectClasses.of(context.sources());
         for (SourceFile sourceFile : context.sources()) {
             for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
-                Optional<ClassOrInterfaceDeclaration> entity = Queries.isRepositoryInterface(type)
+                Optional<ClassOrInterfaceDeclaration> entity = Queries.isSpringDataRepository(type, classes)
                         ? RepositoryEntities.entityOf(type, classes)
                         : Optional.empty();
                 if (entity.isEmpty()) {

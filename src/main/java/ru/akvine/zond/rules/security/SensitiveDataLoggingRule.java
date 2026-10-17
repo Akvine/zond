@@ -27,6 +27,7 @@ import java.util.regex.Pattern;
 public class SensitiveDataLoggingRule extends AbstractRule implements ProjectRule {
     // getPassword() -> password
     private static final Pattern GETTER = Pattern.compile("^get([A-Z].*)$");
+    private static final Pattern CONSTANT_NAME = Pattern.compile("^[A-Z][A-Z0-9_]*$");
 
     @Override
     public String code() {
@@ -77,12 +78,12 @@ public class SensitiveDataLoggingRule extends AbstractRule implements ProjectRul
     // значение, прошедшее через метод-обработку (mask(token)), и свойство, в которое кладут только хеш
     private Optional<String> findSecret(Expression argument, ProtectedProperties properties) {
         for (NameExpr name : argument.findAll(NameExpr.class)) {
-            if (Secrets.isSecretName(name.getNameAsString()) && isRevealed(name, argument, properties)) {
+            if (isSecretVariable(name.getNameAsString()) && isRevealed(name, argument, properties)) {
                 return Optional.of(name.getNameAsString());
             }
         }
         for (FieldAccessExpr access : argument.findAll(FieldAccessExpr.class)) {
-            if (Secrets.isSecretName(access.getNameAsString()) && isRevealed(access, argument, properties)) {
+            if (isSecretVariable(access.getNameAsString()) && isRevealed(access, argument, properties)) {
                 return Optional.of(access.toString());
             }
         }
@@ -95,6 +96,11 @@ public class SensitiveDataLoggingRule extends AbstractRule implements ProjectRul
             }
         }
         return Optional.empty();
+    }
+
+    // DeviceCredentialsType.ACCESS_TOKEN, TOKEN_HEADER: константа - имя или вид секрета, а не его значение
+    private boolean isSecretVariable(String name) {
+        return Secrets.isSecretName(name) && !CONSTANT_NAME.matcher(name).matches();
     }
 
     private boolean isRevealed(Expression secret, Expression argument, ProtectedProperties properties) {

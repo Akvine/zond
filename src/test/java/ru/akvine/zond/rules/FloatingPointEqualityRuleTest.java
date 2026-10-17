@@ -22,6 +22,7 @@ class FloatingPointEqualityRuleTest {
                         boolean ok2 = a != a;
                         boolean ok3 = Math.abs(a - b) < 0.0001;
                         boolean ok4 = boxed == null;
+                        boolean ok5 = a == 0 || b != 0.0;
                         return r1;
                     }
                 }

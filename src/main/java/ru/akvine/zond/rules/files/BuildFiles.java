@@ -8,6 +8,7 @@ import ru.akvine.zond.parsers.XmlParser;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -81,6 +82,25 @@ public class BuildFiles {
             return pomDependencies(file, allFiles);
         }
         return TextFiles.isGradle(file) ? gradleDependencies(file) : List.of();
+    }
+
+    /**
+     * @return модули самого проекта (groupId:artifactId каждого pom.xml): зависимость на соседний модуль
+     * собирается вместе с ним, и ее версия - версия проекта
+     */
+    public Set<String> ownModules(List<TextFile> allFiles) {
+        Set<String> modules = new HashSet<>();
+        for (TextFile file : allFiles) {
+            if (!TextFiles.isPom(file)) {
+                continue;
+            }
+            XmlParser.parse(file.lines()).ifPresent(project -> {
+                String group = project.childText(GROUP_ID);
+                String inherited = project.child(PARENT).map(parent -> parent.childText(GROUP_ID)).orElse("");
+                modules.add((group.isEmpty() ? inherited : group) + ":" + project.childText(ARTIFACT_ID));
+            });
+        }
+        return modules;
     }
 
     private List<Dependency> pomDependencies(TextFile file, List<TextFile> allFiles) {

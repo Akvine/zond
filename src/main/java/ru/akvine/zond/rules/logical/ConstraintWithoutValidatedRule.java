@@ -3,6 +3,7 @@ package ru.akvine.zond.rules.logical;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
+import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -22,6 +23,8 @@ import java.util.Set;
 public class ConstraintWithoutValidatedRule extends AbstractRule {
     // Контроллеры сюда не входят: тело запроса с @Valid проверяет сам Spring MVC
     private static final Set<String> BEAN_ANNOTATIONS = Set.of("Service", "Component", "Repository");
+    private static final Set<String> MANUAL_CHECKS = Set.of(
+            "notNull", "requireNonNull", "checkNotNull", "isNotNull", "notEmpty", "hasText", "notBlank", "checkArgument");
 
     @Override
     public String code() {
@@ -44,6 +47,8 @@ public class ConstraintWithoutValidatedRule extends AbstractRule {
             for (MethodDeclaration method : type.getMethods()) {
                 Optional<Parameter> constrained = method.getParameters().stream()
                         .filter(parameter -> Constraints.hasAny(parameter) || Annotations.has(parameter, Constraints.VALID))
+                        // @NotNull String id и тут же Assert.notNull(id, ...): аннотация - пометка, проверка уже есть
+                        .filter(parameter -> !isCheckedManually(method, parameter.getNameAsString()))
                         .findFirst();
                 if (constrained.isPresent() && !method.isPrivate()) {
                     violations.add(violation(sourceFile, constrained.get(),
@@ -66,5 +71,12 @@ public class ConstraintWithoutValidatedRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.LOGICAL;
+    }
+
+    private boolean isCheckedManually(MethodDeclaration method, String parameter) {
+        return method.findAll(MethodCallExpr.class).stream()
+                .filter(call -> MANUAL_CHECKS.contains(call.getNameAsString()))
+                .anyMatch(call -> call.getArguments().stream()
+                        .anyMatch(argument -> argument.isNameExpr() && argument.asNameExpr().getNameAsString().equals(parameter)));
     }
 }

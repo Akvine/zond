@@ -5,6 +5,7 @@ import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.stmt.ExpressionStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -53,7 +54,9 @@ public class SsrfRule extends AbstractTaintRule {
             }
         }
         for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
-            if (ADDRESS_TYPES.contains(creation.getType().getNameAsString()) && !creation.getArguments().isEmpty()) {
+            // new URI(link); без использования результата - проверка формата адреса, а не обращение по нему
+            if (ADDRESS_TYPES.contains(creation.getType().getNameAsString()) && !creation.getArguments().isEmpty()
+                    && !(creation.getParentNode().orElse(null) instanceof ExpressionStmt)) {
                 report(sourceFile, taint, creation, creation.getArgument(0), violations);
             }
         }

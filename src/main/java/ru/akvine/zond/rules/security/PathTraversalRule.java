@@ -10,6 +10,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractTaintRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.Taint;
@@ -84,7 +85,15 @@ public class PathTraversalRule extends AbstractTaintRule {
         MethodCallExpr call = expression.asMethodCallExpr();
         boolean isFactory = PATH_FACTORY_METHODS.contains(call.getNameAsString())
                 && call.getScope().map(MethodCalls::receiverName).filter(PATH_FACTORIES::contains).isPresent();
-        return isFactory || RESOLVE.equals(call.getNameAsString()) ? call.getArguments() : List.of();
+        // base.resolve(name) у пути; SchemaType.resolve(type, name) у класса и свой resolve(name) - другие методы
+        boolean isResolve = RESOLVE.equals(call.getNameAsString())
+                && call.getScope().filter(scope -> !isClassReference(scope)).isPresent();
+        return isFactory || isResolve ? call.getArguments() : List.of();
+    }
+
+    private boolean isClassReference(Expression scope) {
+        return scope.isNameExpr() && Character.isUpperCase(scope.asNameExpr().getNameAsString().charAt(0))
+                && LocalTypes.findDeclaration(scope).isEmpty();
     }
 
     // Где-либо в методе путь нормализуют или сверяют с базовым каталогом

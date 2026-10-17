@@ -11,8 +11,10 @@ import ru.akvine.zond.parsers.YamlParser;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -29,6 +31,8 @@ public class Liquibase {
     // --changeset автор:id в SQL-файле формата Liquibase
     private static final Pattern SQL_CHANGE_SET = Pattern.compile("^\\s*--\\s*changeset\\b", Pattern.CASE_INSENSITIVE);
     private static final String AUTHOR = "author";
+    // Атрибуты, от которых зависит, выполнится ли набор при этом запуске
+    private static final List<String> CONDITIONS = List.of("context", "contextFilter", "dbms", "labels");
     private static final String COLUMN = "column";
     private static final String COLUMNS = "columns";
     private static final String CONSTRAINTS = "constraints";
@@ -98,27 +102,38 @@ public class Liquibase {
     }
 
     /**
-     * Набор изменений журнала: Liquibase различает наборы по id, автору и файлу
+     * Набор изменений журнала: Liquibase различает наборы по id, автору и файлу.
+     * Условие - то, при каком запуске набор выполняется (context, dbms, labels); пусто - при любом
      */
-    public record ChangeSet(String id, String author, int line) {
+    public record ChangeSet(String id, String author, String condition, int line) {
     }
 
     public List<ChangeSet> changeSets(TextFile file) {
         List<ChangeSet> changeSets = new ArrayList<>();
         if (file.type() == TextFileType.LIQUIBASE_XML) {
             XmlParser.parse(file.lines()).ifPresent(root -> root.descendants(CHANGE_SET).forEach(changeSet ->
-                    changeSets.add(new ChangeSet(changeSet.attribute(ID), changeSet.attribute(AUTHOR), changeSet.line()))));
+                    changeSets.add(new ChangeSet(changeSet.attribute(ID), changeSet.attribute(AUTHOR),
+                            condition(changeSet::attribute), changeSet.line()))));
             return changeSets;
         }
         for (YamlNode document : YamlParser.parse(file.lines()).orElse(List.of())) {
             for (YamlNode item : document.get(ROOT).items()) {
                 YamlNode changeSet = item.get(CHANGE_SET);
                 if (changeSet.exists()) {
-                    changeSets.add(new ChangeSet(changeSet.get(ID).text(), changeSet.get(AUTHOR).text(), changeSet.line()));
+                    changeSets.add(new ChangeSet(changeSet.get(ID).text(), changeSet.get(AUTHOR).text(),
+                            condition(name -> changeSet.get(name).text()), changeSet.line()));
                 }
             }
         }
         return changeSets;
+    }
+
+    // context="mysql", dbms="postgresql": условия запуска набора одной строкой
+    private String condition(Function<String, String> attribute) {
+        return CONDITIONS.stream()
+                .map(name -> attribute.apply(name).trim().toLowerCase(Locale.ROOT))
+                .filter(value -> !value.isEmpty())
+                .collect(Collectors.joining("|"));
     }
 
     /**
@@ -242,7 +257,7 @@ public class Liquibase {
                     "ALTER TABLE " + table + " ALTER COLUMN " + change.get(COLUMN_NAME) + " SET NOT NULL");
             case "dropNotNullConstraint" -> add(statements, change,
                     "ALTER TABLE " + table + " ALTER COLUMN " + change.get(COLUMN_NAME) + " DROP NOT NULL");
-            case "update" -> add(statements, change, "UPDATE " + table + " SET " + columnNames(change) + whereOf(change));
+            case "update" -> add(statements, change, "UPDATE " + table + " SET " + assignments(change) + whereOf(change));
             case "delete" -> add(statements, change, "DELETE FROM " + table + whereOf(change));
             case SQL -> embeddedSql(change, statements);
             default -> {
@@ -297,6 +312,11 @@ public class Liquibase {
 
     private String columnNames(Change change) {
         return change.columns().stream().map(column -> column.get(NAME)).collect(Collectors.joining(", "));
+    }
+
+    // <column name="person_id" valueNumeric="user_id"/> -> person_id = ?: значение правилам не нужно, нужна колонка
+    private String assignments(Change change) {
+        return change.columns().stream().map(column -> column.get(NAME) + " = ?").collect(Collectors.joining(", "));
     }
 
     private String whereOf(Change change) {

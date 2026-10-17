@@ -4,8 +4,10 @@ import lombok.experimental.UtilityClass;
 import ru.akvine.zond.enums.TextFileType;
 import ru.akvine.zond.models.TextFile;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -14,6 +16,10 @@ import java.util.regex.Pattern;
  */
 @UtilityClass
 public class TextFiles {
+    private static final Set<String> SAMPLE_DIRECTORIES = Set.of("samples", "fixtures", "testdata", "test-data");
+    // multi-tenant-demo-backups, old-schema-files, sample_data, db-dumps: копии базы и устаревшие схемы
+    private static final Pattern COPY_DIRECTORY = Pattern.compile("(?i).*(backup|dump|sample|archive).*|old[-_].*|.*[-_]old");
+    private static final int SAMPLE_DEPTH = 3;
     // key=value, key: value, key value
     private static final Pattern PROPERTY_LINE = Pattern.compile("^\\s*([^=:\\s]+)\\s*[=:]?\\s*(.*)$");
 
@@ -27,9 +33,24 @@ public class TextFiles {
      * @return true для миграций базы данных: SQL-файла либо журнала Liquibase в XML или YAML
      */
     public boolean isMigration(TextFile file) {
-        return file.type() == TextFileType.SQL
+        boolean migrationType = file.type() == TextFileType.SQL
                 || file.type() == TextFileType.LIQUIBASE_XML
                 || file.type() == TextFileType.LIQUIBASE_YAML;
+        return migrationType && !isSampleData(file.path());
+    }
+
+    // samples/schemas/changelog.xml - входные данные или пример, а не миграция проекта; demo-backups/bk_tenant.sql -
+    // дамп базы, его CREATE TABLE описывает старую схему. Смотрим только ближайшие каталоги: проекты могут
+    // лежать в папке с любым именем
+    private boolean isSampleData(Path path) {
+        Path parent = path.getParent();
+        for (int depth = 0; parent != null && depth < SAMPLE_DEPTH; depth++, parent = parent.getParent()) {
+            String name = parent.getFileName() == null ? "" : parent.getFileName().toString();
+            if (SAMPLE_DIRECTORIES.contains(name) || COPY_DIRECTORY.matcher(name).matches()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public boolean isPom(TextFile file) {

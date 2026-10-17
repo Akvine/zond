@@ -27,6 +27,7 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
     private static final String LENGTH = "length";
     private static final String FIRST_INDEX = "0";
     private static final Set<String> POSITION_METHODS = Set.of("charAt", "substring");
+    private static final String RANDOM_UUID = "UUID.randomUUID()";
 
     // Проверки, после которых о длине строки что-то известно
     private static final Set<String> LENGTH_CHECKS = Set.of(
@@ -55,7 +56,7 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
             }
             Expression scope = Nodes.unwrap(call.getScope().get());
             if (scope.isNameExpr() && LocalTypes.typeOf(scope).filter(STRING::equals).isPresent()
-                    && !TestClasses.isInside(call) && !isLengthChecked(call, scope.toString())) {
+                    && !TestClasses.isInside(call) && !isLengthChecked(call, scope.toString()) && !isFixedLength(scope)) {
                 violations.add(violation(sourceFile, call,
                         "'" + call + "' без проверки длины строки: на короткой или пустой строке будет"
                                 + " StringIndexOutOfBoundsException; проверьте length() или isEmpty()"));
@@ -92,6 +93,13 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.LOGICAL;
+    }
+
+    // String id = UUID.randomUUID().toString().replace("-", ""): длина известна заранее - 32 или 36 символов
+    private boolean isFixedLength(Expression text) {
+        return LocalTypes.findInitializer(text)
+                .filter(initializer -> initializer.toString().startsWith(RANDOM_UUID))
+                .isPresent();
     }
 
     private boolean isLengthChecked(MethodCallExpr call, String text) {

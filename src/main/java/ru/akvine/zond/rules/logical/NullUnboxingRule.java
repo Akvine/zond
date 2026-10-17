@@ -1,15 +1,20 @@
 package ru.akvine.zond.rules.logical;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.ConditionalExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import org.springframework.stereotype.Component;
@@ -23,6 +28,7 @@ import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
+import ru.akvine.zond.rules.support.Types;
 
 import java.util.HashSet;
 import java.util.List;
@@ -34,6 +40,10 @@ public class NullUnboxingRule extends AbstractRule {
     private static final String BOOLEAN = "Boolean";
     private static final String VALUE = "Value";
     private static final String EMPTY_DEFAULT = ":}";
+    private static final Set<BinaryExpr.Operator> COMPARISONS = Set.of(
+            BinaryExpr.Operator.EQUALS, BinaryExpr.Operator.NOT_EQUALS, BinaryExpr.Operator.LESS,
+            BinaryExpr.Operator.LESS_EQUALS, BinaryExpr.Operator.GREATER, BinaryExpr.Operator.GREATER_EQUALS,
+            BinaryExpr.Operator.AND, BinaryExpr.Operator.OR);
 
     @Override
     public String code() {
@@ -51,7 +61,7 @@ public class NullUnboxingRule extends AbstractRule {
         Set<Node> reported = new HashSet<>();
         return sourceFile.unit().findAll(NameExpr.class).stream()
                 .filter(this::isUsedAsCondition)
-                .filter(name -> isNullableBoolean(name) && !TestClasses.isInside(name))
+                .filter(name -> isNullableBoolean(name) && !TestClasses.isInside(name) && !isAssignedNonNull(name))
                 .filter(name -> !Guards.isGuarded(name, check -> Guards.isNullCheck(check, name.getNameAsString())))
                 .filter(name -> LocalTypes.findDeclaration(name).filter(reported::add).isPresent())
                 .map(name -> violation(sourceFile, name,
@@ -101,6 +111,52 @@ public class NullUnboxingRule extends AbstractRule {
                 .filter(parent -> parent instanceof FieldDeclaration)
                 .flatMap(parent -> ((FieldDeclaration) parent).getAnnotationByName(VALUE));
         return value.isPresent() && !value.get().toString().contains(EMPTY_DEFAULT);
+    }
+
+    // active = isActive(ts); if (!active): последнее присваивание перед условием дало значение, которое не бывает null
+    private boolean isAssignedNonNull(NameExpr name) {
+        Optional<Node> method = Nodes.enclosingCallable(name);
+        int position = name.getBegin().map(begin -> begin.line).orElse(0);
+        Optional<Expression> last = method.stream()
+                .flatMap(callable -> callable.findAll(AssignExpr.class).stream())
+                .filter(assign -> assign.getOperator() == AssignExpr.Operator.ASSIGN)
+                .filter(assign -> assign.getTarget().isNameExpr()
+                        && assign.getTarget().asNameExpr().getNameAsString().equals(name.getNameAsString())
+                        || assign.getTarget().isFieldAccessExpr() && assign.getTarget().asFieldAccessExpr().getScope().isThisExpr()
+                        && assign.getTarget().asFieldAccessExpr().getNameAsString().equals(name.getNameAsString()))
+                .filter(assign -> assign.getBegin().map(begin -> begin.line).orElse(Integer.MAX_VALUE) < position)
+                // Присваивание в одной из веток if не обязательно выполнилось
+                .filter(assign -> assign.findAncestor(BlockStmt.class).filter(block -> block.isAncestorOf(name)).isPresent())
+                .reduce((first, second) -> second)
+                .map(AssignExpr::getValue);
+        Optional<Expression> value = last.or(() -> LocalTypes.findDeclaration(name)
+                .filter(declaration -> declaration instanceof VariableDeclarator)
+                .flatMap(declaration -> ((VariableDeclarator) declaration).getInitializer()));
+        return value.map(Nodes::unwrap).filter(this::isPrimitiveBoolean).isPresent();
+    }
+
+    // flag = a > b, flag = !other, flag = isActive(ts) с результатом boolean
+    private boolean isPrimitiveBoolean(Expression value) {
+        if (value.isBooleanLiteralExpr() || value.isInstanceOfExpr()) {
+            return true;
+        }
+        if (value.isUnaryExpr()) {
+            return value.asUnaryExpr().getOperator() == UnaryExpr.Operator.LOGICAL_COMPLEMENT;
+        }
+        if (value.isBinaryExpr()) {
+            return COMPARISONS.contains(value.asBinaryExpr().getOperator());
+        }
+        if (value.isMethodCallExpr()) {
+            MethodCallExpr call = value.asMethodCallExpr();
+            Optional<MethodDeclaration> declaration = Types.declaration(call).or(() -> call.getScope().isPresent()
+                    ? Optional.empty()
+                    : call.findAncestor(ClassOrInterfaceDeclaration.class).flatMap(owner -> owner
+                    .getMethodsByName(call.getNameAsString()).stream()
+                    .filter(method -> method.getParameters().size() == call.getArguments().size())
+                    .findFirst()));
+            return declaration.filter(method -> method.getType().isPrimitiveType()).isPresent();
+        }
+        return false;
     }
 
     // Параметр, поле или переменная, объявленные как Boolean; переменная, которой сразу задан литерал, не null

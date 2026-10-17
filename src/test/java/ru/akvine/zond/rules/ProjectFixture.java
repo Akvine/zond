@@ -5,6 +5,7 @@ import ru.akvine.zond.loaders.FileSystemTextFileLoader;
 import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
+import ru.akvine.zond.services.ConfigNames;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -45,7 +46,7 @@ class ProjectFixture {
         return new ScanContext(
                 dir,
                 List.copyOf(sources),
-                new FileSystemConfigLoader().load(dir, file -> true),
+                new FileSystemConfigLoader().load(dir, file -> true, ConfigNames.of(sources)),
                 new FileSystemTextFileLoader().load(dir, file -> true));
     }
 

@@ -59,6 +59,8 @@ import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import com.github.javaparser.ast.stmt.YieldStmt;
 import com.github.javaparser.ast.type.Type;
+import ru.akvine.zond.rules.support.Guards;
+import ru.akvine.zond.rules.support.LocalTypes;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -68,6 +70,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.UnaryOperator;
+import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 /**
  * Исполняет тело метода не на настоящих значениях, а на том, что о них известно: null или не null, в каком
@@ -82,6 +86,7 @@ public final class FlowInterpreter {
     private static final Set<String> NULLABLE_ANNOTATIONS = Set.of("Nullable", "CheckForNull");
     private static final Set<String> INTEGRAL_TYPES = Set.of("int", "long", "short", "byte", "char");
     private static final String BOOLEAN_TYPE = "boolean";
+    private static final String HAS = "has";
     private static final String LENGTH = "length";
 
     private static final String IS_NULL = "isNull";
@@ -89,6 +94,14 @@ public final class FlowInterpreter {
     private static final Set<String> EQUALS_METHODS = Set.of("equals", "equalsIgnoreCase", "contentEquals");
     private static final Set<String> INDEX_SEARCH = Set.of("indexOf", "lastIndexOf");
     private static final Set<String> SIZE_METHODS = Set.of("size", "length");
+    // value.isEmpty(), StringUtils.isBlank(value), Strings.isNullOrEmpty(value)
+    private static final Set<String> EMPTINESS_CHECKS = Set.of("isEmpty", "isBlank", "isNullOrEmpty");
+    private static final Set<String> SIZED_TYPES = Set.of(
+            "String", "StringBuilder", "StringBuffer", "CharSequence", "Collection", "Iterable", "Queue", "Deque",
+            "Stack", "Vector", "BitSet", "File", "Path");
+    // ArrayList, HashMap, LinkedHashSet, ConcurrentLinkedQueue и массивы
+    private static final Pattern SIZED_SUFFIX =
+            Pattern.compile("(List|Set|Map|Queue|Deque|Collection|\\[])$");
     private static final Set<String> INDEX_CONSUMERS = Set.of("charAt", "substring");
     private static final List<String> SEARCH_GUARDS = List.of(".contains(", ".startsWith(", ".endsWith(", ".matches(");
     private static final String OR_ELSE = "orElse";
@@ -475,7 +488,7 @@ public final class FlowInterpreter {
         exitedEarly |= conditionDepth > 0;
         // if (name == null) return null; - метод лишь отражает состояние поля. Что в поле, вызывающий код
         // знает лучше: для него такой метод равносилен геттеру, и о результате ничего утверждать нельзя
-        if (value != null && value.isNullish() && isFieldCheckedForNull(state)) {
+        if (value != null && value.isNullish() && (isFieldCheckedForNull(state) || isNullOnlyForEmptyArgument(statement))) {
             value = FlowValue.unknown();
         }
         if (value != null) {
@@ -485,6 +498,58 @@ public final class FlowInterpreter {
         }
         exitState = FlowState.join(exitState, state);
         return null;
+    }
+
+    // if (value == null || value.isEmpty()) return null; return string != null ? read(string) : null:
+    // null выходит, только когда пуст сам аргумент - метод передает его пустоту дальше, как toJsonNode(json).
+    // Что в аргументе, вызывающий код знает лучше, и о результате вообще ничего утверждать нельзя
+    private boolean isNullOnlyForEmptyArgument(ReturnStmt statement) {
+        Set<String> parameters = statement.findAncestor(CallableDeclaration.class).stream()
+                .flatMap(callable -> ((CallableDeclaration<?>) callable).getParameters().stream())
+                .map(parameter -> parameter.getNameAsString())
+                .collect(Collectors.toSet());
+        Optional<Expression> returned = statement.getExpression().map(this::unwrap);
+        if (parameters.isEmpty() || returned.isEmpty()) {
+            return false;
+        }
+        if (returned.get() instanceof ConditionalExpr conditional) {
+            boolean nullWhenTrue = unwrap(conditional.getThenExpr()).isNullLiteralExpr();
+            return parameters.stream().anyMatch(name -> nullWhenTrue
+                    ? isEmptinessCheck(conditional.getCondition(), name)
+                    : isPresenceCheck(conditional.getCondition(), name));
+        }
+        Node child = statement;
+        Node parent = statement.getParentNode().orElse(null);
+        while (parent instanceof BlockStmt block && block.getStatements().size() == 1) {
+            child = parent;
+            parent = parent.getParentNode().orElse(null);
+        }
+        Node thenBranch = child;
+        return parent instanceof IfStmt branch && branch.getThenStmt() == thenBranch
+                && parameters.stream().anyMatch(name -> isEmptinessCheck(branch.getCondition(), name));
+    }
+
+    // value == null, value == null || value.isEmpty(), StringUtils.isEmpty(value): каждая часть - о самом параметре
+    private boolean isEmptinessCheck(Expression condition, String name) {
+        Expression value = unwrap(condition);
+        if (value instanceof BinaryExpr binary && binary.getOperator() == BinaryExpr.Operator.OR) {
+            return isEmptinessCheck(binary.getLeft(), name) && isEmptinessCheck(binary.getRight(), name);
+        }
+        if (value instanceof BinaryExpr binary && binary.getOperator() == BinaryExpr.Operator.EQUALS) {
+            return Guards.isNullCheck(binary, name);
+        }
+        if (value instanceof MethodCallExpr call && EMPTINESS_CHECKS.contains(call.getNameAsString())) {
+            return call.getScope().filter(scope -> scope.toString().equals(name)).isPresent()
+                    || call.getArguments().size() == 1 && call.getArgument(0).toString().equals(name);
+        }
+        return false;
+    }
+
+    // value != null ? read(value) : null
+    private boolean isPresenceCheck(Expression condition, String name) {
+        Expression value = unwrap(condition);
+        return value instanceof BinaryExpr binary && binary.getOperator() == BinaryExpr.Operator.NOT_EQUALS
+                && Guards.isNullCheck(binary, name);
     }
 
     private boolean isFieldCheckedForNull(FlowState state) {
@@ -546,6 +611,13 @@ public final class FlowInterpreter {
             rememberType(variable.getNameAsString(), variable.getType());
             state.assign(variable.getNameAsString(), typedUnknown(variable.getType()));
         });
+        // Тело выполняется, только если в коллекции есть элементы: внутри цикла mappings.isEmpty() ложно.
+        // result = mappings.isEmpty() ? null : new ArrayList<>() здесь уже не null
+        if (unwrap(loop.getIterable()) instanceof NameExpr iterable) {
+            String name = iterable.getNameAsString();
+            learnSize(name, FlowValue.number(1, FlowValue.MAX).withReason("цикл перебирает элементы коллекции", loop),
+                    Set.of(name), state);
+        }
         return state;
     }
 
@@ -839,7 +911,28 @@ public final class FlowInterpreter {
         FlowValue value = variable.getInitializer().map(initializer -> evaluate(initializer, state)).orElse(typed);
         state.assign(variable.getNameAsString(), assigned(value, typed, variable));
         variable.getInitializer().ifPresent(initializer -> correlateFlag(variable.getNameAsString(), initializer, state));
+        variable.getInitializer().ifPresent(initializer -> correlateConditional(variable.getNameAsString(), initializer, state));
         variable.getInitializer().ifPresent(initializer -> learnCreated(variable.getNameAsString(), initializer, state));
+    }
+
+    // identity = fetches.isEmpty() ? null : new HashMap<>(): проверка fetches.isEmpty() ниже скажет, null ли identity
+    private void correlateConditional(String name, Expression initializer, FlowState state) {
+        Expression value = unwrap(initializer);
+        if (!(value instanceof ConditionalExpr conditional)
+                || !(unwrap(conditional.getCondition()) instanceof MethodCallExpr condition)) {
+            return;
+        }
+        boolean thenNull = unwrap(conditional.getThenExpr()).isNullLiteralExpr();
+        boolean elseNull = unwrap(conditional.getElseExpr()).isNullLiteralExpr();
+        FlowValue current = state.get(name);
+        if (thenNull == elseNull || current == null) {
+            return;
+        }
+        String text = condition.toString();
+        state.implyByCondition(text, thenNull, name,
+                current.withNullness(FlowValue.Nullness.NULL, "задано как null при условии '" + text + "'", conditional));
+        state.implyByCondition(text, !thenNull, name,
+                current.withNullness(FlowValue.Nullness.NOT_NULL, "значение выбрано по условию '" + text + "'", conditional));
     }
 
     // new ArrayList<>() пуст, Optional.empty() пуст, Optional.of(x) не пуст
@@ -1397,6 +1490,9 @@ public final class FlowInterpreter {
         }
 
         FlowValue returned = summary.returned();
+        if (returned.isNullish() && isAfterHasCheck(call)) {
+            return FlowValue.unknown();
+        }
         if (returned.isNullish()) {
             if (returned.origin() instanceof MethodDeclaration) {
                 return FlowValue.maybeNull("метод '" + method + "' помечен @Nullable", call);
@@ -1409,6 +1505,27 @@ public final class FlowInterpreter {
             return returned.isBounded() ? FlowValue.number(returned.min(), returned.max()) : FlowValue.anyNumber();
         }
         return returned.isNotNull() ? FlowValue.notNull("метод '" + method + "' не возвращает null", call) : FlowValue.unknown();
+    }
+
+    /**
+     * reader.peek() внутри while (reader.hasNext()): null у такого метода значит "элементов больше нет", а их
+     * наличие проверено тем же объектом
+     */
+    private boolean isAfterHasCheck(MethodCallExpr call) {
+        if (call.getScope().isEmpty()) {
+            return false;
+        }
+        String receiver = call.getScope().get().toString();
+        return Guards.isGuarded(call, check -> check.findAll(MethodCallExpr.class).stream()
+                .anyMatch(has -> has.getNameAsString().startsWith(HAS)
+                        && has.getScope().filter(scope -> scope.toString().equals(receiver)).isPresent()));
+    }
+
+    // column.length() у своей записи Column(Integer length) - обычное поле, которое бывает null, а не размер строки
+    private boolean isOtherSizeMethod(Expression scope) {
+        return LocalTypes.typeOf(scope)
+                .filter(type -> !SIZED_TYPES.contains(type) && !SIZED_SUFFIX.matcher(type).find())
+                .isPresent();
     }
 
     // Методы JDK и библиотек, поведение которых известно заранее
@@ -1432,7 +1549,8 @@ public final class FlowInterpreter {
         if (INDEX_SEARCH.contains(method) && call.getScope().isPresent()) {
             return FlowValue.number(-1, FlowValue.MAX).withReason(INDEX_SEARCH_REASON, call);
         }
-        if (SIZE_METHODS.contains(method) && arguments.isEmpty() && call.getScope().isPresent()) {
+        if (SIZE_METHODS.contains(method) && arguments.isEmpty() && call.getScope().isPresent()
+                && !isOtherSizeMethod(call.getScope().get())) {
             return FlowValue.number(0, FlowValue.MAX);
         }
         if (INDEX_CONSUMERS.contains(method) && !arguments.isEmpty() && call.getScope().isPresent()) {

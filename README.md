@@ -1188,6 +1188,66 @@ Java-файлы из каталогов `build`, `target` и `out` читают�
 | jr:201, Open Session In View | Приложение без JPA: `spring.datasource.*` есть и у `JdbcTemplate` |
 | jr:204, jr:320, секреты в настройках и CI | Число или срок под именем token (`refill-tokens: 60`); `persist-credentials: false`; имя переменной окружения (`server-password: MAVEN_REPO_API_KEY`) |
 | jr:302, свойство не читается | Свойства Jmix (`jmix.*`, `main.liquibase.*`) и EclipseLink: их читает фреймворк |
+| jr:7, изменяемое поле бина | Запись при запуске: `@EventListener(ApplicationReadyEvent.class)`, `CommandLineRunner.run`, `setApplicationContext` у `*Aware`. Ленивая инициализация `if (x == null) x = ...` — о ней сообщает jr:175 |
+| jr:2, вызов `@Transactional`-метода изнутри | Закрытый метод, который вызывают только открытые методы класса с `@Transactional`: транзакция уже открыта |
+| jr:14, сравнение ссылок | `flag == Boolean.TRUE`: упакованный `Boolean` — всегда один из двух объектов кэша |
+| jr:59, `@Transactional` на static | `@Transactional` стоит на классе, а метод статический: такой метод и не задуман транзакционным |
+| jr:151, путь из данных запроса | `SchemaType.resolve(type, name)` и свой метод `resolve(...)`: стоком считается только `resolve` у пути |
+| jr:173, коллекция в бине | Бин `@Scope("prototype")`; объект, который заполняет фабричный метод до того, как его кто-то увидит; метод, вызванный при запуске через `this::initForBank` |
+| jr:207, SSRF | `new URI(link);` без использования результата — проверка формата, а не обращение по адресу |
+| jr:95, заголовок авторизации в логе | `authorizationRequest` (`OAuth2AuthorizationRequest`), `authorizationUri` и подобные — не значение заголовка |
+| jr:90, `UPDATE` без `WHERE` в коде | Миграция данных на Java: `CustomTaskChange` в Liquibase, `JavaMigration` во Flyway |
+| jr:19, секрет в коде | Значение без букв и цифр: `TOKEN = "."` — разделитель |
+| jr:331, jr:332 и другие проверки по миграциям | Колонка с именем-ключевым словом (`KEY VARCHAR(255)`); команда без `;` перед следующим `--changeset`; `addColumn` в файле, путь которого идет раньше файла с `createTable`, — изменение откладывается до создания таблицы |
+| jr:290, разрушительная миграция | `DROP TABLE IF EXISTS t` и `CREATE TABLE t` в одном файле — скрипт пересоздает схему (`schema.sql`, дамп тестовой базы); SQL из каталогов `samples`, `fixtures`, `testdata` |
+| jr:293, изменение без `WHERE` | `<update>` колонки, добавленной выше в том же changeSet; `DELETE FROM t` перед `INSERT INTO t` в том же файле — справочник загружается заново |
+| jr:303, сообщения разных языков | Перевод без ключа, если есть основной `messages.properties`: Spring возьмет текст оттуда. Ключи, которых нет в основном файле, — одна находка уровня MINOR на основной файл |
+| jr:63, запрос к БД в цикле | Вызов, после которого цикл кончается (`return`, `break`); `while (true)` с паузой — ожидание, а не перебор; код, который выполняется при запуске |
+| jr:105, потерянная причина | Проброс внутри ветки, которая уже разобрала исключение (`if (e.getStatus() == 400)`); `CloneNotSupportedException` и `UnsupportedEncodingException` — невозможные случаи |
+| jr:23, `catch (Exception)` | Освобождение ресурсов при остановке: `destroy()`, `close()`, `@PreDestroy` с `shutdownNow()`, `close()` внутри `try` |
+| jr:324, возможный null | `reader.peek()` внутри `while (reader.hasNext())`; `x = cond ? null : value`, а ниже `if (cond) continue;` |
+| jr:220, значение из `Map.get` | Ключ из `map.keySet()` через переменную; проверка `if (lock != this) throw` |
+| jr:49, `toMap` без слияния | Ключ — имя константы перечисления: `Arrays.stream(Type.values())`, `Enum::name` |
+| jr:71, `contains` у списка в цикле | Короткий список из литералов: `List.of("<", ">", "=")` |
+| jr:24, `Optional.get()` без проверки | `get()` внутри `try`, который ловит `NoSuchElementException` или шире |
+| jr:276, ограничения без `@Validated` | Параметр, который метод и так проверяет: `Assert.notNull(id, ...)`, `Objects.requireNonNull(id)` |
+| jr:22, пустой `catch` | `NumberFormatException`, `DateTimeParseException`: неразобранное значение пропускают и оставляют значение по умолчанию |
+| jr:175, ленивая инициализация | Значение неизменяемого типа (`String`, `Boolean`, числа): два потока вычислят одно и то же |
+| jr:27, сравнение `double` | Сравнение с нулем (`x == 0` перед делением): ноль представим точно |
+| jr:326, условие всегда истинно | `column.length() != null` у своей записи `Column(Integer length)`: размером строки или коллекции считается только `length()` и `size()` у строк, коллекций и массивов |
+| jr:114, разбор числа без обработки | Разбор числа из настроек при запуске (`@Bean`, `@PostConstruct`): неверное значение — ошибка конфигурации, и упасть сразу правильно |
+| jr:223, индекс без проверки длины | Строка из `UUID.randomUUID()`: ее длина известна заранее |
+| jr:398, `catch` возвращает пустое значение | `InvalidPathException`, `PatternSyntaxException`: «попробовать разобрать» имя пути или шаблон |
+| jr:226, `@PathVariable` не из адреса | Имя задано константой: `@PathVariable(PROFILE_ID)` — берется ее значение; константу из другого класса по файлу не узнать, такой параметр не проверяется |
+| jr:333, свойство в имени метода репозитория | Свой интерфейс `Dao<T>` с методом `findByFilter`: запрос по имени Spring строит только у наследников `Repository` |
+| jr:338, повтор набора Liquibase | Наборы с одним `id` для разных баз (`context="mysql"` и `context="postgresql"`, `dbms`, `labels`): выполнится один из них |
+| jr:7, изменяемое поле бина | Сеттер от Lombok, который вызывают только при запуске (из `@PostConstruct` другого бина) либо не вызывают вовсе; сброс поля в `@PreDestroy` и `destroy()`; бин `@StepScope`, `@JobScope`; метод с аннотацией проекта, которая сама помечена `@EventListener(ApplicationReadyEvent.class)` или `@PostConstruct` (`@AfterStartUp`) |
+| jr:331, jr:290 и другие проверки по миграциям | SQL из каталогов дампов и старых схем: `*backup*`, `*dump*`, `*sample*`, `*archive*`, `old-*` — их `CREATE TABLE` описывает не текущую схему |
+| jr:291, `NOT NULL` без значения по умолчанию | Таблицу создает этот же файл, а колонку добавляет набор для своей базы (`context`, `dbms`) — это одна доработка. В общем журнале без условий находка остается |
+| jr:371, jr:398 и другие правила о `catch` | Обработчик, который бросает исключение на каждом пути: `handleDataIntegrityIssues(command, dve)` с `throw` в конце — это проброс |
+| jr:324, возможный null | Внутри `for (x : list)` список не пуст: `result = list.isEmpty() ? null : new ArrayList<>()` в цикле не null. Метод, который возвращает null только на пустом аргументе (`if (json == null \|\| json.isEmpty()) return null;`, `s != null ? read(s) : null`), передает пустоту аргумента дальше: о его результате ничего не утверждается |
+| jr:301 и другие проверки настроек | Файлы, которые проект называет сам: `--spring.config.name=thingsboard` (в том числе склейкой констант) и `@PropertySource("classpath:recaptcha.properties")` |
+| jr:301, свойства нет в настройках | Бин из пакета, который не сканирует ни одно приложение проекта (`@SpringBootApplication`, `@ComponentScan`) и не подключен через `@Import`; системные свойства JVM: `java.io.tmpdir`, `user.home` |
+| jr:55, `@Lazy` на зависимости | Цикла нет: зависимость с `@Lazy` не ведет обратно к бину — это отложенное создание, а не обход цикла. В тексте находки — сам цикл |
+| jr:105, потерянная причина | `IllegalArgumentException` вокруг одного `Type.valueOf(param)` или `UUID.fromString(id)`; `TimeoutException` |
+| jr:154, секрет в `toString()` | Поле примитивного или упакованного типа: `boolean hasSecrets`, `Boolean saveCredentials` |
+| jr:117, `case` без `break` | Ветка кончается `if/else` или `try/catch`, все пути которых делают `return` или `throw` |
+| jr:147, цикл бинов | При `spring.main.allow-circular-references=true` приложение стартует: находка уровня MINOR (о самой настройке говорит jr:395) |
+| jr:155, секрет в логе | Константа: `DeviceCredentialsType.ACCESS_TOKEN` — вид секрета, а не его значение |
+| jr:21, изменение коллекции при обходе | Конкурентная коллекция (`ConcurrentHashMap`, `CopyOnWriteArrayList`); изменение внутри обратного вызова, который выполнится потом: `createCallback(() -> toRead.remove(id))` |
+| jr:268, `@Modifying` | Запрос с `RETURNING` (`OUTPUT` в SQL Server) возвращает строки и выполняется как выборка; удаление по имени метода (`deleteByName`) без `@Query` может возвращать что угодно |
+| jr:23, `catch (Exception)` | Исключение отдано обработчику сбоя: `callback.onFailure(e)`, `ctx.tellFailure(msg, e)`, `future.completeExceptionally(e)`; закрытие ресурса со сбоем в логе: `state.close()` |
+| jr:47, `submit` без `Future` | Задача сама ловит любое исключение: `submit(() -> { try { ... } catch (Exception e) { log.error(..., e); } })` |
+| jr:294, нестабильная версия | `SNAPSHOT` соседнего модуля того же проекта: `org.thingsboard:ui-ngx:${project.version}` |
+| jr:188, `{}` и аргументы | Исключение библиотечного типа последним аргументом: `NonTransientDataAccessException dve`, `findMostSpecificException(e)`, `e.getCause()` |
+| jr:169, деньги в `double` | Класс с `@Schema` внутри `*Swagger`: он только описывает JSON для OpenAPI |
+| jr:221, `Boolean` в условии | Перед условием переменной присвоено значение, которое не бывает null: `active = isActive(ts)` с результатом `boolean`, `flag = a > b` |
+| jr:141, тест без проверки | Проверка во вспомогательном методе своего класса или родителя, до трех вызовов вглубь: `processTest(config)` → `verify(...)`; тест, задуманный как «не падает»: `getMenuDoesNotThrow` |
+| jr:187, исключение в логе без стека | Исключение целиком отдано своему методу: `logAndPersist("onStop", e)` |
+| jr:63 и другие правила о репозиториях | Тип объявлен в коде и импортирован из библиотеки, а не из пакетов проекта: `ClassOrInterfaceDeclaration repository` — имя переменной ничего не говорит |
+| jr:66, `get(0)` без проверки | Постоянный список с элементами: `static final List<String> SCOPES = List.of("singleton", "application")` |
+| jr:284, `indexOf(...) > 0` | Односимвольный разделитель: `url.indexOf('?') > 0`, `email.indexOf("@") > 0` — перед ним должно что-то стоять |
+| jr:182, геттер отдает коллекцию | Поле заполняется только неизменяемой копией: `this.columns = List.copyOf(columns)` |
 
 ### Знания о проекте
 

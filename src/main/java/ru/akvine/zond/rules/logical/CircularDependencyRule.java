@@ -4,9 +4,11 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
+import ru.akvine.zond.rules.ContextRule;
 import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.SpringBeans;
@@ -23,8 +25,11 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 
 @Component
-public class CircularDependencyRule extends AbstractRule implements ProjectRule {
+public class CircularDependencyRule extends AbstractRule implements ProjectRule, ContextRule {
     private static final String ARROW = " -> ";
+    // Циклы разрешены настройкой: приложение стартует, о самой настройке говорит jr:395
+    private static final String ALLOW_CIRCULAR_REFERENCES = "spring.main.allow-circular-references";
+    private static final String TRUE = "true";
 
     /**
      * Бин и файл, в котором он объявлен
@@ -43,7 +48,25 @@ public class CircularDependencyRule extends AbstractRule implements ProjectRule 
     }
 
     @Override
+    public List<Violation> check(SourceFile sourceFile) {
+        return checkProject(List.of(sourceFile));
+    }
+
+    @Override
+    public List<Violation> checkContext(ScanContext context) {
+        boolean allowed = context.configFiles().stream()
+                .filter(file -> !file.isNonProduction())
+                .flatMap(file -> file.find(ALLOW_CIRCULAR_REFERENCES).stream())
+                .anyMatch(property -> TRUE.equalsIgnoreCase(property.value().replace("\"", "").trim()));
+        return find(context.sources(), allowed);
+    }
+
+    @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
+        return find(sourceFiles, false);
+    }
+
+    private List<Violation> find(List<SourceFile> sourceFiles, boolean allowed) {
         // Сортировка по имени делает обход и отчет предсказуемыми
         Map<String, Bean> beans = new TreeMap<>();
         Map<String, Set<String>> implementations = new HashMap<>();
@@ -70,8 +93,13 @@ public class CircularDependencyRule extends AbstractRule implements ProjectRule 
             }
 
             Bean bean = beans.get(start);
-            violations.add(violation(bean.sourceFile(), bean.type(),
-                    "Циклическая зависимость бинов: " + String.join(ARROW, cycle) + ARROW + start
+            String path = String.join(ARROW, cycle) + ARROW + start;
+            violations.add(allowed
+                    ? violation(bean.sourceFile(), bean.type(), "Циклическая зависимость бинов: " + path
+                            + ": приложение стартует только благодаря " + ALLOW_CIRCULAR_REFERENCES + "=true, а бин"
+                            + " из цикла получает зависимость, которая еще не готова; разорвите цикл, вынеся общую"
+                            + " логику в отдельный бин").withLevel(ErrorLevel.MINOR)
+                    : violation(bean.sourceFile(), bean.type(), "Циклическая зависимость бинов: " + path
                             + ": Spring не сможет создать их в правильном порядке, с версии Boot 2.6 приложение"
                             + " не стартует; разорвите цикл, вынеся общую логику в отдельный бин"));
         }

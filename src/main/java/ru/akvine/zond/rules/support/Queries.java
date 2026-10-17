@@ -5,6 +5,7 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MemberValuePair;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import lombok.experimental.UtilityClass;
 
 import java.util.Optional;
@@ -19,6 +20,9 @@ public class Queries {
     private static final String NATIVE_QUERY = "nativeQuery";
     private static final String TRUE = "true";
     private static final String REPOSITORY_SUFFIX = "Repository";
+    private static final String REPOSITORY_DEFINITION = "RepositoryDefinition";
+    // Глубина цепочки своих базовых интерфейсов репозитория
+    private static final int MAX_DEPTH = 5;
 
     public Optional<AnnotationExpr> find(MethodDeclaration method) {
         return Annotations.find(method, QUERY);
@@ -54,5 +58,31 @@ public class Queries {
     public boolean isRepositoryInterface(ClassOrInterfaceDeclaration type) {
         return type.isInterface() && (Repositories.isRepository(type.getNameAsString())
                 || type.getExtendedTypes().stream().anyMatch(parent -> parent.getNameAsString().endsWith(REPOSITORY_SUFFIX)));
+    }
+
+    /**
+     * @return true для репозитория Spring Data: интерфейс наследует Repository библиотеки (JpaRepository,
+     * CrudRepository) прямо либо через свой базовый интерфейс. Свой {@code Dao<T>} с методом findByFilter -
+     * обычный интерфейс: запрос по имени его метода Spring не строит
+     */
+    public boolean isSpringDataRepository(ClassOrInterfaceDeclaration type, ProjectClasses classes) {
+        return isSpringDataRepository(type, classes, MAX_DEPTH);
+    }
+
+    private boolean isSpringDataRepository(ClassOrInterfaceDeclaration type, ProjectClasses classes, int depth) {
+        if (!type.isInterface()) {
+            return false;
+        }
+        if (Annotations.has(type, REPOSITORY_DEFINITION)) {
+            return true;
+        }
+        for (ClassOrInterfaceType parent : type.getExtendedTypes()) {
+            Optional<ClassOrInterfaceDeclaration> own = classes.resolve(parent);
+            if (own.isEmpty() ? parent.getNameAsString().endsWith(REPOSITORY_SUFFIX)
+                    : depth > 0 && isSpringDataRepository(own.get(), classes, depth - 1)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

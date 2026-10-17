@@ -42,18 +42,20 @@ public class LiquibaseDuplicateChangeSetRule extends AbstractContextRule {
                 continue;
             }
             // Liquibase различает наборы по id, автору и файлу: в разных файлах повтор допустим, в одном - нет
-            Map<String, Integer> seen = new HashMap<>();
+            Map<String, List<Liquibase.ChangeSet>> seen = new HashMap<>();
             for (Liquibase.ChangeSet changeSet : Liquibase.changeSets(file)) {
                 if (changeSet.id().isBlank()) {
                     continue;
                 }
-                Integer first = seen.putIfAbsent(changeSet.id() + "\n" + changeSet.author(), changeSet.line());
-                if (first != null) {
-                    violations.add(violation(file.path(), changeSet.line(),
-                            "Набор изменений с id '" + changeSet.id() + "' и автором '" + changeSet.author()
-                                    + "' уже объявлен в этом файле на строке " + first + ": Liquibase остановится"
-                                    + " с ошибкой проверки журнала, и приложение не запустится; дайте набору свой id"));
-                }
+                List<Liquibase.ChangeSet> same = seen.computeIfAbsent(
+                        changeSet.id() + "\n" + changeSet.author(), key -> new ArrayList<>());
+                same.stream().filter(previous -> canRunTogether(previous, changeSet)).findFirst().ifPresent(first ->
+                        violations.add(violation(file.path(), changeSet.line(),
+                                "Набор изменений с id '" + changeSet.id() + "' и автором '" + changeSet.author()
+                                        + "' уже объявлен в этом файле на строке " + first.line() + ": Liquibase"
+                                        + " остановится с ошибкой проверки журнала, и приложение не запустится;"
+                                        + " дайте набору свой id")));
+                same.add(changeSet);
             }
         }
         return violations;
@@ -67,5 +69,11 @@ public class LiquibaseDuplicateChangeSetRule extends AbstractContextRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.LOGICAL;
+    }
+
+    // Один набор для context="mysql", другой для context="postgresql": на одной базе выполнится только один из них,
+    // и Liquibase проверяет повторы только среди наборов этого запуска
+    private boolean canRunTogether(Liquibase.ChangeSet first, Liquibase.ChangeSet second) {
+        return first.condition().isEmpty() || second.condition().isEmpty() || first.condition().equals(second.condition());
     }
 }

@@ -192,6 +192,16 @@ class LombokTest {
                     private final String name = "counter";
                     private static int total;
                 }
+
+                @RestController
+                class CounterController {
+                    private final Counter counter;
+
+                    @PostMapping("/reset")
+                    void reset() {
+                        counter.setCount(0);
+                    }
+                }
                 """)).singleElement().satisfies(violation -> {
             assertThat(violation.line()).isEqualTo(4);
             assertThat(violation.message()).contains("'setCount' (сеттер от Lombok)");

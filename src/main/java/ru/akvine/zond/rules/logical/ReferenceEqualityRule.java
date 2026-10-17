@@ -20,6 +20,7 @@ import java.util.Set;
 @Component
 public class ReferenceEqualityRule extends AbstractRule {
     private static final String STRING = "String";
+    private static final Set<String> BOOLEAN_CONSTANTS = Set.of("Boolean.TRUE", "Boolean.FALSE");
     private static final Set<String> BOXED_TYPES =
             Set.of("Integer", "Long", "Short", "Byte", "Character", "Double", "Float", "Boolean");
 
@@ -57,7 +58,8 @@ public class ReferenceEqualityRule extends AbstractRule {
                         "Сравнение строк через " + operator + " в '" + comparison + "': сравниваются ссылки,"
                                 + " а не содержимое; используйте equals"));
             } else if (leftType.filter(BOXED_TYPES::contains).isPresent()
-                    && rightType.filter(BOXED_TYPES::contains).isPresent()) {
+                    && rightType.filter(BOXED_TYPES::contains).isPresent()
+                    && !isBooleanConstant(left) && !isBooleanConstant(right)) {
                 // Обертка против примитива распаковывается и сравнивается по значению, поэтому нужны обе обертки
                 violations.add(violation(sourceFile, comparison,
                         "Сравнение оберток " + leftType.get() + " через " + operator + " в '" + comparison
@@ -66,6 +68,11 @@ public class ReferenceEqualityRule extends AbstractRule {
             }
         }
         return violations;
+    }
+
+    // flag == Boolean.TRUE: упакованный Boolean всегда один из двух объектов кэша, сравнение ссылок здесь верно
+    private boolean isBooleanConstant(Expression expression) {
+        return BOOLEAN_CONSTANTS.contains(expression.toString());
     }
 
     @Override

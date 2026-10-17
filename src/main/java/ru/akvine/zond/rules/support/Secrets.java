@@ -100,6 +100,10 @@ public class Secrets {
         if (text.isBlank() || PLACEHOLDER_VALUE.matcher(text).matches() || isStub(text)) {
             return false;
         }
+        // TOKEN = ".", SEPARATOR = "::" - разделитель: в секрете есть буквы или цифры
+        if (text.chars().noneMatch(Character::isLetterOrDigit)) {
+            return false;
+        }
         if (AUTHORIZATION_VALUE.matcher(text).matches()) {
             return true;
         }

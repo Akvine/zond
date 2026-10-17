@@ -13,6 +13,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Mappings;
 import ru.akvine.zond.rules.support.StringLiterals;
 
@@ -61,7 +62,7 @@ public class PathVariableMismatchRule extends AbstractRule {
             classMapping.ifPresent(annotation -> collectVariables(annotation, variables));
             for (Parameter parameter : method.getParameters()) {
                 Annotations.find(parameter, PATH_VARIABLE)
-                        .map(annotation -> variableName(annotation, parameter))
+                        .flatMap(annotation -> variableName(annotation, parameter))
                         .filter(name -> !variables.contains(name))
                         .ifPresent(name -> violations.add(violation(sourceFile, parameter,
                                 "@PathVariable '" + name + "' нет в адресе обработчика '" + method.getNameAsString()
@@ -91,8 +92,9 @@ public class PathVariableMismatchRule extends AbstractRule {
         }
     }
 
-    // @PathVariable("id") Long userId -> id; @PathVariable Long id -> id
-    private String variableName(AnnotationExpr annotation, Parameter parameter) {
+    // @PathVariable("id") Long userId -> id; @PathVariable Long id -> id; @PathVariable(PROFILE_ID) - значение константы.
+    // Константу из другого класса (родителя, интерфейса) по файлу не узнать: такой параметр не проверяется
+    private Optional<String> variableName(AnnotationExpr annotation, Parameter parameter) {
         Optional<Expression> explicit = Optional.empty();
         if (annotation.isSingleMemberAnnotationExpr()) {
             explicit = Optional.of(annotation.asSingleMemberAnnotationExpr().getMemberValue());
@@ -102,6 +104,10 @@ public class PathVariableMismatchRule extends AbstractRule {
                     .map(pair -> pair.getValue())
                     .findFirst();
         }
-        return explicit.flatMap(StringLiterals::textOf).orElse(parameter.getNameAsString());
+        if (explicit.isEmpty()) {
+            return Optional.of(parameter.getNameAsString());
+        }
+        Expression value = explicit.get();
+        return StringLiterals.textOf(value).or(() -> LocalTypes.findInitializer(value).flatMap(StringLiterals::textOf));
     }
 }

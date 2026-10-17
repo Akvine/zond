@@ -6,6 +6,7 @@ import ru.akvine.zond.models.TextFile;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 
 /**
  * Разбор миграции на отдельные команды SQL. Комментарии отбрасываются, точка с запятой внутри строк
@@ -17,6 +18,9 @@ public class SqlStatements {
     private static final String BLOCK_COMMENT_START = "/*";
     private static final String BLOCK_COMMENT_END = "*/";
     private static final String DOLLAR_QUOTE = "$$";
+    // --changeset author:id в SQL-журнале Liquibase и GO в скриптах SQL Server
+    private static final Pattern BATCH_SEPARATOR =
+            Pattern.compile("^\\s*(--\\s*changeset\\b.*|go\\s*)$", Pattern.CASE_INSENSITIVE);
 
     /**
      * @param text команда без комментариев, пробелы и переводы строк сведены к одному пробелу
@@ -45,6 +49,11 @@ public class SqlStatements {
 
         for (int lineIndex = 0; lineIndex < lines.size(); lineIndex++) {
             String line = lines.get(lineIndex);
+            // В формате Liquibase каждый changeset - отдельный пакет: команда перед ним могла остаться без ';'
+            if (!inBlockComment && !inString && !inDollarQuote && BATCH_SEPARATOR.matcher(line).matches()) {
+                add(statements, current, startLine);
+                continue;
+            }
             for (int index = 0; index < line.length(); index++) {
                 if (inBlockComment) {
                     if (line.startsWith(BLOCK_COMMENT_END, index)) {

@@ -233,10 +233,9 @@ class ContextRulesTest {
     @Test
     void messagesAndSettingsFiles() {
         List<Violation> bundle = new MessageBundleMismatchRule().checkContext(context);
-        assertThat(bundle).extracting(this::place)
-                .containsExactlyInAnyOrder("messages_ru.properties:1", "messages_ru.properties:2");
+        // only.default в переводе нет, но Spring возьмет его из основного messages.properties
+        assertThat(bundle).extracting(this::place).containsExactly("messages_ru.properties:2");
         assertThat(bundle).extracting(Violation::message)
-                .anyMatch(message -> message.contains("only.default"))
                 .anyMatch(message -> message.contains("[{0}]") && message.contains("[{0}, {1}]"));
 
         assertThat(check(new DuplicatePropertyKeyRule()))

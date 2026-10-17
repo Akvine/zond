@@ -25,7 +25,10 @@ public class ModifyingQueryMisuseRule extends AbstractRule {
             Pattern.compile("^\\s*(update|delete|insert)\\b.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     // Изменяющий запрос возвращает число затронутых строк либо ничего
-    private static final Set<String> ALLOWED_RESULT_TYPES = Set.of("void", "int", "Integer", "long", "Long");
+    private static final Set<String> ALLOWED_RESULT_TYPES = Set.of("void", "Void", "int", "Integer", "long", "Long");
+    // DELETE ... RETURNING id: запрос возвращает строки, как выборка, и выполняется как выборка
+    private static final Pattern RETURNS_ROWS =
+            Pattern.compile(".*\\b(returning\\b|output\\s+(inserted|deleted)\\.).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     @Override
     public String code() {
@@ -44,17 +47,22 @@ public class ModifyingQueryMisuseRule extends AbstractRule {
             Optional<String> query = Queries.find(method).flatMap(Queries::text);
             boolean changes = query.filter(text -> CHANGING_QUERY.matcher(text).matches()).isPresent();
             boolean modifying = Annotations.has(method, MODIFYING);
+            boolean returnsRows = query.filter(text -> RETURNS_ROWS.matcher(text).matches()).isPresent();
             String name = method.getNameAsString();
+            if (returnsRows) {
+                continue;
+            }
 
             if (changes && !modifying) {
                 violations.add(violation(sourceFile, method,
                         "Запрос метода '" + name + "' меняет данные, а @Modifying на нем нет: Spring Data выполнит"
                                 + " его как выборку и упадет с ошибкой; добавьте @Modifying"));
-            } else if (modifying && !ALLOWED_RESULT_TYPES.contains(LocalTypes.typeName(method.getType()))) {
+            } else if (modifying && query.isPresent() && !ALLOWED_RESULT_TYPES.contains(LocalTypes.typeName(method.getType()))) {
+                // Без @Query (deleteByStatus) Spring строит удаление сам, и тип результата может быть любым
                 violations.add(violation(sourceFile, method,
                         "@Modifying-метод '" + name + "' возвращает " + method.getType() + ": изменяющий запрос"
-                                + " может вернуть только число затронутых строк (int) либо void - с другим типом"
-                                + " репозиторий не создастся"));
+                                + " возвращает только число затронутых строк (int, long) либо ничего - с другим типом"
+                                + " вызов метода упадет"));
             }
         }
         return violations;

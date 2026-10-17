@@ -31,8 +31,11 @@ public class LogPlaceholderMismatchRule extends AbstractRule {
     // Исключение в конце списка аргументов узнаем по типу, а если тип определить не удалось - по имени
     private static final Set<String> THROWABLE = Set.of("Throwable");
 
-    private static final Pattern EXCEPTION_NAME =
-            Pattern.compile("^(e|ex|exc|t|th|cause|error|throwable)$|.*(exception|error|throwable)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern EXCEPTION_NAME = Pattern.compile(
+            "^(e|ex|exc|t|th|thr|cause|error|failure|throwable)$|.*(exception|error|throwable)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern EXCEPTION_TYPE = Pattern.compile(".*(Exception|Error|Throwable)$");
+    private static final Pattern EXCEPTION_METHOD =
+            Pattern.compile(".*(Exception|Throwable)$|getCause|getRootCause|getMostSpecificCause");
 
     @Override
     public String code() {
@@ -105,6 +108,14 @@ public class LogPlaceholderMismatchRule extends AbstractRule {
         Optional<Boolean> byType = Types.isKindOf(argument, THROWABLE);
         if (byType.isPresent()) {
             return byType.get();
+        }
+        // NonTransientDataAccessException dve: класс библиотеки решателю типов неизвестен, но объявлен в коде
+        if (LocalTypes.typeOf(argument).filter(type -> EXCEPTION_TYPE.matcher(type).matches()).isPresent()) {
+            return true;
+        }
+        // ErrorHandler.findMostSpecificException(e), result.getException(), e.getCause()
+        if (argument.isMethodCallExpr()) {
+            return EXCEPTION_METHOD.matcher(argument.asMethodCallExpr().getNameAsString()).matches();
         }
         if (!argument.isNameExpr()) {
             return false;

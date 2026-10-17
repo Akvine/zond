@@ -336,6 +336,16 @@ public final class FlowState {
         return value.isConstant(0) ? Boolean.FALSE : null;
     }
 
+    /**
+     * x = cond ? null : value: когда станет известно, истинно ли условие (выражение с булевым результатом),
+     * станет известно и значение x
+     *
+     * @param truth при каком значении условия x получает value
+     */
+    public void implyByCondition(String condition, boolean truth, String target, FlowValue value) {
+        imply(new Implication(FACT + condition, truth, target, value));
+    }
+
     private void imply(Implication implication) {
         // Прежнее следствие для той же пары и того же случая заменяется новым
         implications.removeIf(known -> known.variable().equals(implication.variable())

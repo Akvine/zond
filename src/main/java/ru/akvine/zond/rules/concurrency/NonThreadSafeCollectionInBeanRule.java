@@ -7,6 +7,7 @@ import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.InitializerDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.SynchronizedStmt;
 import org.springframework.stereotype.Component;
@@ -17,11 +18,10 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.BeanScopes;
 import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
-import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
-import ru.akvine.zond.rules.support.SpringBeans;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -54,7 +54,8 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         for (ClassOrInterfaceDeclaration bean : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
-            if (!SpringBeans.isBean(bean)) {
+            // @Scope("prototype"), @StepScope: у каждого потребителя свой экземпляр
+            if (!BeanScopes.isSingletonBean(bean)) {
                 continue;
             }
             for (FieldDeclaration field : bean.getFields()) {
@@ -106,9 +107,7 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
             }
             boolean writes = method.findAll(MethodCallExpr.class).stream()
                     .filter(call -> MUTATING_METHODS.contains(call.getNameAsString()))
-                    .filter(call -> call.getScope()
-                            .filter(scope -> MethodCalls.receiverName(scope).equals(collection))
-                            .isPresent())
+                    .filter(call -> call.getScope().filter(scope -> isOwnCollection(scope, collection)).isPresent())
                     .anyMatch(call -> !isInsideSynchronized(call, method));
             if (writes) {
                 writers.add("'" + method.getNameAsString() + "'");
@@ -145,6 +144,18 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
             current = current.getParentNode().orElse(null);
         }
         return false;
+    }
+
+    // common.put(...) или this.common.put(...), а не settings.common.put(...) у только что созданного объекта
+    private boolean isOwnCollection(Expression scope, String collection) {
+        if (scope.isFieldAccessExpr()) {
+            return scope.asFieldAccessExpr().getScope().isThisExpr()
+                    && scope.asFieldAccessExpr().getNameAsString().equals(collection);
+        }
+        return scope.isNameExpr() && scope.asNameExpr().getNameAsString().equals(collection)
+                && LocalTypes.findDeclaration(scope).filter(declaration -> declaration instanceof VariableDeclarator
+                && declaration.getParentNode().filter(parent -> parent instanceof FieldDeclaration).isPresent())
+                .isPresent();
     }
 
     private boolean isInsideSynchronized(Node node, MethodDeclaration method) {

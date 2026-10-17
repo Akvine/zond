@@ -12,6 +12,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.TestClasses;
@@ -56,7 +57,8 @@ public class UnhandledNumberFormatRule extends AbstractRule {
 
             // Литерал ("42") разобрать нельзя неправильно; тесты не трогаем
             boolean parsesLiteral = !call.getArguments().isEmpty() && call.getArgument(0).isStringLiteralExpr();
-            if (!parsesLiteral && !isHandled(call) && !TestClasses.isInside(call)) {
+            // Число из настроек при запуске: неверное значение - ошибка конфигурации, и упасть сразу правильно
+            if (!parsesLiteral && !isHandled(call) && !TestClasses.isInside(call) && !CodeContexts.isStartup(call)) {
                 violations.add(violation(sourceFile, call,
                         "'" + call + "' без обработки NumberFormatException: на нечисловой строке метод упадет"
                                 + " с исключением, которое вызывающий код не ждет; оберните разбор в try / catch"

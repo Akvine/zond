@@ -15,10 +15,13 @@ import ru.akvine.zond.rules.support.Nodes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class FloatingPointEqualityRule extends AbstractRule {
     private static final Set<String> FLOATING_TYPES = Set.of("double", "float", "Double", "Float");
+    // 0, 0.0, 0d, 0.0f, -0.0
+    private static final Pattern ZERO = Pattern.compile("^-?0(\\.0*)?[dDfF]?$");
 
     @Override
     public String code() {
@@ -43,7 +46,9 @@ public class FloatingPointEqualityRule extends AbstractRule {
             Expression right = Nodes.unwrap(comparison.getRight());
 
             // x != x - принятый способ проверки на NaN; одинаковые операнды ловит отдельное правило
-            if (left.isNullLiteralExpr() || right.isNullLiteralExpr() || left.equals(right)) {
+            // x == 0 - проверка перед делением либо "значение не задано": ноль представим точно
+            if (left.isNullLiteralExpr() || right.isNullLiteralExpr() || left.equals(right)
+                    || isZero(left) || isZero(right)) {
                 continue;
             }
 
@@ -69,5 +74,9 @@ public class FloatingPointEqualityRule extends AbstractRule {
 
     private boolean isFloating(Expression expression) {
         return LocalTypes.typeOf(expression).filter(FLOATING_TYPES::contains).isPresent();
+    }
+
+    private boolean isZero(Expression expression) {
+        return ZERO.matcher(expression.toString()).matches();
     }
 }

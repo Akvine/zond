@@ -63,7 +63,10 @@ public class SecretInToStringRule extends AbstractRule implements ProjectRule {
                     boolean isPrinted = printed.contains(name) || (generated && !excluded && !field.isStatic());
                     // Поле, в которое кладут только хеш или шифртекст, в toString() секрет не раскроет
                     boolean isProtected = properties.isProtected(Optional.of(type.getNameAsString()), name);
-                    if (isPrinted && Secrets.isSecretName(name) && !isProtected) {
+                    // boolean hasSecrets, int passwordLength - флаг или число, а не сам секрет
+                    boolean isFlag = variable.getType().isPrimitiveType()
+                            || variable.getType().isClassOrInterfaceType() && variable.getType().asClassOrInterfaceType().isBoxedType();
+                    if (isPrinted && Secrets.isSecretName(name) && !isProtected && !isFlag) {
                         violations.add(violation(sourceFile, variable,
                                 "Секретное поле '" + name + "' попадает в toString() класса '"
                                         + type.getNameAsString() + "': первая же запись объекта в лог или в текст"

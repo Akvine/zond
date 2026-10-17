@@ -53,7 +53,9 @@ public class TransactionalOnFinalRule extends AbstractRule {
             }
 
             for (MethodDeclaration method : transactional) {
-                if (method.isFinal() || method.isStatic()) {
+                // @Transactional на классе к static-методу не относится: такой метод и не задуман транзакционным
+                boolean staticByClass = method.isStatic() && TransactionalAnnotations.find(method).isEmpty();
+                if ((method.isFinal() || method.isStatic()) && !staticByClass) {
                     violations.add(violation(sourceFile, method,
                             "@Transactional на " + (method.isStatic() ? "static" : "final") + " методе '"
                                     + method.getNameAsString() + "': прокси не может переопределить такой метод,"

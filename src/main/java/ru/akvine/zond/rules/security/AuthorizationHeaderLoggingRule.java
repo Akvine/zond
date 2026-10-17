@@ -23,6 +23,9 @@ public class AuthorizationHeaderLoggingRule extends AbstractRule {
     // request.getHeader("Authorization"), HttpHeaders.AUTHORIZATION, authHeader, bearerToken
     private static final Pattern AUTHORIZATION =
             Pattern.compile(".*(authorization|authheader|bearer).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    // authorizationRequest (OAuth2AuthorizationRequest), authorizationUri, authorizationType: не значение заголовка
+    private static final Pattern NOT_HEADER = Pattern.compile(
+            ".*(Request|Response|Uri|Url|Endpoint|Type|Status|Enabled|Config|Properties|Service|Manager|Filter)\\W*$");
 
     @Override
     public String code() {
@@ -72,6 +75,7 @@ public class AuthorizationHeaderLoggingRule extends AbstractRule {
         // В конкатенации "Authorization: " + value литерал не считается, считается то, что к нему приклеено
         return argument.findAll(Expression.class).stream()
                 .filter(part -> !part.isStringLiteralExpr() && !part.isBinaryExpr())
-                .anyMatch(part -> AUTHORIZATION.matcher(part.toString()).matches());
+                .anyMatch(part -> AUTHORIZATION.matcher(part.toString()).matches()
+                        && !NOT_HEADER.matcher(part.toString()).matches());
     }
 }

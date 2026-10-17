@@ -26,6 +26,8 @@ import java.util.stream.Stream;
 public class FileSystemConfigLoader implements ConfigLoader {
     private static final Pattern CONFIG_NAME = Pattern.compile("^(application|bootstrap).*\\.(properties|yml|yaml)$");
     private static final String PROPERTIES_EXTENSION = ".properties";
+    // Имя из @PropertySource дано вместе с расширением, имя из spring.config.name - без него
+    private static final Pattern CUSTOM_EXTENSION = Pattern.compile(".*\\.(properties|yml|yaml)$");
 
     // Каталоги сборки: там лежат копии тех же файлов
     private static final Set<String> BUILD_DIRECTORIES = Set.of("build", "target", "out", "node_modules");
@@ -45,14 +47,16 @@ public class FileSystemConfigLoader implements ConfigLoader {
     }
 
     @Override
-    public List<ConfigFile> load(Path root, Predicate<Path> included) {
+    public List<ConfigFile> load(Path root, Predicate<Path> included, Set<String> customNames) {
         if (!Files.exists(root)) {
             return List.of();
         }
 
+        Predicate<String> custom = customName(customNames);
         List<ConfigFile> files = new ArrayList<>();
         try (Stream<Path> paths = Files.walk(root)) {
-            for (Path path : paths.filter(Files::isRegularFile).filter(this::isConfig).filter(included).sorted().toList()) {
+            for (Path path : paths.filter(Files::isRegularFile).filter(path -> isConfig(path, custom)).filter(included)
+                    .sorted().toList()) {
                 List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
                 boolean isProperties = path.getFileName().toString().endsWith(PROPERTIES_EXTENSION);
                 files.add(new ConfigFile(path, isProperties ? parseProperties(lines) : parseYaml(lines)));
@@ -64,13 +68,24 @@ public class FileSystemConfigLoader implements ConfigLoader {
         return files;
     }
 
-    private boolean isConfig(Path path) {
+    private boolean isConfig(Path path, Predicate<String> custom) {
         for (Path part : path) {
             if (BUILD_DIRECTORIES.contains(part.toString())) {
                 return false;
             }
         }
-        return CONFIG_NAME.matcher(path.getFileName().toString()).matches();
+        String name = path.getFileName().toString();
+        return CONFIG_NAME.matcher(name).matches() || custom.test(name);
+    }
+
+    // thingsboard -> thingsboard.yml, thingsboard-dev.properties; recaptcha.properties - только сам этот файл
+    private Predicate<String> customName(Set<String> customNames) {
+        List<Pattern> patterns = customNames.stream()
+                .map(name -> CUSTOM_EXTENSION.matcher(name).matches()
+                        ? Pattern.compile(Pattern.quote(name))
+                        : Pattern.compile(Pattern.quote(name) + "(-[^.]+)?\\.(properties|yml|yaml)"))
+                .toList();
+        return name -> patterns.stream().anyMatch(pattern -> pattern.matcher(name).matches());
     }
 
     private List<ConfigProperty> parseProperties(List<String> lines) {

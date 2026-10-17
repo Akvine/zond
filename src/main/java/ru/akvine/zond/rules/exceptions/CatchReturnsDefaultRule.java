@@ -39,7 +39,8 @@ public class CatchReturnsDefaultRule extends AbstractRule {
     // "Попробовать разобрать": пустое значение на неразборчивой строке - привычный прием
     private static final Set<String> PARSE_FAILURES = Set.of(
             "NumberFormatException", "DateTimeParseException", "DateTimeException", "ParseException",
-            "IllegalArgumentException", "MalformedURLException", "URISyntaxException");
+            "IllegalArgumentException", "MalformedURLException", "URISyntaxException", "InvalidPathException",
+            "PatternSyntaxException");
     // Прерывание потока проглатывать нельзя по другой причине, и о нем говорит другое правило
     private static final String INTERRUPTED = "InterruptedException";
 

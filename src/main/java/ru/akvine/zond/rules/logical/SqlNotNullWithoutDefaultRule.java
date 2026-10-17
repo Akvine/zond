@@ -8,11 +8,16 @@ import ru.akvine.zond.models.TextFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractContextRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.files.DbSchema;
+import ru.akvine.zond.rules.files.Liquibase;
 import ru.akvine.zond.rules.files.SqlStatements;
 import ru.akvine.zond.rules.files.TextFiles;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -45,9 +50,16 @@ public class SqlNotNullWithoutDefaultRule extends AbstractContextRule {
             if (!TextFiles.isMigration(file)) {
                 continue;
             }
+            List<Liquibase.ChangeSet> changeSets = Liquibase.changeSets(file);
+            Set<String> createdHere = new HashSet<>();
             for (SqlStatements.Statement statement : SqlStatements.of(file)) {
+                List<DbSchema.Change> changes = DbSchema.changes(statement.text());
+                changes.stream()
+                        .filter(change -> change.kind() == DbSchema.Kind.CREATE_TABLE)
+                        .forEach(change -> createdHere.add(change.table()));
                 Matcher matcher = ADD_NOT_NULL_COLUMN.matcher(statement.text());
-                if (matcher.matches() && !HAS_VALUE.matcher(statement.text()).matches()) {
+                if (matcher.matches() && !HAS_VALUE.matcher(statement.text()).matches()
+                        && !isNewTableForDatabase(statement, changes, createdHere, changeSets)) {
                     violations.add(violation(file.path(), statement.line(),
                             "Колонка '" + matcher.group(1) + "' добавляется как NOT NULL без DEFAULT: если в таблице"
                                     + " уже есть строки, миграция упадет; задайте DEFAULT либо добавьте колонку"
@@ -56,6 +68,18 @@ public class SqlNotNullWithoutDefaultRule extends AbstractContextRule {
             }
         }
         return violations;
+    }
+
+    // createTable без колонок аудита, а следом наборы context="mysql" и context="postgresql" добавляют их со своим
+    // типом для каждой базы: таблицу создает этот же файл, это одна доработка, и строк в таблице еще нет
+    private boolean isNewTableForDatabase(SqlStatements.Statement statement, List<DbSchema.Change> changes,
+                                          Set<String> createdHere, List<Liquibase.ChangeSet> changeSets) {
+        Optional<Liquibase.ChangeSet> changeSet = changeSets.stream()
+                .filter(candidate -> candidate.line() <= statement.line())
+                .reduce((first, second) -> second);
+        return changeSet.filter(found -> !found.condition().isEmpty()).isPresent()
+                && changes.stream().anyMatch(change -> change.kind() == DbSchema.Kind.ADD_COLUMN
+                && createdHere.contains(change.table()));
     }
 
     @Override

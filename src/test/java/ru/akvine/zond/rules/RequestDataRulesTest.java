@@ -23,7 +23,7 @@ class RequestDataRulesTest {
                     String fetch(@RequestParam String url, @RequestParam String id) {
                         restTemplate.getForObject(url, String.class);
                         restTemplate.getForObject("https://api.example.org/items/" + id, String.class);
-                        new URL(url);
+                        new URL(url).openStream();
                         restTemplate.getForObject(SERVICE_URL, String.class);
                         return "";
                     }

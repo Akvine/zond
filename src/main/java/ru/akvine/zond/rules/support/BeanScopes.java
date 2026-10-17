@@ -2,11 +2,14 @@ package ru.akvine.zond.rules.support;
 
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.MemberValuePair;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import lombok.experimental.UtilityClass;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 
 /**
@@ -16,6 +19,7 @@ import java.util.Set;
 @UtilityClass
 public class BeanScopes {
     private static final String SCOPE = "Scope";
+    private static final Set<String> SCOPE_MEMBERS = Set.of("value", "scopeName");
 
     // Готовые аннотации областей, в которых экземпляр живет недолго и между потоками не делится
     private static final Set<String> SHORT_LIVED_ANNOTATIONS =
@@ -33,12 +37,28 @@ public class BeanScopes {
             return true;
         }
         // @Scope("prototype"), @Scope(SCOPE_PROTOTYPE), @Scope(value = WebApplicationContext.SCOPE_REQUEST):
-        // название области видно в тексте аннотации при любой записи
+        // название области - последняя часть значения. Весь текст аннотации не годится: в нем есть
+        // и WebApplicationContext, и proxyMode
         return Annotations.find(declaration, SCOPE)
-                .map(AnnotationExpr::toString)
-                .map(text -> text.toLowerCase(Locale.ROOT))
-                .filter(text -> SHARED_SCOPES.stream().noneMatch(text::contains))
+                .map(BeanScopes::scopeName)
+                .filter(name -> SHARED_SCOPES.stream().noneMatch(name::endsWith))
                 .isPresent();
+    }
+
+    // "prototype" -> prototype, ConfigurableBeanFactory.SCOPE_PROTOTYPE -> scope_prototype; @Scope без значения -
+    // singleton
+    private String scopeName(AnnotationExpr scope) {
+        Optional<Expression> value = scope.isSingleMemberAnnotationExpr()
+                ? Optional.of(scope.asSingleMemberAnnotationExpr().getMemberValue())
+                : scope.isNormalAnnotationExpr()
+                ? scope.asNormalAnnotationExpr().getPairs().stream()
+                .filter(pair -> SCOPE_MEMBERS.contains(pair.getNameAsString()))
+                .map(MemberValuePair::getValue)
+                .findFirst()
+                : Optional.empty();
+        String text = value.map(expression -> StringLiterals.textOf(expression).orElse(expression.toString()))
+                .orElse(SHARED_SCOPES.get(0));
+        return text.substring(text.lastIndexOf('.') + 1).toLowerCase(Locale.ROOT);
     }
 
     /**

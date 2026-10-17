@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.EnclosedExpr;
@@ -13,6 +14,7 @@ import ru.akvine.zond.rules.support.StringLiterals;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * SQL / JPQL-запрос на изменение данных без условия WHERE.
@@ -27,6 +29,8 @@ public abstract class AbstractSqlWithoutWhereRule extends AbstractRule {
     private static final Set<String> QUERY_METHODS = Set.of(
             "update", "batchUpdate", "execute", "executeUpdate", "executeQuery", "addBatch", "prepareStatement",
             "createQuery", "createNativeQuery", "query");
+    private static final Set<String> MIGRATION_TYPES = Set.of(
+            "CustomTaskChange", "CustomSqlChange", "BaseJavaMigration", "JavaMigration", "AbstractTaskChange");
     private static final Pattern QUERY_VARIABLE = Pattern.compile(".*(sql|query|hql|jpql).*", Pattern.CASE_INSENSITIVE);
 
     /**
@@ -42,13 +46,24 @@ public abstract class AbstractSqlWithoutWhereRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         return StringLiterals.findComplete(sourceFile.unit()).stream()
-                .filter(literal -> isSqlContext(literal.node()))
+                .filter(literal -> isSqlContext(literal.node()) && !isJavaMigration(literal.node()))
                 .filter(literal -> {
                     String sql = normalize(literal.text());
                     return statement().matcher(sql).matches() && !WHERE.matcher(sql).find();
                 })
                 .map(literal -> violation(sourceFile, literal.node(), message(normalize(literal.text()))))
                 .toList();
+    }
+
+    /**
+     * Миграция данных на Java (CustomTaskChange в Liquibase, JavaMigration во Flyway) меняет все строки
+     * намеренно: это то же, что UPDATE в файле миграции
+     */
+    private boolean isJavaMigration(Node literal) {
+        return literal.findAncestor(ClassOrInterfaceDeclaration.class)
+                .filter(type -> Stream.concat(type.getImplementedTypes().stream(), type.getExtendedTypes().stream())
+                        .anyMatch(parent -> MIGRATION_TYPES.contains(parent.getNameAsString())))
+                .isPresent();
     }
 
     // Строка должна стоять там, где ждут запрос: иначе под правило попадет сообщение вида "delete from list failed"

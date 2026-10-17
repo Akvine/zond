@@ -4,8 +4,10 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.DataKey;
 import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.AnnotationDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
@@ -50,6 +52,8 @@ public class Types {
     private static final DataKey<Optional<ResolvedType>> RESOLVED_TYPE_NAME = new DataKey<>() {
     };
     private static final DataKey<CallTarget> CALL_TARGET = new DataKey<>() {
+    };
+    private static final DataKey<Optional<AnnotationDeclaration>> ANNOTATION_DECLARATION = new DataKey<>() {
     };
 
     private static final String JDK_PACKAGE = "java.";
@@ -297,6 +301,28 @@ public class Types {
         }
         call.setData(CALL_TARGET, target);
         return target;
+    }
+
+    /**
+     * @return объявление аннотации, если она объявлена в исходниках проекта: по нему видно, чем она помечена
+     * сама - {@code @AfterStartUp} несет {@code @EventListener(ApplicationReadyEvent.class)}
+     */
+    public synchronized Optional<AnnotationDeclaration> projectAnnotation(AnnotationExpr annotation) {
+        if (annotation.containsData(ANNOTATION_DECLARATION)) {
+            return annotation.getData(ANNOTATION_DECLARATION);
+        }
+        Optional<AnnotationDeclaration> declaration = Optional.empty();
+        if (hasSolver(annotation)) {
+            try {
+                declaration = annotation.resolve().toAst()
+                        .filter(node -> node instanceof AnnotationDeclaration)
+                        .map(node -> (AnnotationDeclaration) node);
+            } catch (RuntimeException | StackOverflowError exception) {
+                // Аннотация из библиотеки, которой нет в classpath: ее объявление неизвестно
+            }
+        }
+        annotation.setData(ANNOTATION_DECLARATION, declaration);
+        return declaration;
     }
 
     private boolean hasSolver(Node node) {

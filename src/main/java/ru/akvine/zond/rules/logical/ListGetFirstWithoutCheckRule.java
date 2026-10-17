@@ -1,5 +1,7 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
@@ -28,6 +30,8 @@ public class ListGetFirstWithoutCheckRule extends AbstractRule {
 
     // list.isEmpty(), list.size(), CollectionUtils.isEmpty(list)
     private static final Set<String> SIZE_CHECKS = Set.of("isEmpty", "size", "isNotEmpty");
+    // Фабрики, которые возвращают список ровно из переданных элементов
+    private static final Set<String> FILLED_FACTORIES = Set.of("of", "asList", "listOf");
 
     @Override
     public String code() {
@@ -69,7 +73,24 @@ public class ListGetFirstWithoutCheckRule extends AbstractRule {
         if (value.isMethodCallExpr()) {
             return LIST_SOURCES.contains(value.asMethodCallExpr().getNameAsString());
         }
-        return LocalTypes.typeOf(value).filter(LIST_TYPES::contains).isPresent() && !isSizeChecked(value, call);
+        return LocalTypes.typeOf(value).filter(LIST_TYPES::contains).isPresent() && !isSizeChecked(value, call)
+                && !isFilledConstant(value);
+    }
+
+    // static final List<String> SCOPES = List.of("singleton", "application"): постоянный список с элементами
+    private boolean isFilledConstant(Expression list) {
+        return LocalTypes.findDeclaration(list)
+                .filter(declaration -> declaration instanceof VariableDeclarator)
+                .map(declaration -> (VariableDeclarator) declaration)
+                .filter(variable -> variable.getParentNode()
+                        .filter(parent -> parent instanceof FieldDeclaration field && field.isStatic() && field.isFinal())
+                        .isPresent())
+                .flatMap(VariableDeclarator::getInitializer)
+                .map(Nodes::unwrap)
+                .filter(initializer -> initializer.isMethodCallExpr()
+                        && FILLED_FACTORIES.contains(initializer.asMethodCallExpr().getNameAsString())
+                        && !initializer.asMethodCallExpr().getArguments().isEmpty())
+                .isPresent();
     }
 
     // Проверка размера должна стоять на пути к обращению: охватывать его либо обрывать выполнение выше

@@ -63,11 +63,50 @@ class SpringRulesTest {
                 @Component
                 class Heavy {
                 }
+                @Service
+                class OtherService {
+                    @Autowired
+                    private Sample sample;
+                }
+                @Service
+                class PaymentService {
+                    private final OrderService orders;
+                    PaymentService(OrderService orders) {}
+                }
+                @Service
+                class OrderService {
+                    private final Sample sample;
+                    OrderService(Sample sample) {}
+                }
+                @Service
+                class Mailer {
+                    @Autowired
+                    private Sample sample;
+                }
+                @Service
+                class Cache {
+                }
                 """);
 
         assertThat(violations).extracting(Violation::line).containsExactly(3, 8, 10);
-        assertThat(violations.get(0).message()).contains("'other'");
-        assertThat(violations.get(1).message()).contains("'payments'");
+        assertThat(violations.get(0).message()).contains("'other'", "Sample -> OtherService -> Sample");
+        assertThat(violations.get(1).message()).contains("'payments'", "Sample -> PaymentService -> OrderService -> Sample");
+    }
+
+    @Test
+    void lazyWithoutCycleIsNotReported() {
+        // @Lazy на тяжелом клиенте: он не зависит от Sample, цикла нет - бин просто создается при первом обращении
+        assertThat(RuleTests.check(new LazyInjectionRule(), """
+                @Service
+                class Sample {
+                    @Lazy
+                    @Autowired
+                    private ReportClient client;
+                }
+                @Service
+                class ReportClient {
+                }
+                """)).isEmpty();
     }
 
     @Test

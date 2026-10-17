@@ -7,44 +7,54 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
+import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.SynchronizedStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
-import ru.akvine.zond.rules.Rule;
+import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
+import ru.akvine.zond.rules.support.BeanScopes;
+import ru.akvine.zond.rules.support.Guards;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Lombok;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Component
-public class MutableStateInSingletonBeanRule implements Rule {
+public class MutableStateInSingletonBeanRule implements ProjectRule {
     private static final Set<String> BEAN_ANNOTATIONS =
             Set.of("Component", "Service", "Repository", "Controller", "RestController");
-
-    // Бин не singleton: у каждого потребителя / запроса / сессии свой экземпляр
-    private static final Set<String> SCOPE_ANNOTATIONS = Set.of("RequestScope", "SessionScope");
-    private static final String SCOPE = "Scope";
-    private static final List<String> NOT_SINGLETON_SCOPES = List.of("prototype", "request", "session");
 
     // Сеттеры такого класса вызывает Spring при старте, а не прикладной код
     private static final String CONFIGURATION_PROPERTIES = "ConfigurationProperties";
 
     // Поле или метод, которыми управляет контейнер: значение задается один раз при создании бина
+    // либо сбрасывается при остановке (@PreDestroy), когда бин уже не обслуживает запросы
     private static final Set<String> CONTAINER_MANAGED_ANNOTATIONS = Set.of(
-            "Autowired", "Inject", "Resource", "Value", "PersistenceContext", "PersistenceUnit", "PostConstruct");
+            "Autowired", "Inject", "Resource", "Value", "PersistenceContext", "PersistenceUnit", "PostConstruct",
+            "PreDestroy");
+    // destroy() у DisposableBean контейнер вызывает при остановке
+    private static final String DESTROY = "destroy";
+    private static final String DISPOSABLE_BEAN = "DisposableBean";
+    private static final String SETTER = "set";
 
     @Override
     public String name() {
@@ -67,8 +77,16 @@ public class MutableStateInSingletonBeanRule implements Rule {
     }
 
     @Override
-    public List<Violation> check(SourceFile sourceFile) {
+    public List<Violation> checkProject(List<SourceFile> sourceFiles) {
+        Map<String, List<MethodCallExpr>> setterCalls = setterCalls(sourceFiles);
         List<Violation> violations = new ArrayList<>();
+        for (SourceFile sourceFile : sourceFiles) {
+            checkFile(sourceFile, setterCalls, violations);
+        }
+        return violations;
+    }
+
+    private void checkFile(SourceFile sourceFile, Map<String, List<MethodCallExpr>> setterCalls, List<Violation> violations) {
         for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
             if (!isSingletonBean(type)) {
                 continue;
@@ -81,8 +99,11 @@ public class MutableStateInSingletonBeanRule implements Rule {
 
                 for (VariableDeclarator variable : field.getVariables()) {
                     Set<String> writers = findWriters(type, variable.getNameAsString());
-                    // Сеттера в коде нет, но Lombok его создаст - и поле сможет поменять любой, у кого есть бин
-                    if (Lombok.hasSetter(type, field)) {
+                    // Сеттера в коде нет, но Lombok его создаст - и поле сможет поменять любой, у кого есть бин.
+                    // Если его вызывают только при запуске (из @PostConstruct другого бина) либо не вызывают
+                    // вовсе, поле во время работы не меняется
+                    if (Lombok.hasSetter(type, field)
+                            && isCalledAtRuntime(type, setterName(variable.getNameAsString()), setterCalls)) {
                         writers.add("'" + setterName(variable.getNameAsString()) + "' (сеттер от Lombok)");
                     }
                     if (writers.isEmpty()) {
@@ -102,7 +123,6 @@ public class MutableStateInSingletonBeanRule implements Rule {
                 }
             }
         }
-        return violations;
     }
 
     @Override
@@ -115,19 +135,47 @@ public class MutableStateInSingletonBeanRule implements Rule {
         return ErrorType.CONCURRENCY;
     }
 
+    // @Scope("prototype"), @RequestScope, @StepScope - у каждого запроса или шага свой экземпляр
     private boolean isSingletonBean(ClassOrInterfaceDeclaration type) {
         Set<String> annotations = annotationNames(type);
-        if (annotations.stream().noneMatch(BEAN_ANNOTATIONS::contains)
-                || annotations.contains(CONFIGURATION_PROPERTIES)
-                || annotations.stream().anyMatch(SCOPE_ANNOTATIONS::contains)) {
-            return false;
-        }
+        return annotations.stream().anyMatch(BEAN_ANNOTATIONS::contains)
+                && !annotations.contains(CONFIGURATION_PROPERTIES)
+                && !BeanScopes.isShortLived(type);
+    }
 
-        // @Scope("prototype"), @Scope(SCOPE_PROTOTYPE), @Scope(value = WebApplicationContext.SCOPE_REQUEST) и т.п.
-        return type.getAnnotations().stream()
-                .filter(annotation -> SCOPE.equals(annotation.getName().getIdentifier()))
-                .map(annotation -> annotation.toString().toLowerCase())
-                .noneMatch(scope -> NOT_SINGLETON_SCOPES.stream().anyMatch(scope::contains));
+    // Все вызовы set*(...) проекта по имени метода: сеттеры от Lombok в коде не объявлены, их ищут по вызовам
+    private Map<String, List<MethodCallExpr>> setterCalls(List<SourceFile> sourceFiles) {
+        Map<String, List<MethodCallExpr>> calls = new HashMap<>();
+        for (SourceFile sourceFile : sourceFiles) {
+            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+                if (call.getNameAsString().startsWith(SETTER) && call.getArguments().size() == 1) {
+                    calls.computeIfAbsent(call.getNameAsString(), name -> new ArrayList<>()).add(call);
+                }
+            }
+        }
+        return calls;
+    }
+
+    // Вызов сеттера этого бина вне запуска. Объект, тип которого не определить, считается этим бином
+    private boolean isCalledAtRuntime(ClassOrInterfaceDeclaration type, String setter,
+                                      Map<String, List<MethodCallExpr>> setterCalls) {
+        String typeName = type.getNameAsString();
+        return setterCalls.getOrDefault(setter, List.of()).stream()
+                .filter(call -> call.getScope()
+                        .filter(scope -> !scope.isThisExpr())
+                        .map(scope -> LocalTypes.typeOf(scope).map(typeName::equals).orElse(true))
+                        .orElseGet(() -> call.findAncestor(ClassOrInterfaceDeclaration.class)
+                                .filter(owner -> owner == type)
+                                .isPresent()))
+                .anyMatch(call -> !CodeContexts.isStartup(call));
+    }
+
+    private boolean isShutdownCallback(MethodDeclaration method) {
+        return DESTROY.equals(method.getNameAsString()) && method.getParameters().isEmpty()
+                && method.findAncestor(ClassOrInterfaceDeclaration.class)
+                .filter(owner -> owner.getImplementedTypes().stream()
+                        .anyMatch(implemented -> DISPOSABLE_BEAN.equals(implemented.getNameAsString())))
+                .isPresent();
     }
 
     private boolean isContainerManaged(NodeWithAnnotations<?> node) {
@@ -139,19 +187,23 @@ public class MutableStateInSingletonBeanRule implements Rule {
      */
     // name -> setName
     private String setterName(String fieldName) {
-        return "set" + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
+        return SETTER + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
     }
 
     private Set<String> findWriters(ClassOrInterfaceDeclaration type, String fieldName) {
         Set<String> writers = new LinkedHashSet<>();
         for (MethodDeclaration method : type.getMethods()) {
-            if (method.isStatic() || method.isSynchronized() || isContainerManaged(method)) {
+            // Методы запуска (@EventListener(ApplicationReadyEvent.class), CommandLineRunner.run, setApplicationContext)
+            // выполняются один раз, пока бин еще не обслуживает запросы
+            if (method.isStatic() || method.isSynchronized() || isContainerManaged(method)
+                    || CodeContexts.isStartupMethod(method) || isShutdownCallback(method)) {
                 continue;
             }
 
             boolean shadowed = isShadowed(method, fieldName);
             boolean writes = writeTargets(method)
                     .filter(target -> !isInsideSynchronizedBlock(target, method))
+                    .filter(target -> !isLazyInitialization(target, fieldName))
                     .anyMatch(target -> isField(target, fieldName, shadowed));
             if (writes) {
                 writers.add("'" + method.getNameAsString() + "'");
@@ -185,6 +237,15 @@ public class MutableStateInSingletonBeanRule implements Rule {
         Stream<String> parameters = method.findAll(Parameter.class).stream()
                 .map(NodeWithSimpleName::getNameAsString);
         return Stream.concat(variables, parameters).anyMatch(fieldName::equals);
+    }
+
+    // if (cache == null) { cache = ... } - ленивая инициализация: о ней сообщает jr:175, дважды об одном не говорим
+    private boolean isLazyInitialization(Expression target, String fieldName) {
+        return target.findAncestor(IfStmt.class)
+                .filter(branch -> Guards.isNullCheck(branch.getCondition(), fieldName)
+                        || branch.getCondition().findAll(BinaryExpr.class).stream()
+                        .anyMatch(check -> Guards.isNullCheck(check, fieldName)))
+                .isPresent();
     }
 
     private boolean isInsideSynchronizedBlock(Node node, MethodDeclaration method) {

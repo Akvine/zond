@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -62,6 +63,10 @@ public final class DbSchema {
 
     private static final Pattern CONSTRAINT_START = Pattern.compile(
             "^(constraint|primary|foreign|unique|check|index|key|exclude|like)\\b.*", FLAGS);
+    private static final Pattern COLUMN_TYPE = Pattern.compile("(varchar2?|nvarchar2?|char|nchar|character|text|clob|"
+            + "nclob|blob|int|integer|bigint|smallint|tinyint|number|numeric|decimal|boolean|bool|bit|timestamp|"
+            + "timestamptz|date|datetime2?|time|uuid|json|jsonb|bytea|double|float|real|serial|bigserial|money)(\\(.*)?",
+            FLAGS);
     private static final Pattern PRIMARY_KEY = Pattern.compile("\\bprimary\\s+key\\b", FLAGS);
     private static final Pattern FOREIGN_KEY = Pattern.compile("\\bforeign\\s+key\\s*\\(([^)]*)\\)", FLAGS);
     private static final Pattern REFERENCES = Pattern.compile("\\breferences\\b", FLAGS);
@@ -221,6 +226,11 @@ public final class DbSchema {
     }
 
     private final Map<String, Table> tables = new LinkedHashMap<>();
+    // Изменения таблицы, которой еще нет: применяются, когда ее создадут
+    private final Map<String, List<Pending>> pending = new HashMap<>();
+
+    private record Pending(Change change, Path file, int line) {
+    }
 
     private DbSchema() {
     }
@@ -345,7 +355,7 @@ public final class DbSchema {
             if (definition.isEmpty()) {
                 continue;
             }
-            if (CONSTRAINT_START.matcher(definition).matches()) {
+            if (isConstraint(definition)) {
                 primaryKey |= PRIMARY_KEY.matcher(definition).find();
                 referencing.addAll(foreignKeyColumns(definition));
                 continue;
@@ -363,6 +373,16 @@ public final class DbSchema {
         return new Change(Kind.CREATE_TABLE, table, null, null, resolved, primaryKey, false);
     }
 
+    // Строка таблицы - ограничение или индекс, а не колонка. KEY VARCHAR(255) - колонка с именем-ключевым словом,
+    // а KEY idx (a) - индекс MySQL: различаются тем, стоит ли вторым словом тип
+    private static boolean isConstraint(String definition) {
+        if (!CONSTRAINT_START.matcher(definition).matches()) {
+            return false;
+        }
+        String[] words = definition.split("\\s+", 3);
+        return words.length < 2 || !COLUMN_TYPE.matcher(words[1]).matches();
+    }
+
     // Ключи создаваемой таблицы: объявленные у колонки, отдельным ограничением и обычные индексы
     private static List<DeclaredKey> keysOf(String rest) {
         List<DeclaredKey> keys = new ArrayList<>();
@@ -375,7 +395,7 @@ public final class DbSchema {
             if (definition.isEmpty()) {
                 continue;
             }
-            if (CONSTRAINT_START.matcher(definition).matches()) {
+            if (isConstraint(definition)) {
                 tableKey(definition).ifPresent(keys::add);
             } else if (UNIQUE.matcher(definition).find() || PRIMARY_KEY.matcher(definition).find()) {
                 keys.add(new DeclaredKey(constraintName(definition), keyColumns(definition.split("\\s+")[0]), true));
@@ -565,6 +585,12 @@ public final class DbSchema {
                     created.primaryKey = change.primaryKey();
                     change.columns().forEach(column -> created.columns.put(column.name(), placed(column, file, line)));
                     tables.put(change.table(), created);
+                    // Изменения, которые встретились раньше самой таблицы: файлы Liquibase подключаются через include
+                    // в своем порядке, а не в порядке путей
+                    for (Pending earlier : pending.getOrDefault(change.table(), List.of())) {
+                        applyToTable(created, earlier.change(), earlier.file(), earlier.line());
+                    }
+                    pending.remove(change.table());
                 }
             }
             case DROP_TABLE -> tables.remove(change.table());
@@ -586,6 +612,8 @@ public final class DbSchema {
             default -> {
                 if (table != null) {
                     applyToTable(table, change, file, line);
+                } else if (change.table() != null) {
+                    pending.computeIfAbsent(change.table(), name -> new ArrayList<>()).add(new Pending(change, file, line));
                 }
             }
         }

@@ -23,6 +23,8 @@ import java.util.regex.Pattern;
 public class SqlChangeWithoutWhereRule extends AbstractContextRule {
     private static final Pattern CHANGE = Pattern.compile("^(update|delete\\s+from)\\b.*", Pattern.CASE_INSENSITIVE);
     private static final Pattern UPDATE = Pattern.compile("^update\\s+(\\S+)\\s+set\\s+(.+)$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern DELETE = Pattern.compile("^delete\\s+from\\s+(\\S+)\\s*$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern INSERT = Pattern.compile("^insert\\s+into\\s+([^\\s(]+).*$", Pattern.CASE_INSENSITIVE);
     // Имя колонки слева от знака равенства: в начале списка либо после запятой
     private static final Pattern ASSIGNMENT = Pattern.compile("(?:^|,)\\s*([\\w\"`.]+)\\s*=");
     private static final Pattern WHERE = Pattern.compile(".*\\bwhere\\b.*", Pattern.CASE_INSENSITIVE);
@@ -46,12 +48,15 @@ public class SqlChangeWithoutWhereRule extends AbstractContextRule {
             }
             // Колонки, которые добавлены раньше в этом же файле: их заполняют сразу во всех строках
             Set<String> addedHere = new HashSet<>();
-            for (SqlStatements.Statement statement : SqlStatements.of(file)) {
+            List<SqlStatements.Statement> statements = SqlStatements.of(file);
+            Set<String> filled = insertedTables(statements);
+            for (SqlStatements.Statement statement : statements) {
                 String text = statement.text();
                 for (DbSchema.Change change : DbSchema.changes(text)) {
                     change.columns().forEach(column -> addedHere.add(change.table() + "." + column.name()));
                 }
-                if (CHANGE.matcher(text).matches() && !WHERE.matcher(text).matches() && !isBackfill(text, addedHere)) {
+                if (CHANGE.matcher(text).matches() && !WHERE.matcher(text).matches() && !isBackfill(text, addedHere)
+                        && !isReload(text, filled)) {
                     violations.add(violation(file.path(), statement.line(),
                             "'" + text.split("\\s+set\\s+|\\s*$")[0] + "' без WHERE затрагивает все строки таблицы:"
                                     + " на большой таблице это долгая блокировка и огромная транзакция; если так"
@@ -64,6 +69,23 @@ public class SqlChangeWithoutWhereRule extends AbstractContextRule {
 
     // update orders set region = 'RU' сразу после alter table orders add region: новой колонке задают
     // значение во всех строках - для того UPDATE без WHERE и написан
+    // DELETE FROM data_policy; INSERT INTO data_policy ...: справочник загружается заново целиком
+    private boolean isReload(String statement, Set<String> filled) {
+        Matcher delete = DELETE.matcher(statement);
+        return delete.matches() && filled.contains(DbSchema.name(delete.group(1)));
+    }
+
+    private Set<String> insertedTables(List<SqlStatements.Statement> statements) {
+        Set<String> tables = new HashSet<>();
+        for (SqlStatements.Statement statement : statements) {
+            Matcher insert = INSERT.matcher(statement.text());
+            if (insert.matches()) {
+                tables.add(DbSchema.name(insert.group(1)));
+            }
+        }
+        return tables;
+    }
+
     private boolean isBackfill(String statement, Set<String> addedHere) {
         Matcher update = UPDATE.matcher(statement);
         if (!update.matches()) {

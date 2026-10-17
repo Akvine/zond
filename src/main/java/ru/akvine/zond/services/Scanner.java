@@ -27,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -56,7 +57,7 @@ public class Scanner {
                 root, file -> options.includes(root, file), options.classpath(), options.threadCount());
         // Виды файлов, отключенные настройками zond.scan.*, в проверку не попадают
         List<ConfigFile> configFiles = options.scans(FileKind.CONFIG)
-                ? configLoader.load(root, file -> options.includes(root, file))
+                ? configLoader.load(root, file -> options.includes(root, file), ConfigNames.of(loaded.sources()))
                 : List.of();
         List<TextFile> textFiles = textFileLoader.load(root, file -> options.includes(root, file)).stream()
                 .filter(file -> options.scans(file.type().getKind()))
@@ -90,6 +91,9 @@ public class Scanner {
         }
 
         long checkNanos = System.nanoTime() - checkStartedAt;
+
+        // Правило проходит по уровню, а отдельная его находка может оказаться мягче: она отсеивается так же
+        violations.removeIf(violation -> violation.errorLevel().ordinal() > options.minLevel().ordinal());
 
         // Просили только измененные файлы: находки в остальных не показываются
         if (options.changedOnly()) {
@@ -178,7 +182,7 @@ public class Scanner {
         // Время считается в том же потоке, где работает правило: ожидание в очереди в него не входит
         long startedAt = System.nanoTime();
         try {
-            return withLevel(levelOf(rule), rule.confidence(), apply(rule, context, perFile));
+            return withLevel(ruleSettings.level(rule.code(), rule.name()), rule.confidence(), apply(rule, context, perFile));
         } finally {
             long nanos = System.nanoTime() - startedAt;
             spent.put(rule, nanos);
@@ -206,11 +210,14 @@ public class Scanner {
         return ruleSettings.level(rule.code(), rule.name()).orElseGet(rule::errorLevel);
     }
 
-    // Правило проставляет находкам свой уровень - заменяем его действующим; находка, для которой правило
-    // не уточнило уверенность, получает уверенность самого правила
-    private List<Violation> withLevel(ErrorLevel level, Confidence confidence, List<Violation> violations) {
+    // Уровень из настроек заменяет уровень всех находок правила. Без настройки остается тот, что дало правило:
+    // отдельная находка бывает мягче остальных (цикл бинов при allow-circular-references). Находка, для которой
+    // правило не уточнило уверенность, получает уверенность самого правила
+    private List<Violation> withLevel(Optional<ErrorLevel> configured, Confidence confidence, List<Violation> violations) {
         return violations.stream()
-                .map(violation -> violation.errorLevel() == level ? violation : violation.withLevel(level))
+                .map(violation -> configured.filter(level -> level != violation.errorLevel())
+                        .map(violation::withLevel)
+                        .orElse(violation))
                 .map(violation -> violation.confidence() == null ? violation.withConfidence(confidence) : violation)
                 .toList();
     }

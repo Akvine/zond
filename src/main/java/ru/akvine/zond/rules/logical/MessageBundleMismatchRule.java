@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
@@ -80,10 +81,25 @@ public class MessageBundleMismatchRule extends AbstractContextRule {
             allKeys.addAll(byKey.keySet());
         }
 
-        // Ключ есть в одном языке и отсутствует в другом: пользователь увидит код сообщения вместо текста
+        // Ключ есть в одном языке и отсутствует в другом: пользователь увидит код сообщения вместо текста.
+        // Если есть основной файл без языка (messages.properties), недостающий перевод Spring берет из него
+        Optional<TextFile> base = entries.keySet().stream()
+                .filter(file -> !hasLocale(file.name()))
+                .findFirst();
         entries.forEach((file, byKey) -> {
+            if (base.isPresent() && base.get() != file) {
+                return;
+            }
             List<String> missing = allKeys.stream().filter(key -> !byKey.containsKey(key)).toList();
-            if (!missing.isEmpty()) {
+            if (!missing.isEmpty() && base.isPresent()) {
+                violations.add(violation(file.path(),
+                        "В основном '" + file.name() + "' нет сообщений, которые есть в переводах (" + missing.size()
+                                + "): " + String.join(", ", missing.subList(0, Math.min(SHOWN_KEYS, missing.size())))
+                                + (missing.size() > SHOWN_KEYS ? " и другие" : "")
+                                + "; либо они устарели и их пора убрать из переводов, либо их забыли добавить сюда -"
+                                + " тогда в языках без перевода вместо текста будет показан ключ")
+                        .withLevel(ErrorLevel.MINOR));
+            } else if (!missing.isEmpty()) {
                 violations.add(violation(file.path(),
                         "В '" + file.name() + "' нет сообщений, которые есть в других языках (" + missing.size() + "): "
                                 + String.join(", ", missing.subList(0, Math.min(SHOWN_KEYS, missing.size())))
@@ -113,6 +129,12 @@ public class MessageBundleMismatchRule extends AbstractContextRule {
                 }
             }
         }
+    }
+
+    // messages_ru.properties - перевод, messages.properties - основной файл
+    private boolean hasLocale(String name) {
+        Matcher matcher = LOCALE_SUFFIX.matcher(name);
+        return matcher.find() && matcher.group(1) != null;
     }
 
     private Set<String> argumentsOf(String value) {

@@ -25,10 +25,14 @@ import ru.akvine.zond.rules.support.SpringBeans;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Component
 public class UnsynchronizedLazyInitRule extends AbstractRule {
     private static final String POST_CONSTRUCT = "PostConstruct";
+    private static final Set<String> IMMUTABLE_TYPES = Set.of(
+            "String", "Boolean", "Integer", "Long", "Short", "Byte", "Character", "Double", "Float", "BigDecimal",
+            "BigInteger");
 
     @Override
     public String code() {
@@ -56,7 +60,10 @@ public class UnsynchronizedLazyInitRule extends AbstractRule {
                     .map(parent -> (FieldDeclaration) parent);
             boolean isShared = field.filter(declaration -> declaration.isStatic() || isInsideBean(declaration)).isPresent();
 
-            if (isShared && !field.get().isVolatile() && !isLocalVariable(ifStmt, checked.get())) {
+            // Boolean и String неизменяемы и вычисляются одинаково: два потока посчитают одно и то же значение
+            boolean immutableValue = field.filter(declaration -> IMMUTABLE_TYPES.contains(
+                    LocalTypes.typeName(declaration.getElementType()))).isPresent();
+            if (isShared && !immutableValue && !field.get().isVolatile() && !isLocalVariable(ifStmt, checked.get())) {
                 violations.add(violation(sourceFile, ifStmt,
                         "Ленивая инициализация поля '" + checked.get() + "' без синхронизации: два потока"
                                 + " одновременно увидят null и создадут два объекта, а третий может получить"

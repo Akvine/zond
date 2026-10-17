@@ -3,6 +3,7 @@ package ru.akvine.zond.rules.logical;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -24,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 
 @Component
 public class NullableDereferenceRule extends AbstractRule {
@@ -123,17 +125,33 @@ public class NullableDereferenceRule extends AbstractRule {
             return false;
         }
         String keys = get.get().getScope().get() + KEY_SET;
+        // Set<String> profiles = map.keySet(); for (String profile : profiles) map.get(profile)
+        Predicate<Expression> isKeySet = iterable -> iterable.toString().equals(keys)
+                || LocalTypes.findInitializer(iterable).filter(initializer -> initializer.toString().equals(keys)).isPresent();
         String key = get.get().getArgument(0).toString();
         Node current = variable.getParentNode().orElse(null);
         while (current != null) {
             if (current instanceof ForEachStmt loop
-                    && loop.getIterable().toString().equals(keys)
+                    && isKeySet.test(loop.getIterable())
                     && loop.getVariable().getVariable(0).getNameAsString().equals(key)) {
                 return true;
             }
             current = current.getParentNode().orElse(null);
         }
         return false;
+    }
+
+    // if (lock != this) throw ...: после такой проверки lock - это this, а значит, не null
+    private boolean isSameObjectCheck(Expression check, String name) {
+        return check.isBinaryExpr()
+                && (check.asBinaryExpr().getOperator() == BinaryExpr.Operator.EQUALS
+                || check.asBinaryExpr().getOperator() == BinaryExpr.Operator.NOT_EQUALS)
+                && (isNamed(check.asBinaryExpr().getLeft(), name) && check.asBinaryExpr().getRight().isThisExpr()
+                || isNamed(check.asBinaryExpr().getRight(), name) && check.asBinaryExpr().getLeft().isThisExpr());
+    }
+
+    private boolean isNamed(Expression expression, String name) {
+        return expression.isNameExpr() && expression.asNameExpr().getNameAsString().equals(name);
     }
 
     // После нового присваивания переменная может уже не быть null
@@ -156,7 +174,8 @@ public class NullableDereferenceRule extends AbstractRule {
                     && call.getScope().filter(scope -> scope == usage).isPresent()
                     || parent instanceof FieldAccessExpr;
             if (isDereference) {
-                return Guards.isGuarded(usage, check -> Guards.isNullCheck(check, name))
+                return Guards.isGuarded(usage,
+                        check -> Guards.isNullCheck(check, name) || isSameObjectCheck(check, name))
                         ? Optional.empty()
                         : Optional.of(usage);
             }

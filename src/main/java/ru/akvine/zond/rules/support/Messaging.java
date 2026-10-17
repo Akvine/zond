@@ -8,6 +8,8 @@ import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.CatchClause;
+import com.github.javaparser.ast.stmt.ReturnStmt;
+import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.type.Type;
 import lombok.experimental.UtilityClass;
@@ -117,10 +119,36 @@ public class Messaging {
     }
 
     /**
-     * @return true, если из catch исключение уходит дальше
+     * @return true, если из catch исключение уходит дальше: throw в самом catch либо вызов своего метода,
+     * который всегда бросает исключение, - handleDataIntegrityIssues(command, dve) с throw в конце
      */
     public boolean rethrows(CatchClause clause) {
-        return !clause.getBody().findAll(ThrowStmt.class).isEmpty();
+        return !clause.getBody().findAll(ThrowStmt.class).isEmpty()
+                || clause.getBody().getStatements().stream()
+                .filter(statement -> statement.isExpressionStmt()
+                        && statement.asExpressionStmt().getExpression().isMethodCallExpr())
+                .map(statement -> statement.asExpressionStmt().getExpression().asMethodCallExpr())
+                .anyMatch(call -> declarationOf(call).filter(Messaging::alwaysThrows).isPresent());
+    }
+
+    // Объявление вызванного метода проекта; вызов своего метода без объекта находится и без решателя типов
+    private Optional<MethodDeclaration> declarationOf(MethodCallExpr call) {
+        return Types.declaration(call).or(() -> call.getScope().filter(scope -> !scope.isThisExpr()).isPresent()
+                ? Optional.empty()
+                : ownerOf(call).flatMap(owner -> {
+                    List<MethodDeclaration> candidates = owner.getMethodsByName(call.getNameAsString()).stream()
+                            .filter(method -> method.getParameters().size() == call.getArguments().size())
+                            .toList();
+                    return candidates.size() == 1 ? Optional.of(candidates.get(0)) : Optional.empty();
+                }));
+    }
+
+    // Последняя команда метода - throw, и выйти из него через return нельзя
+    private boolean alwaysThrows(MethodDeclaration method) {
+        return method.getBody()
+                .filter(body -> body.getStatements().getLast().filter(Statement::isThrowStmt).isPresent())
+                .filter(body -> body.findAll(ReturnStmt.class).stream().allMatch(exit -> Nodes.isInNestedScope(exit, body)))
+                .isPresent();
     }
 
     /**

@@ -15,6 +15,7 @@ import java.util.Set;
 @Component
 public class EmptyCatchRule extends AbstractRule {
     // Имя переменной прямо говорит, что исключение пропускают намеренно
+    private static final Set<String> BAD_INPUT = Set.of("NumberFormatException", "DateTimeParseException");
     private static final Set<String> IGNORED_NAMES = Set.of("ignored", "ignore", "expected");
 
     @Override
@@ -34,6 +35,9 @@ public class EmptyCatchRule extends AbstractRule {
                 .filter(clause -> clause.getBody().getStatements().isEmpty())
                 .filter(clause -> clause.getBody().getAllContainedComments().isEmpty())
                 .filter(clause -> !IGNORED_NAMES.contains(clause.getParameter().getNameAsString()))
+                // Long.parseLong(header) в try с пустым catch (NumberFormatException): неразобранное значение
+                // пропускают и оставляют значение по умолчанию
+                .filter(clause -> !BAD_INPUT.contains(clause.getParameter().getType().asString()))
                 .map(clause -> violation(sourceFile, clause,
                         "Пустой catch (" + clause.getParameter().getType() + "): исключение проглатывается,"
                                 + " ошибка останется незамеченной; обработайте его или хотя бы запишите в лог"))

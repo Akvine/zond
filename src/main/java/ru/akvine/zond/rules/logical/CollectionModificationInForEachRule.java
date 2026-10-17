@@ -2,6 +2,7 @@ package ru.akvine.zond.rules.logical;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.ForEachStmt;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class CollectionModificationInForEachRule extends AbstractRule {
@@ -28,6 +30,15 @@ public class CollectionModificationInForEachRule extends AbstractRule {
     private static final Set<String> MODIFYING_METHODS = Set.of(
             "add", "addAll", "addFirst", "addLast", "remove", "removeAll", "removeIf", "retainAll", "clear",
             "push", "pop", "poll");
+    // Обход конкурентной коллекции не падает от ее изменения: итератор видит коллекцию на какой-то момент
+    private static final Set<String> CONCURRENT_TYPES = Set.of(
+            "ConcurrentMap", "ConcurrentHashMap", "ConcurrentNavigableMap", "ConcurrentSkipListMap",
+            "ConcurrentSkipListSet", "CopyOnWriteArrayList", "CopyOnWriteArraySet", "ConcurrentLinkedQueue",
+            "ConcurrentLinkedDeque", "BlockingQueue", "BlockingDeque", "LinkedBlockingQueue", "LinkedBlockingDeque",
+            "ArrayBlockingQueue", "PriorityBlockingQueue", "DelayQueue", "LinkedTransferQueue");
+    // Лямбда, которую вызовут потом, а не во время обхода: sendRequest(request, createCallback(() -> ...))
+    private static final Pattern CALLBACK = Pattern.compile(".*([Cc]allback|[Ll]istener|Async).*|(then|when|on)[A-Z].*"
+            + "|submit|execute|schedule|scheduleAtFixedRate|scheduleWithFixedDelay|subscribe");
 
     @Override
     public String code() {
@@ -71,16 +82,42 @@ public class CollectionModificationInForEachRule extends AbstractRule {
 
     private void report(SourceFile sourceFile, Node body, Expression iterated, List<Violation> violations) {
         String collection = name(iterated).orElseThrow();
+        if (isConcurrent(iterated)) {
+            return;
+        }
         for (MethodCallExpr call : body.findAll(MethodCallExpr.class)) {
             boolean modifies = MODIFYING_METHODS.contains(call.getNameAsString())
                     && call.getScope().filter(scope -> isSameCollection(scope, iterated)).isPresent();
-            if (modifies && !isFollowedByExit(call)) {
+            if (modifies && !isFollowedByExit(call) && !isInCallback(call, body)) {
                 violations.add(violation(sourceFile, call,
                         "Коллекция '" + collection + "' изменяется методом " + call.getNameAsString()
                                 + " внутри обхода по ней же: будет ConcurrentModificationException;"
                                 + " используйте Iterator.remove(), removeIf() или копию коллекции"));
             }
         }
+    }
+
+    // Map<K, V> ipMap = new ConcurrentHashMap<>(): тип виден по объявлению либо по созданному объекту
+    private boolean isConcurrent(Expression collection) {
+        boolean declared = LocalTypes.typeOf(collection).filter(CONCURRENT_TYPES::contains).isPresent();
+        return declared || LocalTypes.findInitializer(collection)
+                .map(Nodes::unwrap)
+                .filter(Expression::isObjectCreationExpr)
+                .filter(creation -> CONCURRENT_TYPES.contains(creation.asObjectCreationExpr().getType().getNameAsString()))
+                .isPresent();
+    }
+
+    // Изменение внутри лямбды, отданной обработчиком на потом: к моменту ее вызова обход уже закончен
+    private boolean isInCallback(MethodCallExpr call, Node body) {
+        Node current = call.getParentNode().orElse(null);
+        while (current != null && current != body) {
+            if (current instanceof LambdaExpr && current.getParentNode().orElse(null) instanceof MethodCallExpr owner
+                    && CALLBACK.matcher(owner.getNameAsString()).matches()) {
+                return true;
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
     }
 
     // items, this.items, map.keySet() / values() / entrySet()

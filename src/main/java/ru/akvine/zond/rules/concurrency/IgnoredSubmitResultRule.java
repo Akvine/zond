@@ -4,6 +4,7 @@ import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
+import com.github.javaparser.ast.stmt.Statement;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -12,6 +13,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.Loggers;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -21,6 +23,7 @@ import java.util.regex.Pattern;
 @Component
 public class IgnoredSubmitResultRule extends AbstractRule {
     private static final String SUBMIT = "submit";
+    private static final Set<String> BROAD = Set.of("Exception", "Throwable");
 
     // submit(task) и submit(task, result)
     private static final int SUBMIT_MAX_ARGUMENTS = 2;
@@ -58,7 +61,7 @@ public class IgnoredSubmitResultRule extends AbstractRule {
                     && !call.getArguments().isEmpty()
                     && call.getArguments().size() <= SUBMIT_MAX_ARGUMENTS;
 
-            if (isSubmit && call.getScope().filter(this::isExecutor).isPresent()) {
+            if (isSubmit && call.getScope().filter(this::isExecutor).isPresent() && !catchesOwnErrors(call.getArgument(0))) {
                 violations.add(violation(sourceFile, call,
                         "Future из '" + call.getScope().get() + ".submit(...)' не используется: исключение"
                                 + " задачи останется внутри Future и нигде не появится; сохраните Future"
@@ -76,6 +79,24 @@ public class IgnoredSubmitResultRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.CONCURRENCY;
+    }
+
+    // submit(() -> { log.trace(...); try { ... } catch (Exception e) { log.error(..., e); } }): задача сама ловит
+    // любую ошибку, и в Future ей попасть не из чего
+    private boolean catchesOwnErrors(Expression task) {
+        if (!(task instanceof LambdaExpr lambda) || !lambda.getBody().isBlockStmt()) {
+            return false;
+        }
+        List<Statement> statements = lambda.getBody().asBlockStmt().getStatements();
+        boolean guarded = statements.stream().anyMatch(this::catchesEverything);
+        return guarded && statements.stream().allMatch(statement -> catchesEverything(statement)
+                || statement.isExpressionStmt() && statement.asExpressionStmt().getExpression().isMethodCallExpr()
+                && Loggers.isLogCall(statement.asExpressionStmt().getExpression().asMethodCallExpr()));
+    }
+
+    private boolean catchesEverything(Statement statement) {
+        return statement.isTryStmt() && statement.asTryStmt().getCatchClauses().stream()
+                .anyMatch(clause -> BROAD.contains(LocalTypes.typeName(clause.getParameter().getType())));
     }
 
     // По типу; если тип определить не удалось - по имени: executor, threadPool, getScheduler()

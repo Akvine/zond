@@ -3,6 +3,7 @@ package ru.akvine.zond.rules.codesmell;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.stmt.Statement;
 import org.springframework.stereotype.Component;
@@ -106,11 +107,31 @@ public class InternalCollectionExposureRule extends AbstractRule {
 
     private boolean isMutable(VariableDeclarator field) {
         boolean mutableType = MUTABLE_TYPES.contains(LocalTypes.typeName(field.getType())) || field.getType().isArrayType();
-        boolean immutableValue = field.getInitializer()
-                .map(Nodes::unwrap)
-                .filter(Expression::isMethodCallExpr)
-                .filter(initializer -> IMMUTABLE_FACTORIES.contains(initializer.asMethodCallExpr().getNameAsString()))
-                .isPresent();
+        boolean immutableValue = field.getInitializer().filter(this::isImmutable).isPresent()
+                || isAssignedOnlyImmutable(field);
         return mutableType && !immutableValue;
+    }
+
+    // this.columns = List.copyOf(columns) в конструкторе: снаружи отдают копию, которую нельзя изменить
+    private boolean isAssignedOnlyImmutable(VariableDeclarator field) {
+        String name = field.getNameAsString();
+        List<Expression> values = field.findAncestor(ClassOrInterfaceDeclaration.class).stream()
+                .flatMap(type -> type.findAll(AssignExpr.class).stream())
+                .filter(assignment -> isField(assignment.getTarget(), name))
+                .map(AssignExpr::getValue)
+                .toList();
+        return !values.isEmpty() && field.getInitializer().isEmpty() && values.stream().allMatch(this::isImmutable);
+    }
+
+    private boolean isField(Expression target, String name) {
+        return target.isFieldAccessExpr() && target.asFieldAccessExpr().getScope().isThisExpr()
+                && target.asFieldAccessExpr().getNameAsString().equals(name)
+                || target.isNameExpr() && target.asNameExpr().getNameAsString().equals(name);
+    }
+
+    private boolean isImmutable(Expression value) {
+        Expression unwrapped = Nodes.unwrap(value);
+        return unwrapped.isMethodCallExpr()
+                && IMMUTABLE_FACTORIES.contains(unwrapped.asMethodCallExpr().getNameAsString());
     }
 }

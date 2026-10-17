@@ -1,9 +1,12 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.CallableDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.ReturnStmt;
+import com.github.javaparser.ast.stmt.TryStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -27,6 +30,7 @@ public class OptionalMisuseRule extends AbstractRule {
 
     // Методы, которые возвращают Optional: вызов get() сразу после них ничем не защищен
     private static final Set<String> OPTIONAL_SOURCES = Set.of("findFirst", "findAny", "findById", "ofNullable");
+    private static final Set<String> CATCHING = Set.of("NoSuchElementException", "RuntimeException", "Exception", "Throwable");
 
     @Override
     public String code() {
@@ -62,7 +66,8 @@ public class OptionalMisuseRule extends AbstractRule {
             }
 
             Expression scope = Nodes.unwrap(call.getScope().get());
-            if (isUncheckedSource(scope) || isUncheckedVariable(scope, call)) {
+            // get() внутри try, который ловит NoSuchElementException, - отсутствие значения уже обработано
+            if ((isUncheckedSource(scope) || isUncheckedVariable(scope, call)) && !isCaught(call)) {
                 violations.add(violation(sourceFile, call,
                         "Optional.get() без проверки в '" + call + "': на пустом Optional будет"
                                 + " NoSuchElementException; используйте orElseThrow(), orElse() или ifPresent()"));
@@ -79,6 +84,21 @@ public class OptionalMisuseRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.LOGICAL;
+    }
+
+    private boolean isCaught(Node node) {
+        Node child = node;
+        Node current = node.getParentNode().orElse(null);
+        while (current != null && !(current instanceof CallableDeclaration<?>)) {
+            if (current instanceof TryStmt tryStatement && tryStatement.getTryBlock() == child
+                    && tryStatement.getCatchClauses().stream()
+                    .anyMatch(clause -> CATCHING.stream().anyMatch(clause.getParameter().getType().asString()::contains))) {
+                return true;
+            }
+            child = current;
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
     }
 
     // stream.findFirst().get(), repository.findById(id).get()
