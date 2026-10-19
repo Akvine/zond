@@ -18,6 +18,7 @@ import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.CallChains;
 import ru.akvine.zond.rules.support.CallGraph;
 import ru.akvine.zond.rules.support.CodeContexts;
+import ru.akvine.zond.rules.support.Lifecycle;
 import ru.akvine.zond.rules.support.Repositories;
 
 import java.util.ArrayList;
@@ -50,18 +51,20 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         CallGraph graph = CallGraph.of(sourceFiles);
+        Lifecycle lifecycle = Lifecycle.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             Set<Integer> reportedLines = new HashSet<>();
             for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
                 // В цикле повторных попыток запрос повторяется по числу попыток, а не по числу элементов
                 // Запрос в catch выполняется, только когда обработка элемента сорвалась, а не для каждого
-                // Загрузка справочников при запуске выполняется один раз; вызов, за которым цикл кончается, - тоже
-                if (!CodeContexts.isRepeatedOverData(call) || CodeContexts.isInCatch(call) || CodeContexts.isStartup(call)
-                        || isLastInLoop(call)) {
+                // Загрузка справочников при запуске выполняется один раз, в том числе из start(), который вызывает
+                // @PostConstruct другого бина; вызов, за которым цикл кончается, - тоже
+                if (!CodeContexts.isRepeatedOverData(call) || CodeContexts.isInCatch(call) || isLastInLoop(call)) {
                     continue;
                 }
                 describe(call, graph)
+                        .filter(problem -> !lifecycle.isAtStartupOrShutdown(call))
                         .filter(problem -> reportedLines.add(call.getBegin().map(position -> position.line).orElse(0)))
                         .ifPresent(problem -> violations.add(violation(sourceFile, call, problem.text()
                                 + ": на каждый элемент уходит отдельный запрос к БД (проблема N+1);"

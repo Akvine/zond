@@ -35,7 +35,9 @@ public class WeakHashRule extends AbstractRule {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern BENIGN_CONTEXT = Pattern.compile(
             "checksum|etag|cache|dedup|duplicate|fingerprint|file|content|gravatar|avatar|bucket|shard|partition"
-                    + "|idempot|revision|version|digestOf|contentHash|uniq",
+                    + "|idempot|revision|version|digestOf|contentHash|uniq"
+                    // Согласованное хеширование: узел для ключа выбирают по кольцу хешей
+                    + "|consistentHash|hashRing|loadBalanc",
             Pattern.CASE_INSENSITIVE);
 
     private static final Set<String> WEAK_HASH_METHODS = Set.of(

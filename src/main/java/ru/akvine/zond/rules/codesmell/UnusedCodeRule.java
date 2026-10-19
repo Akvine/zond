@@ -10,6 +10,7 @@ import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.comments.Comment;
+import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -187,9 +188,13 @@ public class UnusedCodeRule extends AbstractRule {
         return false;
     }
 
+    // Имя самого пакета и импорта - заголовок; аннотация пакета в package-info.java (@NullMarked package ...) - код
     private boolean isPartOfHeader(Name name) {
         Node current = name.getParentNode().orElse(null);
         while (current != null) {
+            if (current instanceof AnnotationExpr) {
+                return false;
+            }
             if (current instanceof ImportDeclaration || current instanceof PackageDeclaration) {
                 return true;
             }

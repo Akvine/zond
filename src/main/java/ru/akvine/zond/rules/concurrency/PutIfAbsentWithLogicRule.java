@@ -4,7 +4,9 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.IfStmt;
+import com.github.javaparser.ast.stmt.Statement;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -26,6 +28,10 @@ public class PutIfAbsentWithLogicRule extends AbstractRule {
     private static final String PUT_IF_ABSENT = "putIfAbsent";
     private static final Set<String> CONCURRENT_MAP_TYPES =
             Set.of("ConcurrentHashMap", "ConcurrentMap", "ConcurrentSkipListMap", "ConcurrentNavigableMap");
+    // Атомарное обновление счетчика, который уже лежит в map: AtomicInteger, AtomicLong, LongAdder
+    private static final Set<String> ATOMIC_UPDATES = Set.of(
+            "incrementAndGet", "getAndIncrement", "decrementAndGet", "getAndDecrement", "addAndGet", "getAndAdd",
+            "increment", "decrement", "add", "accumulate", "accumulateAndGet", "updateAndGet", "getAndUpdate");
 
     @Override
     public String code() {
@@ -58,6 +64,7 @@ public class PutIfAbsentWithLogicRule extends AbstractRule {
             for (IfStmt ifStmt : callable.get().findAll(IfStmt.class)) {
                 findNullCheck(ifStmt, operand -> operand.isNameExpr()
                         && operand.asNameExpr().getNameAsString().equals(name))
+                        .filter(check -> !isAtomicUpdateOfPrevious(ifStmt, check, name))
                         .ifPresent(check -> violations.add(report(sourceFile, ifStmt)));
             }
         }
@@ -95,6 +102,29 @@ public class PutIfAbsentWithLogicRule extends AbstractRule {
                             || (right.isNullLiteralExpr() && operand.test(left));
                 })
                 .findFirst();
+    }
+
+    /**
+     * AtomicInteger count = map.putIfAbsent(key, new AtomicInteger(1)); if (count != null) count.incrementAndGet():
+     * ветка для уже лежащего значения только атомарно обновляет его. Вставленное значение готово сразу, и других
+     * действий над ним нет
+     */
+    private boolean isAtomicUpdateOfPrevious(IfStmt ifStmt, BinaryExpr check, String previous) {
+        if (check.getOperator() != BinaryExpr.Operator.NOT_EQUALS || ifStmt.getElseStmt().isPresent()
+                || !Nodes.unwrap(ifStmt.getCondition()).equals(check)) {
+            return false;
+        }
+        Statement then = ifStmt.getThenStmt();
+        List<Statement> statements = then.isBlockStmt() ? then.asBlockStmt().getStatements() : List.of(then);
+        return !statements.isEmpty() && statements.stream().allMatch(statement -> statement.isExpressionStmt()
+                && statement.asExpressionStmt().getExpression().isMethodCallExpr()
+                && isAtomicUpdate(statement.asExpressionStmt().getExpression().asMethodCallExpr(), previous));
+    }
+
+    private boolean isAtomicUpdate(MethodCallExpr call, String previous) {
+        return ATOMIC_UPDATES.contains(call.getNameAsString()) && call.getScope()
+                .filter(scope -> scope.isNameExpr() && scope.asNameExpr().getNameAsString().equals(previous))
+                .isPresent();
     }
 
     private boolean isPutIfAbsent(Expression expression) {

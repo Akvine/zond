@@ -13,8 +13,11 @@ import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
+import com.github.javaparser.ast.stmt.DoStmt;
+import com.github.javaparser.ast.stmt.ForStmt;
 import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.SynchronizedStmt;
+import com.github.javaparser.ast.stmt.WhileStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -22,10 +25,12 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.BeanScopes;
 import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.Lifecycle;
 import ru.akvine.zond.rules.support.Lombok;
 
 import java.util.ArrayList;
@@ -35,6 +40,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -51,9 +57,8 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
     private static final Set<String> CONTAINER_MANAGED_ANNOTATIONS = Set.of(
             "Autowired", "Inject", "Resource", "Value", "PersistenceContext", "PersistenceUnit", "PostConstruct",
             "PreDestroy");
-    // destroy() у DisposableBean контейнер вызывает при остановке
-    private static final String DESTROY = "destroy";
-    private static final String DISPOSABLE_BEAN = "DisposableBean";
+    private static final String PRE_DESTROY = "PreDestroy";
+    private static final Pattern STOP_METHOD = Pattern.compile("(close|stop|shutdown|destroy|dispose|terminate).*");
     private static final String SETTER = "set";
 
     @Override
@@ -79,14 +84,16 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         Map<String, List<MethodCallExpr>> setterCalls = setterCalls(sourceFiles);
+        Lifecycle lifecycle = Lifecycle.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            checkFile(sourceFile, setterCalls, violations);
+            checkFile(sourceFile, setterCalls, lifecycle, violations);
         }
         return violations;
     }
 
-    private void checkFile(SourceFile sourceFile, Map<String, List<MethodCallExpr>> setterCalls, List<Violation> violations) {
+    private void checkFile(SourceFile sourceFile, Map<String, List<MethodCallExpr>> setterCalls, Lifecycle lifecycle,
+                           List<Violation> violations) {
         for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
             if (!isSingletonBean(type)) {
                 continue;
@@ -98,17 +105,22 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
                 }
 
                 for (VariableDeclarator variable : field.getVariables()) {
-                    Set<String> writers = findWriters(type, variable.getNameAsString());
+                    boolean loopFlag = isLoopFlag(type, variable.getNameAsString());
+                    Set<String> writers = findWriters(type, variable.getNameAsString(), loopFlag, lifecycle);
                     // Сеттера в коде нет, но Lombok его создаст - и поле сможет поменять любой, у кого есть бин.
                     // Если его вызывают только при запуске (из @PostConstruct другого бина) либо не вызывают
                     // вовсе, поле во время работы не меняется
-                    if (Lombok.hasSetter(type, field)
-                            && isCalledAtRuntime(type, setterName(variable.getNameAsString()), setterCalls)) {
+                    if (Lombok.hasSetter(type, field) && isCalledAtRuntime(
+                            type, setterName(variable.getNameAsString()), setterCalls, lifecycle)) {
                         writers.add("'" + setterName(variable.getNameAsString()) + "' (сеттер от Lombok)");
                     }
                     if (writers.isEmpty()) {
                         continue;
                     }
+                    String problem = loopFlag
+                            ? ": поле - условие цикла, а без volatile поток с циклом может так и не увидеть"
+                            + " нового значения и не остановиться; объявите поле volatile либо используйте AtomicBoolean"
+                            : ": экземпляр один на все потоки, возможны гонки и утечка данных между запросами";
                     violations.add(new Violation(
                             errorLevel(),
                             errorType(),
@@ -118,8 +130,7 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
                             variable.getBegin().map(position -> position.line).orElse(0),
                             "Поле '" + variable.getNameAsString() + "' singleton-бина '" + type.getNameAsString()
                                     + "' изменяется без синхронизации в методе " + String.join(", ", writers)
-                                    + ": экземпляр один на все потоки, возможны гонки и утечка данных"
-                                    + " между запросами"));
+                                    + problem));
                 }
             }
         }
@@ -156,9 +167,9 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
         return calls;
     }
 
-    // Вызов сеттера этого бина вне запуска. Объект, тип которого не определить, считается этим бином
+    // Вызов сеттера этого бина вне запуска и остановки. Объект, тип которого не определить, считается этим бином
     private boolean isCalledAtRuntime(ClassOrInterfaceDeclaration type, String setter,
-                                      Map<String, List<MethodCallExpr>> setterCalls) {
+                                      Map<String, List<MethodCallExpr>> setterCalls, Lifecycle lifecycle) {
         String typeName = type.getNameAsString();
         return setterCalls.getOrDefault(setter, List.of()).stream()
                 .filter(call -> call.getScope()
@@ -167,15 +178,26 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
                         .orElseGet(() -> call.findAncestor(ClassOrInterfaceDeclaration.class)
                                 .filter(owner -> owner == type)
                                 .isPresent()))
-                .anyMatch(call -> !CodeContexts.isStartup(call));
+                .anyMatch(call -> !lifecycle.isAtStartupOrShutdown(call));
     }
 
-    private boolean isShutdownCallback(MethodDeclaration method) {
-        return DESTROY.equals(method.getNameAsString()) && method.getParameters().isEmpty()
-                && method.findAncestor(ClassOrInterfaceDeclaration.class)
-                .filter(owner -> owner.getImplementedTypes().stream()
-                        .anyMatch(implemented -> DISPOSABLE_BEAN.equals(implemented.getNameAsString())))
-                .isPresent();
+    private boolean isStopMethod(MethodDeclaration method) {
+        return Annotations.has(method, PRE_DESTROY) || STOP_METHOD.matcher(method.getNameAsString()).matches();
+    }
+
+    /**
+     * Флаг цикла: {@code while (running)} в другом потоке читает поле, а остановка его меняет. Без volatile
+     * запись при остановке - ошибка, даже если больше поле никто не трогает
+     */
+    private boolean isLoopFlag(ClassOrInterfaceDeclaration type, String fieldName) {
+        Stream<Expression> conditions = Stream.concat(
+                Stream.concat(type.findAll(WhileStmt.class).stream().map(WhileStmt::getCondition),
+                        type.findAll(DoStmt.class).stream().map(DoStmt::getCondition)),
+                type.findAll(ForStmt.class).stream().flatMap(loop -> loop.getCompare().stream()));
+        return conditions.anyMatch(condition -> Stream.concat(Stream.of(condition), condition.findAll(Expression.class).stream())
+                .anyMatch(part -> part.isNameExpr() && part.asNameExpr().getNameAsString().equals(fieldName)
+                        || part.isFieldAccessExpr() && part.asFieldAccessExpr().getScope().isThisExpr()
+                        && part.asFieldAccessExpr().getNameAsString().equals(fieldName)));
     }
 
     private boolean isContainerManaged(NodeWithAnnotations<?> node) {
@@ -190,13 +212,14 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
         return SETTER + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
     }
 
-    private Set<String> findWriters(ClassOrInterfaceDeclaration type, String fieldName) {
+    private Set<String> findWriters(ClassOrInterfaceDeclaration type, String fieldName, boolean loopFlag,
+                                    Lifecycle lifecycle) {
         Set<String> writers = new LinkedHashSet<>();
         for (MethodDeclaration method : type.getMethods()) {
             // Методы запуска (@EventListener(ApplicationReadyEvent.class), CommandLineRunner.run, setApplicationContext)
             // выполняются один раз, пока бин еще не обслуживает запросы
-            if (method.isStatic() || method.isSynchronized() || isContainerManaged(method)
-                    || CodeContexts.isStartupMethod(method) || isShutdownCallback(method)) {
+            if (method.isStatic() || method.isSynchronized() || CodeContexts.isStartupMethod(method)
+                    || isContainerManaged(method) && !(loopFlag && Annotations.has(method, PRE_DESTROY))) {
                 continue;
             }
 
@@ -205,7 +228,11 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
                     .filter(target -> !isInsideSynchronizedBlock(target, method))
                     .filter(target -> !isLazyInitialization(target, fieldName))
                     .anyMatch(target -> isField(target, fieldName, shadowed));
-            if (writes) {
+            // Запись при запуске и остановке не страшна. Кроме флага цикла: его сбрасывают как раз при остановке,
+            // пока цикл еще крутится в другом потоке
+            boolean skipped = writes && lifecycle.isLifecycleOnly(method)
+                    && !(loopFlag && isStopMethod(method));
+            if (writes && !skipped) {
                 writers.add("'" + method.getNameAsString() + "'");
             }
         }

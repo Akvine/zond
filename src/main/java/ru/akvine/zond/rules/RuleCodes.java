@@ -427,4 +427,7 @@ public class RuleCodes {
     public final static String SORT_FOR_SINGLE_ELEMENT_RULE_CODE = "jr:421";
     public final static String FIXED_THREAD_POOL_SIZE_RULE_CODE = "jr:422";
     public final static String STATIC_CONTAINER_HOLDER_RULE_CODE = "jr:423";
+    public final static String RECURSIVE_DOCUMENT_TRAVERSAL_RULE_CODE = "jr:424";
+    public final static String UNIQUE_CODE_GENERATION_RULE_CODE = "jr:425";
+    public final static String LEGACY_SYNCHRONIZED_COLLECTION_RULE_CODE = "jr:426";
 }

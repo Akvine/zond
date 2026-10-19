@@ -525,6 +525,45 @@ zond.scan.ci=true
 - Проверяются типы по именам из списка; одноименный класс самого проекта пропускается, а `Connection`,
   `Statement` и `ResultSet` учитываются только при импорте из `java.sql`.
 
+### Устаревшие синхронизированные коллекции
+
+| Правило | Что находит | Уровень |
+|---|---|---|
+| jr:426 | `new Hashtable`, `new Vector`, `new Stack` и обертка `Collections.synchronized...` в общем поле | MINOR |
+
+У `Hashtable`, `Vector` и `Stack` каждый метод `synchronized`: блокировка берется на каждый вызов, даже если
+коллекцию видит один поток, а составные действия (проверить и добавить, обойти) атомарными все равно не
+становятся. `Hashtable` к тому же не принимает null - `put(key, null)` бросит `NullPointerException`. Обертка
+`Collections.synchronizedList/Map/Set(...)` дает то же самое: одна блокировка на всю коллекцию, а обход и
+составные действия приходится отдельно заключать в `synchronized (list)` - об обходе без него говорит
+jr:245.
+
+```java
+// jr:426: каждый вызов ждет общую блокировку, а if (!contains) add - все равно гонка
+private final List<Session> sessions = Collections.synchronizedList(new ArrayList<>());
+private final Map<String, Client> clients = new Hashtable<>();
+
+// коллекции java.util.concurrent делают составные действия сами
+private final List<Session> sessions = new CopyOnWriteArrayList<>();
+private final Map<String, Client> clients = new ConcurrentHashMap<>();
+clients.computeIfAbsent(id, this::connect);
+```
+
+- **Замена.** `Hashtable` - `HashMap`, а для нескольких потоков `ConcurrentHashMap`; `Vector` - `ArrayList`
+  либо `CopyOnWriteArrayList`; `Stack` - `ArrayDeque` (у `Stack` к тому же обход идет снизу вверх, а не в
+  порядке `pop()`). Для обертки совет зависит от того, что обернуто: `ArrayList` - `CopyOnWriteArrayList`
+  или `ConcurrentLinkedQueue`, `LinkedList` - `ConcurrentLinkedDeque`, `HashMap` - `ConcurrentHashMap`,
+  `HashSet` - `ConcurrentHashMap.newKeySet()`, `TreeMap` и `TreeSet` - `ConcurrentSkipListMap` и
+  `ConcurrentSkipListSet`.
+- **Обертка считается только в общем поле:** статическом поле любого класса либо поле singleton-бина -
+  в том числе присвоенном в конструкторе. В локальной переменной и в поле обычного объекта она лишняя, а
+  не опасная.
+- **Не считаются.** Обертки над `LinkedHashMap` (порядок, LRU на `removeEldestEntry`), `WeakHashMap`,
+  `IdentityHashMap` и анонимными классами: конкурентной замены в JDK у них нет, и обертка - честный выбор.
+  `Hashtable` и `Vector` для старых API, которые сами их требуют: окружение JNDI (`new InitialDirContext(env)`,
+  `env.put(Context.PROVIDER_URL, ...)`) и модели Swing (`DefaultTableModel`, `JComboBox`, `JList`). `Properties`
+  (наследник `Hashtable`) не считается. Тесты не проверяются.
+
 ## Поиск перебором вместо Map
 
 Правило jr:362 ищет места, где элемент коллекции находят по ключу перебором, хотя `Map` дала бы доступ
@@ -629,6 +668,55 @@ zond.scan.ci=true
 - **jr:372 и jr:373.** Длина берется из миграций — тогда находка «подтверждена»; если колонки в миграциях
   нет или тип без длины (`text`), то из `@Column(length = ...)` — тогда «вероятно». Без того и другого
   правило молчит. Перечисление ищется по имени среди классов проекта.
+
+## Подбор уникального кода
+
+Короткий код приглашения, PIN, номер заказа из шести цифр часто подбирают так: сгенерировать случайное
+значение, проверить, что такого еще нет, и повторить. Коротких кодов конечное число. Когда они почти
+закончились, цикл без предела попыток крутится очень долго, а когда закончились совсем - бесконечно, и
+каждая попытка - еще один запрос в базу. Цикл с пределом, который после последней попытки возвращает
+`null` или последний, уже занятый код, прячет ту же ошибку до вставки дубликата.
+
+| Правило | Что находит | Уровень |
+|---|---|---|
+| jr:425 | подбор уникального случайного кода в цикле без предела попыток либо без исключения после последней попытки | MAJOR |
+
+```java
+// jr:425: когда шестизначные коды закончатся, цикл не закончится никогда
+while (true) {
+    String code = RandomStringUtils.randomNumeric(6);
+    if (!inviteRepository.existsByCode(code)) {
+        return code;
+    }
+}
+
+// так попыток не больше заданного, а их исчерпание - явная ошибка
+for (int i = 0; i < attempts; i++) {
+    String code = RandomStringUtils.randomNumeric(length);
+    if (inviteRepository.findByCode(code).isEmpty()) {
+        return code;
+    }
+}
+throw new IllegalStateException("Не удалось подобрать уникальный код за " + attempts + " попыток");
+```
+
+- **Что считается подбором.** Цикл (`while`, `do-while`, `for`), в котором переменная получает случайное
+  значение - `RandomStringUtils.randomNumeric(...)`, `random.nextInt(...)`, `StringUtils.randomAlphanumeric(...)`,
+  обрезок UUID (`randomUUID().toString().substring(0, 8)`, `hashCode()`), строка, собранная по символам
+  через `append` - в том числе через другие переменные (`name = base + "-" + suffix`), и эта переменная
+  уходит в проверку уникальности: `exists...`, `find...By...`, `count...By...`, `contains`, `containsKey`,
+  `isUnique...`, `isTaken...`. Цикл заканчивается, когда код нашелся: `return`, `break` либо проверка в
+  условии `do { ... } while (repository.existsByCode(code))`.
+- **Две находки.** «Без предела попыток» - в условии цикла нет сравнения со счетчиком, и внутри нет
+  `if (++attempts > MAX) throw / break`. «Без исключения после последней попытки» - предел есть, но сразу
+  за циклом нет ни `throw`, ни проверки `if (code == null) throw ...`, а внутри цикла исчерпание не
+  бросает исключение.
+- **Уверенность.** Если длина кода видна в коде, правило считает число вариантов: `randomNumeric(6)` -
+  миллион, `nextInt(10000)` - десять тысяч, и находка «вероятно». От миллиарда вариантов коды на практике не
+  кончаются (`randomAlphanumeric(6)` - 56 миллиардов), находка остается, но как «подозрение». Длина из
+  настроек неизвестна - «вероятно».
+- **Не считаются.** Полный `UUID.randomUUID()` - его не исчерпать; пакетная генерация (`for` по числу
+  нужных кодов без выхода при удаче); случайная пауза в цикле ожидания; тесты.
 
 ## Кеш и память
 
@@ -763,6 +851,74 @@ StreamingResponseBody body = out -> generator.write(rows, out);
 (список на миллион строк, таблица «строки × колонки»), а пределы запроса - ограничивать строки и колонки
 по отдельности, но не их произведение. Это свойство алгоритма, а не отдельной строки кода; о выборке
 без страниц сообщают jr:86 и jr:385.
+
+## Рекурсивный разбор документов
+
+Обойти дерево XML или JSON рекурсией - самый короткий способ: метод разбирает узел и вызывает сам себя для
+каждого вложенного. Но каждый уровень вложенности - еще один вызов в стеке потока, а глубину задает сам
+файл. На глубоко вложенном документе (в том числе собранном специально) поток падает со
+`StackOverflowError`. Это `Error`: обычный `catch (Exception)` его не поймает, и запрос обрывается целиком.
+Если элементы класть в отдельную очередь и разбирать их в цикле, необработанные узлы лежат в куче, и
+глубину ограничивает только память.
+
+| Правило | Что находит | Уровень |
+|---|---|---|
+| jr:424 | рекурсивный обход и разбор документа XML, JSON или YAML | MAJOR |
+
+```java
+// jr:424: глубина стека равна глубине вложенности документа
+void collect(Node node, List<String> values) {
+    if (node.getNodeType() == Node.TEXT_NODE) {
+        values.add(node.getTextContent());
+    }
+    NodeList children = node.getChildNodes();
+    for (int i = 0; i < children.getLength(); i++) {
+        collect(children.item(i), values);
+    }
+}
+
+// так узлы ждут своей очереди в куче, а стек не растет
+void collect(Node root, List<String> values) {
+    Deque<Node> pending = new ArrayDeque<>();
+    pending.push(root);
+    while (!pending.isEmpty()) {
+        Node node = pending.pop();
+        if (node.getNodeType() == Node.TEXT_NODE) {
+            values.add(node.getTextContent());
+        }
+        NodeList children = node.getChildNodes();
+        for (int i = children.getLength() - 1; i >= 0; i--) {
+            pending.push(children.item(i));
+        }
+    }
+}
+```
+
+- **Что считается документом.** Узлы дерева: `JsonNode`, `ObjectNode`, `ArrayNode` (Jackson),
+  `JsonElement`, `JsonObject`, `JsonArray` (Gson, Vert.x, `javax.json`), `JSONObject`, `JSONArray`
+  (org.json, fastjson), `NodeList`. `Node`, `Element` и `Document` есть во многих библиотеках, поэтому
+  они считаются, только если импортированы из пакетов дерева XML или YAML: `org.w3c.dom`, dom4j, JDOM,
+  XOM, SnakeYAML. Узел дерева разбора Java (`com.github.javaparser.ast.Node`) не документ: его глубину
+  задает исходный код. Отдельно - потоковые читатели `JsonParser`, `JsonReader`, `XMLStreamReader`,
+  `XMLEventReader`: рекурсивный разбор передает в себя тот же читатель и спускается на уровень ниже.
+- **Что считается рекурсией.** Метод вызывает сам себя - в том числе из лямбды
+  (`node.fields().forEachRemaining(field -> flatten(..., field.getValue()))`) и ссылкой на метод
+  (`array.forEach(this::update)`) - и передает в вызов узел, до которого дошел от своего параметра:
+  `children.item(i)`, `node.get(key)`, переменную цикла по узлу, параметр лямбды в `node.forEach(...)`,
+  результат `instanceof JSONObject nested`. Взаимная рекурсия внутри класса - `readValue -> readObject ->
+  readValue` - тоже считается; о цикле сообщается один раз, на первом его методе, и в тексте находки
+  виден весь цикл.
+- **Когда находки нет.** Метод сам ограничивает глубину: принимает `depth`, `level` или `nesting` и
+  сравнивает его с пределом (`if (depth > MAX_DEPTH) throw ...`). Счетчик `indent` пределом не является -
+  он отступ, а не проверка. Не спуск по документу: тот же узел дальше (`print(node, path + "/")`), новый
+  объект (`validate(new DOMSource(node))` - это другая перегрузка), результат другой функции
+  (`merge(parent, translation)` при обходе иерархии клиентов) и обход полей класса через рефлексию
+  (`walkInto(Class<?> type, JsonNode json)`). Тесты не проверяются.
+- **Пределы парсеров.** У некоторых парсеров есть свой предел вложенности - у Jackson с версии 2.15 это
+  1000 уровней по умолчанию (`StreamReadConstraints`), - но его поднимают настройкой, а парсеры DOM и StAX
+  из JDK при обычных настройках глубину не ограничивают (`jdk.xml.maxElementDepth=0`). Рекурсия, у которой каждый уровень держит в стеке несколько
+  переменных, может закончиться и раньше предела парсера, поэтому правило не делает исключений по
+  библиотеке.
 
 ## Квадратичные алгоритмы на коллекциях
 
@@ -1229,7 +1385,7 @@ Java-файлы из каталогов `build`, `target` и `out` читают�
 | jr:301 и другие проверки настроек | Файлы, которые проект называет сам: `--spring.config.name=thingsboard` (в том числе склейкой констант) и `@PropertySource("classpath:recaptcha.properties")` |
 | jr:301, свойства нет в настройках | Бин из пакета, который не сканирует ни одно приложение проекта (`@SpringBootApplication`, `@ComponentScan`) и не подключен через `@Import`; системные свойства JVM: `java.io.tmpdir`, `user.home` |
 | jr:55, `@Lazy` на зависимости | Цикла нет: зависимость с `@Lazy` не ведет обратно к бину — это отложенное создание, а не обход цикла. В тексте находки — сам цикл |
-| jr:105, потерянная причина | `IllegalArgumentException` вокруг одного `Type.valueOf(param)` или `UUID.fromString(id)`; `TimeoutException` |
+| jr:105, потерянная причина | `IllegalArgumentException` вокруг одного `Type.valueOf(param)` или `UUID.fromString(id)`; `TimeoutException`; новое исключение о неверном вводе без конструктора с причиной: `throw new ParseException("...", i)`, `NumberFormatException` |
 | jr:154, секрет в `toString()` | Поле примитивного или упакованного типа: `boolean hasSecrets`, `Boolean saveCredentials` |
 | jr:117, `case` без `break` | Ветка кончается `if/else` или `try/catch`, все пути которых делают `return` или `throw` |
 | jr:147, цикл бинов | При `spring.main.allow-circular-references=true` приложение стартует: находка уровня MINOR (о самой настройке говорит jr:395) |
@@ -1245,6 +1401,26 @@ Java-файлы из каталогов `build`, `target` и `out` читают�
 | jr:141, тест без проверки | Проверка во вспомогательном методе своего класса или родителя, до трех вызовов вглубь: `processTest(config)` → `verify(...)`; тест, задуманный как «не падает»: `getMenuDoesNotThrow` |
 | jr:187, исключение в логе без стека | Исключение целиком отдано своему методу: `logAndPersist("onStop", e)` |
 | jr:63 и другие правила о репозиториях | Тип объявлен в коде и импортирован из библиотеки, а не из пакетов проекта: `ClassOrInterfaceDeclaration repository` — имя переменной ничего не говорит |
+| jr:204, секрет в настройках | Заглушка вместо значения: `??`, `sk-??`, `sk-****`; зашифрованное значение с любым префиксом шифра: `{cas-cipher}...` |
+| jr:19 и другие проверки секретов | Префикс ключа кеша: `LOGIN_QRCODE_TOKEN = "LQT:"`, `"user:session:"` |
+| jr:207, SSRF | Адрес только разбирают и проверяют: `URI uri = new URI(state); if (uri.getHost() == null) ...`; узел задан не клиентом, а клиент меняет только путь: `baseUrl + "/async-result/" + taskId` |
+| jr:151, путь из данных запроса | От пути берут только имя файла: `new File(path).getName()`; объект запроса выше проверен целиком: `downloadFileDtoValidator.validate(dto)` |
+| jr:329, индекс из `indexOf` | Поиск по той же строке уже сравнили: `if (path.indexOf(SymbolConstant.AND) > -1)`, `name.indexOf(".") == -1 ? name : name.substring(0, name.lastIndexOf("."))`; строка - результат `matcher.group()` |
+| jr:38, неиспользуемый импорт | Импорт нужен аннотации пакета в `package-info.java`: `@NullMarked package ...` |
+| jr:303, сообщения разных языков | Значение продолжается на следующих строках через `\` - подстановки берутся из всего значения |
+| проверки Docker, Compose и Kubernetes; jr:204 и другие проверки настроек | Тестовые стенды: каталоги `test`, `tests`, `it`, `e2e`, `integrationTest`, `testFixtures` (`ci/tests/redis/docker-compose.yml`) и каталоги CI `.github`, `.gitlab`, `.circleci` (`.github/workflows/cluster-test/docker-compose-base.yaml`) |
+| jr:324, возможный null | `default: return null` в `switch` по параметру - защитная ветка; `if (isBlank(address) \|\| group == null) return null` - пустота нескольких аргументов |
+| jr:7 и другие правила о бинах-одиночках | Класс с `@ServerEndpoint`: контейнер WebSocket создает экземпляр на каждое подключение |
+| jr:7, изменяемое поле бина; jr:63, запрос к БД в цикле | Метод выполняется только при запуске или остановке: его вызывает `@PostConstruct` другого бина, напрямую или через цепочку (`MasterServer.@PostConstruct -> masterRegistryClient.start() -> registryClient.setStoppable(...)`), `close()` у бина с `AutoCloseable`, `start()` / `stop()` у `Lifecycle`. Метод со ссылкой на него (`this::start`) или с аннотацией фреймворка так не считается; вызовы из тестов не учитываются - в рабочей среде их нет |
+| jr:7, флаг цикла | Поле без `volatile`, которое читает условие цикла (`while (flag)`), сбрасывают при остановке (`close()`, `stop()`, `@PreDestroy`): об этом правило сообщает - поток с циклом может не увидеть нового значения |
+| jr:63, jr:94 и другие правила «в цикле» | Цикл обработки событий: `while (runningFlag.get()) { event = queue.take(); ... }` - итерация на каждое событие, а не на элемент коллекции. `while (!queue.isEmpty())` разбирает очередь до конца и остается перебором |
+| jr:63, jr:94 и другие правила «в цикле» | Выборка пачками, пока данные не кончатся: `while (true) { batch = dao.query(code, 100); if (isEmpty(batch)) break; ... }` - запрос и запись в лог на каждую пачку, а не на элемент. Цикл по элементам пачки остается перебором |
+| jr:63, jr:420 и другие правила «в цикле» | Повтор, а не исключение: функции коллекторов `Collectors.toMap(s -> UUID.randomUUID(), identity())`, `groupingBy`, `mapping` выполняются для каждого элемента, даже внутри цикла событий |
+| jr:96, размер связи в цикле | `en.getValue().size()` - значение записи `Map.Entry`, а не связь сущности |
+| jr:75, стрим в цикле | Перебор констант перечисления: `for (Type type : Type.values())`, `Arrays.stream(Type.values()).collect(toMap(identity(), type -> list.stream()...))` - их немного, и с данными их не становится больше. `map.values()` остается перебором данных |
+| jr:257, null вместо пустой коллекции | `if (source == null) return null;` по параметру: на null метод отвечает null, а кто передал объект, null не получит |
+| jr:126, проглоченное прерывание | Поток заканчивает работу в ответ на прерывание: в `run()` или `main()` catch выходит из цикла или метода (`catch (InterruptedException e) { break; }`) либо try - последний оператор метода |
+| jr:48, логика по результату putIfAbsent | Ветка для уже лежащего значения только атомарно его обновляет: `count = map.putIfAbsent(id, new AtomicInteger(1)); if (count != null) count.incrementAndGet();` |
 | jr:66, `get(0)` без проверки | Постоянный список с элементами: `static final List<String> SCOPES = List.of("singleton", "application")` |
 | jr:284, `indexOf(...) > 0` | Односимвольный разделитель: `url.indexOf('?') > 0`, `email.indexOf("@") > 0` — перед ним должно что-то стоять |
 | jr:182, геттер отдает коллекцию | Поле заполняется только неизменяемой копией: `this.columns = List.copyOf(columns)` |
@@ -1616,8 +1792,8 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
     то же свойство остается секретом;
   - константа с названием вида значения (`SECRET = "Secret"`) секретом не является.
 - **Слабый хеш** (jr:106). Находка зависит от того, что хешируется, — это видно по именам вокруг:
-  контрольная сумма файла, ключ кэша, ETag — не защита, находки нет; пароль, токен, подпись — вероятная
-  ошибка; иначе остается подозрение.
+  контрольная сумма файла, ключ кэша, ETag, кольцо согласованного хеширования (`ExecutorRouteConsistentHash`) —
+  не защита, находки нет; пароль, токен, подпись — вероятная ошибка; иначе остается подозрение.
 - **Отключенный CSRF** (jr:107) — не находка, если в той же конфигурации видно, что cookie-сессий нет:
   `SessionCreationPolicy.STATELESS`, `oauth2ResourceServer`, JWT.
 - **CORS для любых сайтов**: вместе с `allowCredentials(true)` — подтвержденная находка, без него —
@@ -1635,7 +1811,7 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
   копирование в обычный объект находкой не считаются.
 - **Адрес по `http://`** (jr:359) — находка только для внешнего адреса: `localhost`, частные сети, имена
   без точки (`http://orders:8080`) и внутренние зоны (`.local`, `.svc`, `.internal`) пропускаются, как и
-  профили разработки и тестов.
+  профили разработки и тестов и заглушки вместо адреса (`sso.test.com`, `example.com`, `http://credit.return.url`).
 - **Отключенная проверка SSL** (jr:140). Отключение без условия — находка. Отключение под условием —
   переключатель, и решает значение флага: находка будет, если ветку включает настройка рабочей среды
   (`http.client.verify-hostname=false` в `application.properties`; профили `dev`, `local`, `test` не

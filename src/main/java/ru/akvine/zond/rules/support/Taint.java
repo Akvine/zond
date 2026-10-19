@@ -401,6 +401,23 @@ public final class Taint {
         return false;
     }
 
+    // validator.validate(dto); ... dto.getPath(): объект целиком отдан проверке выше по коду. Условие о его
+    // свойстве ("OK".equals(result.getStatus())) другие свойства не проверяет и не считается
+    private boolean isValidatedObject(NameExpr owner) {
+        String variable = owner.getNameAsString();
+        int line = owner.getBegin().map(position -> position.line).orElse(Integer.MAX_VALUE);
+        return Nodes.enclosingCallable(owner).stream()
+                .flatMap(callable -> callable.findAll(ExpressionStmt.class).stream())
+                .filter(statement -> statement.getBegin().map(position -> position.line).orElse(Integer.MAX_VALUE) < line)
+                .map(ExpressionStmt::getExpression)
+                .filter(expression -> expression instanceof MethodCallExpr)
+                .map(expression -> (MethodCallExpr) expression)
+                .filter(call -> ASSERTING_METHOD.matcher(call.getNameAsString()).matches()
+                        || SANITIZER.matcher(call.getNameAsString()).matches())
+                .anyMatch(call -> call.getArguments().stream()
+                        .anyMatch(argument -> argument instanceof NameExpr name && name.getNameAsString().equals(variable)));
+    }
+
     // Среди операторов до текущего есть выход при непрошедшей проверке либо вызов-утверждение
     private boolean isCheckedEarlier(List<Statement> statements, Node current, String variable) {
         for (Statement statement : statements) {
@@ -580,7 +597,11 @@ public final class Taint {
             if (fromScope.isPresent()) {
                 return fromScope;
             }
-            // order.getComment(), если где-то в проекте было order.setComment(<данные извне>)
+            // order.getComment(), если где-то в проекте было order.setComment(<данные извне>). Объект, который
+            // выше проверили целиком - downloadFileDtoValidator.validate(dto), - уже не несет непроверенных данных
+            if (scope instanceof NameExpr owner && isValidatedObject(owner)) {
+                return Optional.empty();
+            }
             Optional<Origin> written = sourceOfProperty(call, scopeType, depth, visited);
             if (written.isPresent()) {
                 return written;

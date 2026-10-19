@@ -54,6 +54,8 @@ public class Secrets {
 
     // access_token, x-auth-token, jwt.secret: название параметра, заголовка или свойства
     private final static Pattern KEY_LIKE_VALUE = Pattern.compile("^[a-z]+([._\\-][a-z]+)+$");
+    // LOGIN_QRCODE_TOKEN = "LQT:", "user:session:": префикс ключа в Redis, к которому дописывают идентификатор
+    private final static Pattern CACHE_KEY_PREFIX = Pattern.compile("^([A-Za-z][\\w.\\-]*:)+$");
 
     // /api/token, https://example.org/oauth/token; адрес с логином и паролем внутри - отдельный случай
     private final static Pattern PATH_LIKE_VALUE = Pattern.compile("^(/|[a-z][a-z0-9+.\\-]*://)[^@]*$");
@@ -69,7 +71,9 @@ public class Secrets {
     // Слабые, но настоящие пароли (password, admin, 123456) сюда не входят - о них сообщать нужно
     private final static Pattern STUB_VALUE = Pattern.compile(
             "change[_-]?(me|it)|replace[_-]?(me|this)|to[_-]?do|placeholder|dummy|sample|example|undefined|n/a"
-                    + "|x{3,}|\\*{3,}|\\.{3,}|<[^>]*>|\\[[^\\]]*]|your[_-].*|.*[_-]here|.*_placeholder",
+                    + "|x{3,}|\\*{3,}|\\.{3,}|<[^>]*>|\\[[^\\]]*]|your[_-].*|.*[_-]here|.*_placeholder"
+                    // sk-??, sk-****, AKIA????: шаблон, в котором вместо значения стоят вопросы или звездочки
+                    + "|.*(\\?{2,}|\\*{3,}).*",
             Pattern.CASE_INSENSITIVE);
     private final static Pattern NON_ASCII_LETTER = Pattern.compile("[^\\p{ASCII}]");
     private final static Pattern TRAILING_DIGITS = Pattern.compile("\\d+$");
@@ -115,7 +119,8 @@ public class Secrets {
         if (WHITESPACE.matcher(text).find() || NON_ASCII_LETTER.matcher(text).find()) {
             return false;
         }
-        return !KEY_LIKE_VALUE.matcher(text).matches() && !PATH_LIKE_VALUE.matcher(text).matches();
+        return !KEY_LIKE_VALUE.matcher(text).matches() && !PATH_LIKE_VALUE.matcher(text).matches()
+                && !CACHE_KEY_PREFIX.matcher(text).matches();
     }
 
     /**

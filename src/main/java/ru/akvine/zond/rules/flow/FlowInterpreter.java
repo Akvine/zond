@@ -106,6 +106,7 @@ public final class FlowInterpreter {
     private static final List<String> SEARCH_GUARDS = List.of(".contains(", ".startsWith(", ".endsWith(", ".matches(");
     private static final String OR_ELSE = "orElse";
     private static final String INDEX_SEARCH_REASON = "результат поиска";
+    private static final String GROUP = "group";
     private static final String IS_EMPTY = "isEmpty";
     private static final String IS_PRESENT = "isPresent";
     private static final String SIZE = "size";
@@ -514,9 +515,9 @@ public final class FlowInterpreter {
         }
         if (returned.get() instanceof ConditionalExpr conditional) {
             boolean nullWhenTrue = unwrap(conditional.getThenExpr()).isNullLiteralExpr();
-            return parameters.stream().anyMatch(name -> nullWhenTrue
-                    ? isEmptinessCheck(conditional.getCondition(), name)
-                    : isPresenceCheck(conditional.getCondition(), name));
+            return nullWhenTrue
+                    ? isEmptinessCheck(conditional.getCondition(), parameters)
+                    : parameters.stream().anyMatch(name -> isPresenceCheck(conditional.getCondition(), name));
         }
         Node child = statement;
         Node parent = statement.getParentNode().orElse(null);
@@ -525,8 +526,24 @@ public final class FlowInterpreter {
             parent = parent.getParentNode().orElse(null);
         }
         Node thenBranch = child;
+        // switch (type) { case SECOND: return seconds; ... default: return null; } - защитная ветка на значение,
+        // которого не бывает: о результате для настоящих значений она ничего не говорит
+        if (parent instanceof SwitchEntry entry && entry.getLabels().isEmpty()
+                && entry.getParentNode().orElse(null) instanceof SwitchStmt choice
+                && unwrap(choice.getSelector()) instanceof NameExpr selector && parameters.contains(selector.getNameAsString())) {
+            return true;
+        }
         return parent instanceof IfStmt branch && branch.getThenStmt() == thenBranch
-                && parameters.stream().anyMatch(name -> isEmptinessCheck(branch.getCondition(), name));
+                && isEmptinessCheck(branch.getCondition(), parameters);
+    }
+
+    // value == null || value.isEmpty(), isBlank(address) || group == null: каждая часть - о пустоте какого-то параметра
+    private boolean isEmptinessCheck(Expression condition, Set<String> parameters) {
+        Expression value = unwrap(condition);
+        if (value instanceof BinaryExpr binary && binary.getOperator() == BinaryExpr.Operator.OR) {
+            return isEmptinessCheck(binary.getLeft(), parameters) && isEmptinessCheck(binary.getRight(), parameters);
+        }
+        return parameters.stream().anyMatch(name -> isEmptinessCheck(value, name));
     }
 
     // value == null, value == null || value.isEmpty(), StringUtils.isEmpty(value): каждая часть - о самом параметре
@@ -1238,7 +1255,7 @@ public final class FlowInterpreter {
             report(FlowAnalysis.Kind.INDEX_OUT_OF_BOUNDS, place,
                     "Индекс здесь всегда отрицательный (" + range(index) + "): обращение завершится исключением",
                     Confidence.CONFIRMED);
-        } else if (index.min() == -1 && INDEX_SEARCH_REASON.equals(index.reason()) && !isSearchGuarded(place)) {
+        } else if (index.min() == -1 && INDEX_SEARCH_REASON.equals(index.reason()) && !isSearchGuarded(place, searchedText(index))) {
             report(FlowAnalysis.Kind.INDEX_OUT_OF_BOUNDS, place,
                     "Индекс - " + INDEX_SEARCH_REASON + " (indexOf), а он равен -1, когда ничего не найдено:"
                             + " обращение завершится исключением; сначала проверьте, что индекс не отрицательный");
@@ -1249,8 +1266,13 @@ public final class FlowInterpreter {
         }
     }
 
-    // if (text.contains(":")) { text.substring(text.indexOf(':')) }: наличие искомого уже проверено
-    private boolean isSearchGuarded(Node place) {
+    // if (text.contains(":")) { text.substring(text.indexOf(':')) }: наличие искомого уже проверено.
+    // То же - сравнение поиска по той же строке: if (path.indexOf(SymbolConstant.AND) > -1),
+    // name.indexOf(".") == -1 ? name : name.substring(0, name.lastIndexOf("."))
+    private boolean isSearchGuarded(Node place, Optional<String> searched) {
+        if (searched.filter(text -> isRegexMatch(place, text)).isPresent()) {
+            return true;
+        }
         Node current = place.getParentNode().orElse(null);
         while (current != null && !(current instanceof CallableDeclaration)) {
             String condition = "";
@@ -1259,12 +1281,32 @@ public final class FlowInterpreter {
             } else if (current instanceof ConditionalExpr conditional) {
                 condition = conditional.getCondition().toString();
             }
-            if (SEARCH_GUARDS.stream().anyMatch(condition::contains)) {
+            String checked = condition;
+            if (SEARCH_GUARDS.stream().anyMatch(checked::contains)
+                    || searched.filter(text -> INDEX_SEARCH.stream().anyMatch(method -> checked.contains(text + "." + method + "("))).isPresent()) {
                 return true;
             }
             current = current.getParentNode().orElse(null);
         }
         return false;
+    }
+
+    // Строка, в которой ищут: для path.indexOf("&") - path
+    private Optional<String> searchedText(FlowValue index) {
+        return Optional.ofNullable(index.origin())
+                .filter(origin -> origin instanceof MethodCallExpr)
+                .flatMap(origin -> ((MethodCallExpr) origin).getScope())
+                .map(Expression::toString);
+    }
+
+    // String var = matcher.group(): в найденном по шаблону куске есть то, что шаблон требует, - ${, }
+    private boolean isRegexMatch(Node place, String searched) {
+        return place.findAncestor(CallableDeclaration.class).stream()
+                .flatMap(callable -> ((Node) callable).findAll(VariableDeclarator.class).stream())
+                .filter(variable -> variable.getNameAsString().equals(searched))
+                .anyMatch(variable -> variable.getInitializer()
+                        .filter(initializer -> initializer instanceof MethodCallExpr call && GROUP.equals(call.getNameAsString()))
+                        .isPresent());
     }
 
     private String range(FlowValue value) {

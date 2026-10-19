@@ -1,7 +1,12 @@
 package ru.akvine.zond.rules.concurrency;
 
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.CatchClause;
+import com.github.javaparser.ast.stmt.Statement;
+import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.type.Type;
 import org.springframework.stereotype.Component;
@@ -15,12 +20,16 @@ import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Stream;
 
 @Component
 public class SwallowedInterruptRule extends AbstractRule {
     private static final String INTERRUPTED_EXCEPTION = "InterruptedException";
     private static final String INTERRUPT = "interrupt";
+    // Тело потока: после выхода из него флаг прерывания проверять уже некому
+    private static final Set<String> THREAD_BODIES = Set.of("run", "main");
 
     @Override
     public String code() {
@@ -37,6 +46,7 @@ public class SwallowedInterruptRule extends AbstractRule {
         return sourceFile.unit().findAll(CatchClause.class).stream()
                 .filter(this::catchesInterrupt)
                 .filter(clause -> !restoresInterrupt(clause))
+                .filter(clause -> !stopsThread(clause))
                 .map(clause -> violation(sourceFile, clause,
                         "InterruptedException перехвачен, а флаг прерывания не восстановлен: поток не узнает, что"
                                 + " его просили остановиться, и пул не сможет завершить задачу; вызовите"
@@ -61,6 +71,32 @@ public class SwallowedInterruptRule extends AbstractRule {
                 ? type.asUnionType().getElements().stream().map(element -> (Type) element)
                 : Stream.of(type);
         return types.map(LocalTypes::typeName).anyMatch(INTERRUPTED_EXCEPTION::equals);
+    }
+
+    /**
+     * Поток заканчивает работу в ответ на прерывание: catch в run() или main() выходит из цикла или метода
+     * ({@code catch (InterruptedException e) { break; }}), либо try - последний оператор метода. Это и есть
+     * реакция на просьбу остановиться
+     */
+    private boolean stopsThread(CatchClause clause) {
+        Optional<MethodDeclaration> body = Nodes.enclosingCallable(clause)
+                .filter(callable -> callable instanceof MethodDeclaration)
+                .map(callable -> (MethodDeclaration) callable)
+                .filter(method -> THREAD_BODIES.contains(method.getNameAsString()))
+                .filter(method -> !Nodes.isInNestedScope(clause, method));
+        if (body.isEmpty()) {
+            return false;
+        }
+        List<Statement> handling = clause.getBody().getStatements();
+        if (!handling.isEmpty() && (handling.get(handling.size() - 1).isBreakStmt()
+                || handling.get(handling.size() - 1).isReturnStmt())) {
+            return true;
+        }
+        Optional<Node> tryStatement = clause.getParentNode().filter(parent -> parent instanceof TryStmt);
+        return tryStatement.isPresent() && body.get().getBody()
+                .map(BlockStmt::getStatements)
+                .filter(statements -> !statements.isEmpty() && statements.get(statements.size() - 1) == tryStatement.get())
+                .isPresent();
     }
 
     // Флаг восстановлен либо исключение пробрасывается дальше

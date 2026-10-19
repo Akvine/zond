@@ -20,8 +20,8 @@ public class SecretInConfigRule extends AbstractConfigRule {
     // {{ .Values.secret }} подставит Helm, @api.token@ - сборка Maven: секрета в самом файле нет
     private static final Pattern PLACEHOLDER = Pattern.compile("^\\$\\{.*}$|^\\{\\{.*}}$|^@[\\w.\\-]+@$");
 
-    // ENC(...), {cipher}...: значение зашифровано
-    private static final Pattern ENCRYPTED = Pattern.compile("^(ENC\\(.*\\)|\\{cipher}.*)$");
+    // ENC(...), {cipher}..., {cas-cipher}...: значение зашифровано
+    private static final Pattern ENCRYPTED = Pattern.compile("^(ENC\\(.*\\)|\\{[\\w-]*cipher}.*)$");
 
     // refill-tokens: 60, token-ttl: 15m - число или срок, а не секрет. Пароль из цифр - секрет
     private static final Pattern AMOUNT = Pattern.compile("(?i)^-?\\d+(\\.\\d+)?(ms|ns|us|s|m|h|d|kb|mb|gb)?$|^P(T)?[\\d.HMSD]+$");
@@ -66,7 +66,9 @@ public class SecretInConfigRule extends AbstractConfigRule {
 
     private boolean isPlainSecret(ConfigProperty property) {
         String value = property.value().trim();
+        // "??", "---": без букв и цифр это заглушка, а не секрет
         return Secrets.isSecretName(lastSegment(property.key()))
+                && value.chars().anyMatch(Character::isLetterOrDigit)
                 && !NOT_SECRET_VALUES.contains(value.toLowerCase())
                 && !Secrets.isStub(value)
                 && !(AMOUNT.matcher(value).matches() && !PASSWORD_LIKE.matcher(lastSegment(property.key())).matches())

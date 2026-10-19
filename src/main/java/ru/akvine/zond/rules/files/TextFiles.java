@@ -2,6 +2,7 @@ package ru.akvine.zond.rules.files;
 
 import lombok.experimental.UtilityClass;
 import ru.akvine.zond.enums.TextFileType;
+import ru.akvine.zond.models.TestPaths;
 import ru.akvine.zond.models.TextFile;
 
 import java.nio.file.Path;
@@ -61,12 +62,13 @@ public class TextFiles {
         return file.type() == TextFileType.GRADLE;
     }
 
+    // Образы, docker-compose и манифесты тестовых стендов (ci/tests, src/test) в рабочую среду не попадают
     public boolean isDockerfile(TextFile file) {
-        return file.type() == TextFileType.DOCKERFILE;
+        return file.type() == TextFileType.DOCKERFILE && !TestPaths.isTest(file.path());
     }
 
     public boolean isCompose(TextFile file) {
-        return file.type() == TextFileType.COMPOSE;
+        return file.type() == TextFileType.COMPOSE && !TestPaths.isTest(file.path());
     }
 
     public boolean isMessages(TextFile file) {
@@ -78,7 +80,7 @@ public class TextFiles {
     }
 
     public boolean isKubernetes(TextFile file) {
-        return file.type() == TextFileType.KUBERNETES;
+        return file.type() == TextFileType.KUBERNETES && !TestPaths.isTest(file.path());
     }
 
     public boolean isCi(TextFile file) {
@@ -90,20 +92,33 @@ public class TextFiles {
      */
     public List<Entry> properties(List<String> lines) {
         List<Entry> entries = new ArrayList<>();
-        boolean continued = false;
         for (int index = 0; index < lines.size(); index++) {
             String line = lines.get(index).trim();
-            // Значение, перенесенное на следующую строку через \, - не новая запись
-            boolean isContinuation = continued;
-            continued = line.endsWith("\\");
-            if (isContinuation || line.isEmpty() || line.startsWith("#") || line.startsWith("!")) {
+            if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) {
                 continue;
             }
-            Matcher matcher = PROPERTY_LINE.matcher(line);
+            // Значение, перенесенное на следующие строки через \, - одна запись: продолжение дописывается к ней
+            int first = index;
+            StringBuilder logical = new StringBuilder();
+            while (endsWithContinuation(line) && index + 1 < lines.size()) {
+                logical.append(line, 0, line.length() - 1);
+                line = lines.get(++index).trim();
+            }
+            logical.append(line);
+            Matcher matcher = PROPERTY_LINE.matcher(logical);
             if (matcher.matches()) {
-                entries.add(new Entry(matcher.group(1), matcher.group(2).trim(), index + 1));
+                entries.add(new Entry(matcher.group(1), matcher.group(2).trim(), first + 1));
             }
         }
         return entries;
+    }
+
+    // Нечетное число \ в конце строки - перенос; четное - экранированные обратные черты самого значения
+    private boolean endsWithContinuation(String line) {
+        int slashes = 0;
+        for (int index = line.length() - 1; index >= 0 && line.charAt(index) == '\\'; index--) {
+            slashes++;
+        }
+        return slashes % 2 == 1;
     }
 }

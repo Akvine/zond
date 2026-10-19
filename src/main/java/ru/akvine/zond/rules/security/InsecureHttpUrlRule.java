@@ -30,7 +30,10 @@ public class InsecureHttpUrlRule extends AbstractConfigRule {
     private static final Set<String> IDENTIFIER_HOSTS = Set.of(
             "www.w3.org", "xmlns.jcp.org", "java.sun.com", "maven.apache.org", "www.springframework.org",
             "schemas.xmlsoap.org", "json-schema.org", "www.liquibase.org");
-    private static final Set<String> EXAMPLE_DOMAINS = Set.of("example.com", "example.org", "example.net");
+    // Заглушки вместо настоящего адреса: sso.test.com, your-domain.com, http://credit.return.url (зоны url нет)
+    private static final Set<String> EXAMPLE_DOMAINS = Set.of(
+            "example.com", "example.org", "example.net", "test.com", "yourdomain.com", "your-domain.com", "mydomain.com");
+    private static final String PLACEHOLDER_ZONE = "url";
 
     @Override
     public String code() {
@@ -85,6 +88,7 @@ public class InsecureHttpUrlRule extends AbstractConfigRule {
             return false;
         }
         boolean example = EXAMPLE_DOMAINS.stream().anyMatch(domain -> host.equals(domain) || host.endsWith("." + domain));
-        return !example && !INTERNAL_ZONES.contains(host.substring(lastDot + 1));
+        String zone = host.substring(lastDot + 1);
+        return !example && !INTERNAL_ZONES.contains(zone) && !PLACEHOLDER_ZONE.equals(zone);
     }
 }

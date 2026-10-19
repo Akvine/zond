@@ -22,6 +22,7 @@ import ru.akvine.zond.rules.support.BeanScopes;
 import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
+import ru.akvine.zond.rules.support.SpringBeans;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -54,11 +55,16 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         for (ClassOrInterfaceDeclaration bean : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
-            // @Scope("prototype"), @StepScope: у каждого потребителя свой экземпляр
-            if (!BeanScopes.isSingletonBean(bean)) {
+            // @Scope("prototype"), @StepScope, @ServerEndpoint: у каждого потребителя свой экземпляр, но статическое
+            // поле у них одно на всех - пул подключений WebSocket меняют все соединения сразу
+            boolean singleton = BeanScopes.isSingletonBean(bean);
+            if (!singleton && !(SpringBeans.isBean(bean) && BeanScopes.isShortLived(bean))) {
                 continue;
             }
             for (FieldDeclaration field : bean.getFields()) {
+                if (!singleton && !field.isStatic()) {
+                    continue;
+                }
                 for (VariableDeclarator variable : field.getVariables()) {
                     if (!isNotThreadSafe(variable)) {
                         continue;
@@ -68,7 +74,8 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
                         violations.add(violation(sourceFile, variable,
                                 "Коллекция '" + variable.getNameAsString() + "' в бине '" + bean.getNameAsString()
                                         + "' не потокобезопасна, а меняется в методе " + String.join(", ", writers)
-                                        + ": бин один на все потоки, одновременная запись портит коллекцию вплоть до"
+                                        + (singleton ? ": бин один на все потоки" : ": статическое поле одно на все экземпляры")
+                                        + ", одновременная запись портит коллекцию вплоть до"
                                         + " зависания HashMap; используйте ConcurrentHashMap / CopyOnWriteArrayList"));
                     }
                 }

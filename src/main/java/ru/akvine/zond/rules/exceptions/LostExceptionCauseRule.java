@@ -33,6 +33,10 @@ public class LostExceptionCauseRule extends AbstractRule {
             "CloneNotSupportedException", "UnsupportedEncodingException",
             // В стеке таймаута только место ожидания - его видно и по стеку нового исключения
             "TimeoutException");
+    // Новое исключение само сообщает о неверном вводе, и конструктора с причиной у него нет:
+    // throw new ParseException("A numeric value between 1 and 5 must follow the '#' option", i)
+    private static final Set<String> INPUT_ERRORS_WITHOUT_CAUSE = Set.of(
+            "ParseException", "NumberFormatException", "InputMismatchException");
     // EntityType.valueOf(type), UUID.fromString(id), Integer.parseInt(page): в try только разбор строки
     private static final String ILLEGAL_ARGUMENT = "IllegalArgumentException";
     private static final Set<String> PARSE_METHODS = Set.of("valueOf", "fromString");
@@ -68,7 +72,8 @@ public class LostExceptionCauseRule extends AbstractRule {
                 }
 
                 ObjectCreationExpr created = throwStmt.getExpression().asObjectCreationExpr();
-                if (!passesCause(created, caught) && !isClassified(throwStmt, clause, caught)) {
+                if (!passesCause(created, caught) && !isClassified(throwStmt, clause, caught)
+                        && !INPUT_ERRORS_WITHOUT_CAUSE.contains(created.getType().getNameAsString())) {
                     violations.add(violation(sourceFile, throwStmt,
                             "Новое исключение " + created.getType().getNameAsString() + " создается без исходного '"
                                     + caught + "': стек и причина первоначальной ошибки теряются, найти ее по логу"

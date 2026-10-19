@@ -10,12 +10,16 @@ import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.InitializerDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.ConditionalExpr;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.MethodReferenceExpr;
+import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.NullLiteralExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithArguments;
@@ -80,6 +84,13 @@ public class CodeContexts {
 
     // Пауза в бесконечном цикле: цикл ждет события, а не перебирает данные
     private static final Set<String> SLEEP_METHODS = Set.of("sleep", "await", "wait", "park", "parkNanos");
+    // Ожидание следующего события из очереди и проверка, что работа еще идет
+    private static final String TAKE = "take";
+    private static final String POLL = "poll";
+    // Проверка, что очередная пачка пуста
+    private static final Set<String> BATCH_EMPTINESS_CHECKS = Set.of("isEmpty", "isNullOrEmpty", "size");
+    private static final Pattern RUNNING_CHECK = Pattern.compile(
+            "get|is(Running|Interrupted|Alive|Active|Started|Stopped|Stopping|Shutdown|Terminated|Closed)");
     // Шаг вверх по цепочке: класс - его родитель, исключение - его причина
     private static final Set<String> CHAIN_STEPS = Set.of(
             "getSuperclass", "getEnclosingClass", "getDeclaringClass", "getCause", "getParent", "getParentFile",
@@ -259,7 +270,76 @@ public class CodeContexts {
         return assigned || iteration.findAll(UnaryExpr.class).stream()
                 .filter(unary -> unary.getOperator() != UnaryExpr.Operator.LOGICAL_COMPLEMENT
                         && unary.getOperator() != UnaryExpr.Operator.MINUS)
-                .anyMatch(unary -> PAGING_NAME.matcher(unary.getExpression().toString()).find());
+                .anyMatch(unary -> PAGING_NAME.matcher(unary.getExpression().toString()).find())
+                || isBatchLoop(iteration);
+    }
+
+    // while (true) { batch = dao.query(code, 100); if (CollectionUtils.isEmpty(batch)) break; ... }: выборка
+    // пачками, пока данные не кончатся. Запрос и запись в лог - на каждую пачку, а не на каждый элемент
+    private boolean isBatchLoop(Node iteration) {
+        Statement body;
+        if (iteration instanceof WhileStmt loop && isTrue(loop.getCondition())) {
+            body = loop.getBody();
+        } else if (iteration instanceof DoStmt loop && isTrue(loop.getCondition())) {
+            body = loop.getBody();
+        } else if (iteration instanceof ForStmt loop && loop.getCompare().isEmpty()) {
+            body = loop.getBody();
+        } else {
+            return false;
+        }
+        if (!body.isBlockStmt()) {
+            return false;
+        }
+        List<Statement> statements = body.asBlockStmt().getStatements();
+        for (int index = 0; index + 1 < statements.size(); index++) {
+            Optional<String> batch = fetchedVariable(statements.get(index));
+            if (batch.isPresent() && isExitWhenEmpty(statements.get(index + 1), batch.get())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTrue(Expression condition) {
+        return condition.isBooleanLiteralExpr() && condition.asBooleanLiteralExpr().getValue();
+    }
+
+    // List<Row> batch = dao.query(...) либо batch = dao.query(...)
+    private Optional<String> fetchedVariable(Statement statement) {
+        if (!statement.isExpressionStmt()) {
+            return Optional.empty();
+        }
+        Expression expression = statement.asExpressionStmt().getExpression();
+        if (expression.isVariableDeclarationExpr() && expression.asVariableDeclarationExpr().getVariables().size() == 1) {
+            VariableDeclarator variable = expression.asVariableDeclarationExpr().getVariable(0);
+            return variable.getInitializer().filter(Expression::isMethodCallExpr).map(value -> variable.getNameAsString());
+        }
+        if (expression.isAssignExpr() && expression.asAssignExpr().getTarget().isNameExpr()
+                && expression.asAssignExpr().getValue().isMethodCallExpr()) {
+            return Optional.of(expression.asAssignExpr().getTarget().asNameExpr().getNameAsString());
+        }
+        return Optional.empty();
+    }
+
+    // if (batch.isEmpty()) break; if (CollectionUtils.isEmpty(batch)) { return; } if (batch == null) break;
+    private boolean isExitWhenEmpty(Statement statement, String batch) {
+        if (!statement.isIfStmt() || statement.asIfStmt().getElseStmt().isPresent()) {
+            return false;
+        }
+        Statement then = statement.asIfStmt().getThenStmt();
+        Statement exit = then.isBlockStmt() && then.asBlockStmt().getStatements().size() == 1
+                ? then.asBlockStmt().getStatement(0)
+                : then;
+        if (!exit.isBreakStmt() && !exit.isReturnStmt()) {
+            return false;
+        }
+        Expression condition = statement.asIfStmt().getCondition();
+        boolean mentionsBatch = condition.findAll(NameExpr.class).stream()
+                .anyMatch(name -> name.getNameAsString().equals(batch));
+        boolean checksEmptiness = condition.findAll(MethodCallExpr.class).stream()
+                .anyMatch(call -> BATCH_EMPTINESS_CHECKS.contains(call.getNameAsString()))
+                || !condition.findAll(NullLiteralExpr.class).isEmpty();
+        return mentionsBatch && checksEmptiness;
     }
 
     /**
@@ -460,13 +540,36 @@ public class CodeContexts {
     }
 
     // while (true) { if (tryLock(id)) return; Thread.sleep(100); }: бесконечный цикл с паузой ждет события,
-    // и итераций в нем столько, сколько длится ожидание
+    // и итераций в нем столько, сколько длится ожидание. while (running.get()) { event = queue.take(); ... } -
+    // цикл обработки событий: итерация на каждое пришедшее событие, а не на элемент коллекции
     private boolean isPolling(Node iteration) {
-        boolean endless = iteration instanceof WhileStmt whileLoop && whileLoop.getCondition().isBooleanLiteralExpr()
-                || iteration instanceof DoStmt doLoop && doLoop.getCondition().isBooleanLiteralExpr()
+        boolean endless = iteration instanceof WhileStmt whileLoop && isRunningCondition(whileLoop.getCondition())
+                || iteration instanceof DoStmt doLoop && isRunningCondition(doLoop.getCondition())
                 || iteration instanceof ForStmt forLoop && forLoop.getCompare().isEmpty();
         return endless && iteration.findAll(MethodCallExpr.class).stream()
-                .anyMatch(call -> SLEEP_METHODS.contains(call.getNameAsString()));
+                .anyMatch(call -> SLEEP_METHODS.contains(call.getNameAsString()) || isBlockingTake(call));
+    }
+
+    // true, running, !stopped, runningFlag.get(), !Thread.currentThread().isInterrupted(): условие - признак
+    // работы, а не остаток данных. !queue.isEmpty() сюда не подходит - такой цикл разбирает очередь до конца
+    private boolean isRunningCondition(Expression condition) {
+        Expression value = Nodes.unwrap(condition);
+        if (value.isUnaryExpr() && value.asUnaryExpr().getOperator() == UnaryExpr.Operator.LOGICAL_COMPLEMENT) {
+            value = Nodes.unwrap(value.asUnaryExpr().getExpression());
+        }
+        if (value.isBooleanLiteralExpr() || value.isNameExpr()
+                || value.isFieldAccessExpr() && value.asFieldAccessExpr().getScope().isThisExpr()) {
+            return true;
+        }
+        return value.isMethodCallExpr() && value.asMethodCallExpr().getArguments().isEmpty()
+                && RUNNING_CHECK.matcher(value.asMethodCallExpr().getNameAsString()).matches();
+    }
+
+    // queue.take(), queue.poll(1, SECONDS), consumer.poll(timeout): ждет следующего события. poll() без
+    // аргументов не ждет - им вычерпывают то, что уже лежит в очереди
+    private boolean isBlockingTake(MethodCallExpr call) {
+        return call.getScope().isPresent() && (TAKE.equals(call.getNameAsString())
+                || POLL.equals(call.getNameAsString()) && !call.getArguments().isEmpty());
     }
 
     // while (true) { try { ...; return result; } catch (...) { подождать } }: выход из цикла - последней строкой try

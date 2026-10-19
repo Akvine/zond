@@ -1,6 +1,12 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
+import com.github.javaparser.ast.stmt.BlockStmt;
+import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.ReturnStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -16,7 +22,9 @@ import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Component
 public class NullInsteadOfEmptyCollectionRule extends AbstractRule {
@@ -46,7 +54,7 @@ public class NullInsteadOfEmptyCollectionRule extends AbstractRule {
             }
             for (ReturnStmt returned : method.findAll(ReturnStmt.class)) {
                 boolean returnsNull = returned.getExpression().filter(value -> value.isNullLiteralExpr()).isPresent();
-                if (returnsNull && !Nodes.isInNestedScope(returned, method)) {
+                if (returnsNull && !Nodes.isInNestedScope(returned, method) && !isNullPassThrough(returned, method)) {
                     violations.add(violation(sourceFile, returned,
                             "Метод '" + method.getNameAsString() + "' возвращает null вместо пустого значения:"
                                     + " каждый, кто его вызывает, обязан проверять результат, и первый забывший"
@@ -55,6 +63,43 @@ public class NullInsteadOfEmptyCollectionRule extends AbstractRule {
             }
         }
         return violations;
+    }
+
+    // if (source == null) return null: на пустой ввод - пустой результат. Кто передал объект, null не получит
+    private boolean isNullPassThrough(ReturnStmt returned, MethodDeclaration method) {
+        Set<String> parameters = method.getParameters().stream()
+                .map(NodeWithSimpleName::getNameAsString)
+                .collect(Collectors.toSet());
+        // if (...) return null; либо if (...) { return null; }
+        Optional<Node> branch = returned.getParentNode()
+                .filter(parent -> parent instanceof BlockStmt block && block.getStatements().size() == 1)
+                .flatMap(Node::getParentNode)
+                .or(returned::getParentNode);
+        return branch
+                .filter(parent -> parent instanceof IfStmt)
+                .map(parent -> (IfStmt) parent)
+                .filter(ifStmt -> ifStmt.getThenStmt() == returned || ifStmt.getThenStmt().getChildNodes().contains(returned))
+                .filter(ifStmt -> isParameterNullCheck(ifStmt.getCondition(), parameters))
+                .isPresent();
+    }
+
+    // source == null, а также a == null || b == null по параметрам
+    private boolean isParameterNullCheck(Expression condition, Set<String> parameters) {
+        Expression value = Nodes.unwrap(condition);
+        if (!value.isBinaryExpr()) {
+            return false;
+        }
+        BinaryExpr binary = value.asBinaryExpr();
+        if (binary.getOperator() == BinaryExpr.Operator.OR) {
+            return isParameterNullCheck(binary.getLeft(), parameters) && isParameterNullCheck(binary.getRight(), parameters);
+        }
+        return binary.getOperator() == BinaryExpr.Operator.EQUALS
+                && (isParameter(binary.getLeft(), parameters) && binary.getRight().isNullLiteralExpr()
+                || isParameter(binary.getRight(), parameters) && binary.getLeft().isNullLiteralExpr());
+    }
+
+    private boolean isParameter(Expression expression, Set<String> parameters) {
+        return expression.isNameExpr() && parameters.contains(expression.asNameExpr().getNameAsString());
     }
 
     @Override

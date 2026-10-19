@@ -13,6 +13,7 @@ import ru.akvine.zond.rules.support.Nodes;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -22,6 +23,8 @@ import java.util.regex.Pattern;
 public abstract class AbstractRelationAccessInLoopRule extends AbstractRule {
     // getItems(), getOrders()
     private static final Pattern GETTER = Pattern.compile("^get[A-Z].*");
+    // entry.getValue().size() - значение записи Map, а не связь сущности
+    private static final Set<String> ENTRY_ACCESSORS = Set.of("getKey", "getValue");
 
     /**
      * @return метод коллекции, вызов которого проверяется: size либо contains
@@ -67,6 +70,7 @@ public abstract class AbstractRelationAccessInLoopRule extends AbstractRule {
         Expression value = Nodes.unwrap(scope);
         if (!value.isMethodCallExpr()
                 || !GETTER.matcher(value.asMethodCallExpr().getNameAsString()).matches()
+                || ENTRY_ACCESSORS.contains(value.asMethodCallExpr().getNameAsString())
                 || !value.asMethodCallExpr().getArguments().isEmpty()) {
             return false;
         }

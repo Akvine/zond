@@ -27,6 +27,7 @@ public class PathTraversalRule extends AbstractTaintRule {
     private static final Set<String> PATH_FACTORIES = Set.of("Paths", "Path");
     private static final Set<String> PATH_FACTORY_METHODS = Set.of("get", "of");
     private static final String RESOLVE = "resolve";
+    private static final Set<String> NAME_ONLY_METHODS = Set.of("getName", "getFileName");
 
     // Проверки, после которых путь не может выйти за пределы каталога
     private static final Set<String> SANITIZERS =
@@ -47,7 +48,7 @@ public class PathTraversalRule extends AbstractTaintRule {
         List<Violation> violations = new ArrayList<>();
         for (Expression expression : sourceFile.unit().findAll(Expression.class)) {
             List<Expression> arguments = pathArguments(expression);
-            if (arguments.isEmpty() || isSanitized(expression)) {
+            if (arguments.isEmpty() || isSanitized(expression) || isNameOnly(expression)) {
                 continue;
             }
             arguments.stream()
@@ -94,6 +95,15 @@ public class PathTraversalRule extends AbstractTaintRule {
     private boolean isClassReference(Expression scope) {
         return scope.isNameExpr() && Character.isUpperCase(scope.asNameExpr().getNameAsString().charAt(0))
                 && LocalTypes.findDeclaration(scope).isEmpty();
+    }
+
+    // new File(path).getName(), Paths.get(path).getFileName(): от пути берут только имя файла без каталогов
+    private boolean isNameOnly(Expression path) {
+        return path.getParentNode()
+                .filter(parent -> parent instanceof MethodCallExpr call
+                        && call.getScope().filter(scope -> Nodes.unwrap(scope) == path || scope == path).isPresent()
+                        && NAME_ONLY_METHODS.contains(call.getNameAsString()))
+                .isPresent();
     }
 
     // Где-либо в методе путь нормализуют или сверяют с базовым каталогом

@@ -21,9 +21,10 @@ public class BeanScopes {
     private static final String SCOPE = "Scope";
     private static final Set<String> SCOPE_MEMBERS = Set.of("value", "scopeName");
 
-    // Готовые аннотации областей, в которых экземпляр живет недолго и между потоками не делится
+    // Готовые аннотации областей, в которых экземпляр живет недолго и между потоками не делится.
+    // @ServerEndpoint: контейнер WebSocket создает свой экземпляр на каждое подключение, даже рядом с @Component
     private static final Set<String> SHORT_LIVED_ANNOTATIONS =
-            Set.of("RequestScope", "SessionScope", "StepScope", "JobScope");
+            Set.of("RequestScope", "SessionScope", "StepScope", "JobScope", "ServerEndpoint");
 
     // Области, в которых экземпляр остается общим для всего приложения
     private static final List<String> SHARED_SCOPES = List.of("singleton", "application");

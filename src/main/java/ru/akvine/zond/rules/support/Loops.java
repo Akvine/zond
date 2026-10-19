@@ -23,7 +23,10 @@ public class Loops {
     // Операции, которые выполняют лямбду для каждого элемента
     private final static Set<String> ITERATING_METHODS = Set.of(
             "forEach", "forEachOrdered", "map", "flatMap", "filter", "peek", "anyMatch", "allMatch", "noneMatch",
-            "mapToInt", "mapToLong", "mapToDouble", "mapToObj", "removeIf", "replaceAll", "computeIfAbsent");
+            "mapToInt", "mapToLong", "mapToDouble", "mapToObj", "removeIf", "replaceAll", "computeIfAbsent",
+            // Функции коллекторов: Collectors.toMap(s -> UUID.randomUUID(), identity()) - ключ на каждый элемент
+            "toMap", "toConcurrentMap", "toUnmodifiableMap", "groupingBy", "groupingByConcurrent", "partitioningBy",
+            "mapping", "filtering", "flatMapping", "reduce");
 
     // Методы, которые есть и у стрима, и у Optional
     private final static Set<String> OPTIONAL_METHODS = Set.of("map", "flatMap", "filter");
