@@ -165,4 +165,33 @@ class ThreadRulesTest {
                 }
                 """)).containsExactly(4);
     }
+
+    @Test
+    void threadCreatedOnceWithBean() {
+        assertThat(RuleTests.lines(new ManualThreadInBeanRule(), """
+                @Component
+                class Worker {
+                    private final Thread heartbeat = new Thread(this::beat);
+                    private final Thread loop;
+                    Worker() {
+                        loop = new Thread(this::run);
+                        for (int i = 0; i < 4; i++) {
+                            new Thread(this::work).start();
+                        }
+                        listener = event -> new Thread(() -> handle(event)).start();
+                    }
+                    @PostConstruct
+                    void init() {
+                        new Thread(this::warmUp).start();
+                    }
+                }
+                @Component
+                @Scope("prototype")
+                class Task {
+                    Task() {
+                        new Thread(this::run).start();
+                    }
+                }
+                """)).containsExactly(8, 10, 21);
+    }
 }

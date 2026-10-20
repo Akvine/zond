@@ -5,12 +5,15 @@ import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.DoStmt;
 import com.github.javaparser.ast.stmt.ForEachStmt;
 import com.github.javaparser.ast.stmt.ForStmt;
+import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import lombok.experimental.UtilityClass;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -66,6 +69,31 @@ public class Loops {
 
     public boolean isRepeated(Node node) {
         return enclosingIteration(node).isPresent();
+    }
+
+    /**
+     * restartClaimedTask(task); return; - после вызова цикл заканчивается, операция выполняется один раз
+     */
+    public boolean endsIteration(Node node) {
+        Optional<Statement> statement = node.findAncestor(Statement.class);
+        if (statement.isEmpty()) {
+            return false;
+        }
+        if (statement.get().isReturnStmt() || statement.get().isThrowStmt()) {
+            return true;
+        }
+        Optional<Node> parent = statement.get().getParentNode();
+        if (parent.isEmpty() || !(parent.get() instanceof BlockStmt block)) {
+            return false;
+        }
+        List<Statement> statements = block.getStatements();
+        for (int index = 0; index < statements.size() - 1; index++) {
+            if (statements.get(index) == statement.get()) {
+                Statement next = statements.get(index + 1);
+                return next.isReturnStmt() || next.isBreakStmt() || next.isThrowStmt();
+            }
+        }
+        return false;
     }
 
     /**

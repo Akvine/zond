@@ -26,7 +26,9 @@ public class DebugSettingsInConfigRule extends AbstractConfigRule {
             "spring.jpa.show-sql", "каждый запрос печатается в лог мимо настроек логирования",
             "spring.h2.console.enabled", "консоль H2 дает любому, кто до нее дойдет, полный доступ к базе",
             "spring.devtools.restart.enabled", "devtools перезапускает приложение и открывает удаленный доступ",
-            "debug", "Spring печатает отчет автонастройки и включает подробный лог");
+            "debug", "Spring печатает отчет автонастройки и включает подробный лог",
+            "spring.jpa.properties.hibernate.generate_statistics",
+            "Hibernate считает статистику по каждому запросу и сессии и пишет ее в лог - это работа на каждом запросе");
 
     @Override
     public String code() {
@@ -35,7 +37,8 @@ public class DebugSettingsInConfigRule extends AbstractConfigRule {
 
     @Override
     public String description() {
-        return "Сканирует файлы настроек и ищет отладочные режимы: show-sql, уровень DEBUG, консоль H2, devtools";
+        return "Сканирует файлы настроек и ищет отладочные режимы: show-sql, уровень DEBUG, консоль H2, devtools,"
+                + " статистику Hibernate";
     }
 
     @Override

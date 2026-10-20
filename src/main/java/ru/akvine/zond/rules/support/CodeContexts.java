@@ -95,8 +95,10 @@ public class CodeContexts {
     private static final Set<String> CHAIN_STEPS = Set.of(
             "getSuperclass", "getEnclosingClass", "getDeclaringClass", "getCause", "getParent", "getParentFile",
             "getParentNode");
-    // Переменная, которой листают страницы: offset, page, pageNumber, cursor, lastId
-    private static final Pattern PAGING_NAME = Pattern.compile("(?i)offset|page|cursor|lastId|chunk");
+    // Переменная, которой листают страницы: offset, page, pageNumber, cursor, lastId; continuationToken,
+    // nextToken, marker и scrollId - у листинга S3 / OSS и прокрутки Elasticsearch
+    private static final Pattern PAGING_NAME = Pattern.compile(
+            "(?i)offset|page|cursor|lastId|chunk|continuation|nextToken|marker|scrollId");
 
     // Метод, с которого начинается самостоятельная задача: выше него исключение ловить уже некому
     private static final Set<String> BOUNDARY_ANNOTATIONS = Set.of(
@@ -543,11 +545,16 @@ public class CodeContexts {
     // и итераций в нем столько, сколько длится ожидание. while (running.get()) { event = queue.take(); ... } -
     // цикл обработки событий: итерация на каждое пришедшее событие, а не на элемент коллекции
     private boolean isPolling(Node iteration) {
+        boolean conditional = iteration instanceof WhileStmt || iteration instanceof DoStmt
+                || iteration instanceof ForStmt forLoop && forLoop.getCompare().isEmpty();
         boolean endless = iteration instanceof WhileStmt whileLoop && isRunningCondition(whileLoop.getCondition())
                 || iteration instanceof DoStmt doLoop && isRunningCondition(doLoop.getCondition())
                 || iteration instanceof ForStmt forLoop && forLoop.getCompare().isEmpty();
-        return endless && iteration.findAll(MethodCallExpr.class).stream()
-                .anyMatch(call -> SLEEP_METHODS.contains(call.getNameAsString()) || isBlockingTake(call));
+        List<MethodCallExpr> calls = iteration.findAll(MethodCallExpr.class);
+        // while (WAITING.contains(state)) { sleep(10); state = getStatus(); }: пауза в цикле с условием -
+        // ожидание при любом условии. Очередь без паузы - ожидание, только пока работа идет
+        return conditional && calls.stream().anyMatch(call -> SLEEP_METHODS.contains(call.getNameAsString()))
+                || endless && calls.stream().anyMatch(CodeContexts::isBlockingTake);
     }
 
     // true, running, !stopped, runningFlag.get(), !Thread.currentThread().isInterrupted(): условие - признак

@@ -27,6 +27,12 @@ public class ListContainsInLoopRule extends AbstractRule {
     private static final Set<String> LIST_TYPES = Set.of("List", "ArrayList", "LinkedList");
     private static final Set<String> LITERAL_FACTORIES = Set.of("of", "asList", "listOf");
     private static final int SMALL_LIST = 16;
+    // map.values().contains(x) и map.containsValue(x): значения Map не индексированы, поиск по ним - перебор
+    private static final String VALUES = "values";
+    private static final String CONTAINS_VALUE = "containsValue";
+    private static final Set<String> MAP_TYPES = Set.of(
+            "Map", "HashMap", "LinkedHashMap", "TreeMap", "SortedMap", "NavigableMap", "ConcurrentHashMap", "ConcurrentMap",
+            "EnumMap");
 
     @Override
     public String code() {
@@ -35,13 +41,20 @@ public class ListContainsInLoopRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет List.contains() в цикле";
+        return "Сканирует код и ищет List.contains(), map.values().contains() и map.containsValue() в цикле";
     }
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            if (call.getArguments().size() == 1 && isMapValueSearch(call)) {
+                violations.add(violation(sourceFile, call,
+                        "'" + call + "' в цикле: значения Map не индексированы, поиск по ним перебирает всю карту,"
+                                + " вместе с циклом выходит O(N²); сложите значения в HashSet перед циклом либо"
+                                + " храните обратную карту"));
+                continue;
+            }
             if (!CONTAINS.equals(call.getNameAsString()) || call.getArguments().size() != 1 || call.getScope().isEmpty()) {
                 continue;
             }
@@ -64,6 +77,29 @@ public class ListContainsInLoopRule extends AbstractRule {
             }
         }
         return violations;
+    }
+
+    // map.values().contains(x), map.containsValue(x) в цикле - у карты, объявленной до него
+    private boolean isMapValueSearch(MethodCallExpr call) {
+        Optional<Expression> map;
+        if (CONTAINS_VALUE.equals(call.getNameAsString())) {
+            map = call.getScope();
+        } else if (CONTAINS.equals(call.getNameAsString())) {
+            map = call.getScope().map(Nodes::unwrap)
+                    .filter(scope -> scope.isMethodCallExpr() && VALUES.equals(scope.asMethodCallExpr().getNameAsString())
+                            && scope.asMethodCallExpr().getArguments().isEmpty())
+                    .flatMap(scope -> scope.asMethodCallExpr().getScope());
+        } else {
+            return false;
+        }
+        if (map.isEmpty()) {
+            return false;
+        }
+        Optional<Node> iteration = Loops.enclosingIteration(call);
+        Optional<Node> declaration = LocalTypes.findDeclaration(map.get());
+        return iteration.isPresent() && declaration.isPresent()
+                && LocalTypes.declaredType(declaration.get()).filter(MAP_TYPES::contains).isPresent()
+                && Loops.isDeclaredOutside(iteration.get(), declaration.get());
     }
 
     // List.of("<", ">", "=") - несколько элементов, записанных в коде: поиск по ним не растет вместе с данными

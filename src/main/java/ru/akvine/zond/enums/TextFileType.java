@@ -19,6 +19,8 @@ public enum TextFileType {
     SQL(FileKind.SQL),
     LIQUIBASE_XML(FileKind.SQL),
     LIQUIBASE_YAML(FileKind.SQL),
+    // Маппер MyBatis: тексты запросов в <select>, <update>, <insert>, <delete>
+    MYBATIS_MAPPER(FileKind.SQL),
     POM(FileKind.BUILD_FILES),
     GRADLE(FileKind.BUILD_FILES),
     DOCKERFILE(FileKind.DOCKER),
@@ -48,6 +50,7 @@ public enum TextFileType {
     private static final String WORKFLOWS_DIRECTORY = "workflows";
 
     private static final String LIQUIBASE_XML_ROOT = "<databaseChangeLog";
+    private static final Pattern MYBATIS_MAPPER_ROOT = Pattern.compile(".*<mapper\\s+namespace\\s*=.*");
     private static final Pattern LIQUIBASE_YAML_ROOT = Pattern.compile("^databaseChangeLog\\s*:.*");
     private static final Pattern KUBERNETES_API_VERSION = Pattern.compile("^apiVersion\\s*:.*");
     private static final Pattern KUBERNETES_KIND = Pattern.compile("^kind\\s*:.*");
@@ -103,8 +106,11 @@ public enum TextFileType {
         if (LOG4J2_NAME.matcher(name).matches()) {
             return Optional.of(LOG4J2);
         }
-        return lines.stream().anyMatch(line -> line.contains(LIQUIBASE_XML_ROOT))
-                ? Optional.of(LIQUIBASE_XML)
+        if (lines.stream().anyMatch(line -> line.contains(LIQUIBASE_XML_ROOT))) {
+            return Optional.of(LIQUIBASE_XML);
+        }
+        return lines.stream().anyMatch(line -> MYBATIS_MAPPER_ROOT.matcher(line).matches())
+                ? Optional.of(MYBATIS_MAPPER)
                 : Optional.empty();
     }
 

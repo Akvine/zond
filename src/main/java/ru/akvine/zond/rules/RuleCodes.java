@@ -430,4 +430,14 @@ public class RuleCodes {
     public final static String RECURSIVE_DOCUMENT_TRAVERSAL_RULE_CODE = "jr:424";
     public final static String UNIQUE_CODE_GENERATION_RULE_CODE = "jr:425";
     public final static String LEGACY_SYNCHRONIZED_COLLECTION_RULE_CODE = "jr:426";
+    public final static String HTTP_CALL_IN_LOOP_RULE_CODE = "jr:427";
+    public final static String BLOCKING_CALL_IN_REACTIVE_RULE_CODE = "jr:428";
+    public final static String MISSING_READ_ONLY_TRANSACTION_RULE_CODE = "jr:429";
+    public final static String EXPENSIVE_LOG_ARGUMENT_RULE_CODE = "jr:430";
+    public final static String DEEP_OFFSET_PAGINATION_RULE_CODE = "jr:431";
+    public final static String ORDER_BY_RANDOM_RULE_CODE = "jr:432";
+    public final static String FUNCTION_ON_COLUMN_IN_WHERE_RULE_CODE = "jr:433";
+    public final static String LIST_LOADED_FOR_COUNT_RULE_CODE = "jr:434";
+    public final static String STREAM_QUERY_WITHOUT_FETCH_SIZE_RULE_CODE = "jr:435";
+    public final static String EXPLICIT_GC_RULE_CODE = "jr:436";
 }

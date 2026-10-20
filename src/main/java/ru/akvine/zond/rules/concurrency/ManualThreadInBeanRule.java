@@ -10,6 +10,9 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
+import ru.akvine.zond.rules.support.Loops;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.SpringBeans;
 
 import java.util.List;
@@ -33,6 +36,7 @@ public class ManualThreadInBeanRule extends AbstractRule {
         return sourceFile.unit().findAll(ObjectCreationExpr.class).stream()
                 .filter(creation -> THREAD.equals(creation.getType().getNameAsString()))
                 .filter(this::isInsideBean)
+                .filter(creation -> !isCreatedOnce(creation))
                 .map(creation -> violation(sourceFile, creation,
                         "'new Thread(...)' в Spring-бине: число таких потоков ничем не ограничено, при остановке"
                                 + " приложения их никто не завершит, а исключение в потоке останется незамеченным;"
@@ -48,6 +52,17 @@ public class ManualThreadInBeanRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.CONCURRENCY;
+    }
+
+    /**
+     * Один поток на весь бин: singleton-бин создает его один раз, когда создается сам, - в конструкторе,
+     * инициализаторе поля или @PostConstruct, и не в цикле. Число таких потоков от нагрузки не зависит.
+     * Поток в лямбде или анонимном классе запустится позже и сколько угодно раз
+     */
+    private boolean isCreatedOnce(ObjectCreationExpr creation) {
+        return CodeContexts.isStartup(creation)
+                && !Loops.isRepeated(creation)
+                && Nodes.enclosingCallable(creation).filter(callable -> Nodes.isInNestedScope(creation, callable)).isEmpty();
     }
 
     private boolean isInsideBean(Node node) {
