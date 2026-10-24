@@ -6,8 +6,11 @@ import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.ArrayInitializerExpr;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.DoubleLiteralExpr;
 import com.github.javaparser.ast.expr.EnclosedExpr;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.IntegerLiteralExpr;
 import com.github.javaparser.ast.expr.LiteralStringValueExpr;
 import com.github.javaparser.ast.expr.LongLiteralExpr;
@@ -21,6 +24,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
@@ -31,6 +35,7 @@ import java.util.regex.Pattern;
 @Component
 public class MagicNumberRule extends AbstractRule {
     private static final String HASH_CODE = "hashCode";
+    private static final int MIN_TABLE_SIZE = 3;
 
     private static final Pattern UNIT_CONSTANT = Pattern.compile("(TimeUnit|ChronoUnit|DataUnit)\\.[A-Z_]+");
     private static final Pattern UNIT_FACTORY = Pattern.compile("^(Duration|Period|DataSize)\\.of[A-Z]\\w*\\(");
@@ -94,19 +99,50 @@ public class MagicNumberRule extends AbstractRule {
         return parent instanceof VariableDeclarator;
     }
 
-    // Константы и поля, аннотации, enum, hashCode и тесты: там числа либо уже названы, либо уместны как есть
+    // Константы и поля, аннотации, enum, hashCode и тесты: там числа либо уже названы, либо уместны как есть.
+    // Таблица данных - {1, 2, 3} или GBKFreq[54][125] = 493 - это значения, а не магия: имя у таблицы
     private boolean isInIgnoredContext(Node literal) {
         Node current = literal.getParentNode().orElse(null);
         while (current != null) {
             if (current instanceof FieldDeclaration
                     || current instanceof AnnotationExpr
                     || current instanceof EnumConstantDeclaration
+                    || current instanceof ArrayInitializerExpr table && isDataTable(table)
+                    || current instanceof AssignExpr assignment && isTableEntry(assignment)
                     || (current instanceof MethodDeclaration method && HASH_CODE.equals(method.getNameAsString()))) {
                 return true;
             }
             current = current.getParentNode().orElse(null);
         }
         return TestClasses.isInside(literal) || hasUnit(literal);
+    }
+
+    // table[54][125] = 493: и номера ячейки, и значение записаны числами - строка таблицы данных
+    // {2, 4, 10, 3, 5, 9} - веса и таблицы. Пара чисел {300, 700} - это уже коды, которым нужно имя
+    private boolean isDataTable(ArrayInitializerExpr table) {
+        return table.getValues().size() >= MIN_TABLE_SIZE;
+    }
+
+    private boolean isTableEntry(AssignExpr assignment) {
+        Expression target = assignment.getTarget();
+        if (!target.isArrayAccessExpr() || !isNumber(assignment.getValue())) {
+            return false;
+        }
+        while (target.isArrayAccessExpr()) {
+            if (!isNumber(target.asArrayAccessExpr().getIndex())) {
+                return false;
+            }
+            target = target.asArrayAccessExpr().getName();
+        }
+        return true;
+    }
+
+    private boolean isNumber(Expression expression) {
+        Expression value = Nodes.unwrap(expression);
+        if (value.isUnaryExpr()) {
+            value = Nodes.unwrap(value.asUnaryExpr().getExpression());
+        }
+        return value.isIntegerLiteralExpr() || value.isLongLiteralExpr() || value.isDoubleLiteralExpr();
     }
 
     // Duration.ofSeconds(30), poll(5, TimeUnit.SECONDS): смысл числа назван единицей измерения рядом

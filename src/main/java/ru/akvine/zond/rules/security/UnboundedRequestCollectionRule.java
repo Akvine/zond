@@ -51,6 +51,10 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
     private static final Set<String> VALIDATION_ANNOTATIONS = Set.of(
             "NotNull", "NotBlank", "NotEmpty", "Valid", "Min", "Max", "Pattern", "Positive", "PositiveOrZero",
             "Email", "Size");
+    // Свой формат передачи: GetAliasesRequest(StreamInput in) и writeTo(StreamOutput out) в Elasticsearch,
+    // Externalizable, Hadoop Writable. Объект собирает из байтов сам код, Bean Validation до него не доходит
+    private static final Pattern WIRE_INPUT = Pattern.compile(".*Input$|^(InputStream|ByteBuffer)$");
+    private static final Set<String> WIRE_METHODS = Set.of("writeTo", "writeExternal", "readExternal", "readFields");
 
     @Override
     public String code() {
@@ -168,9 +172,19 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
                 .ifPresent(arguments -> arguments.forEach(argument -> collect(argument, classes, queue)));
     }
 
+    private boolean hasOwnWireFormat(ClassOrInterfaceDeclaration type) {
+        boolean readsItself = type.getConstructors().stream()
+                .anyMatch(constructor -> constructor.getParameters().size() == 1
+                        && WIRE_INPUT.matcher(LocalTypes.typeName(constructor.getParameter(0).getType())).matches());
+        return readsItself || type.getMethods().stream().anyMatch(method -> WIRE_METHODS.contains(method.getNameAsString()));
+    }
+
     private boolean looksLikeRequest(ClassOrInterfaceDeclaration type) {
         // @Email и @NotNull на полях сущности - проверка перед сохранением, а не признак запроса
         if (Annotations.hasAny(type, PERSISTENT)) {
+            return false;
+        }
+        if (hasOwnWireFormat(type)) {
             return false;
         }
         return REQUEST_NAME.matcher(type.getNameAsString()).matches()

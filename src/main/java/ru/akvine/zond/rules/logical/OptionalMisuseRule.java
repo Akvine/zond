@@ -30,6 +30,13 @@ public class OptionalMisuseRule extends AbstractRule {
 
     // Методы, которые возвращают Optional: вызов get() сразу после них ничем не защищен
     private static final Set<String> OPTIONAL_SOURCES = Set.of("findFirst", "findAny", "findById", "ofNullable");
+    private static final Set<String> NON_EMPTY_TERMINALS = Set.of("min", "max", "findFirst", "findAny");
+    private static final Set<String> SIZE_PRESERVING = Set.of(
+            "map", "mapToInt", "mapToLong", "mapToDouble", "mapToObj", "boxed", "sorted", "distinct", "peek", "parallel",
+            "sequential", "unordered");
+    private static final String STREAM = "stream";
+    private static final Set<String> EMPTINESS_CHECKS = Set.of("isEmpty", "size", "isNotEmpty", "isNullOrEmpty");
+    private static final Set<String> ADDS = Set.of("add", "addAll", "push", "offer");
     private static final Set<String> CATCHING = Set.of("NoSuchElementException", "RuntimeException", "Exception", "Throwable");
 
     @Override
@@ -67,7 +74,8 @@ public class OptionalMisuseRule extends AbstractRule {
 
             Expression scope = Nodes.unwrap(call.getScope().get());
             // get() внутри try, который ловит NoSuchElementException, - отсутствие значения уже обработано
-            if ((isUncheckedSource(scope) || isUncheckedVariable(scope, call)) && !isCaught(call)) {
+            if ((isUncheckedSource(scope) || isUncheckedVariable(scope, call)) && !isCaught(call)
+                    && !isOverNonEmptyCollection(scope, call)) {
                 violations.add(violation(sourceFile, call,
                         "Optional.get() без проверки в '" + call + "': на пустом Optional будет"
                                 + " NoSuchElementException; используйте orElseThrow(), orElse() или ifPresent()"));
@@ -99,6 +107,49 @@ public class OptionalMisuseRule extends AbstractRule {
             current = current.getParentNode().orElse(null);
         }
         return false;
+    }
+
+    /**
+     * list.stream().min(...).get() внутри if (!list.isEmpty()) либо сразу после list.add(...): у потока непустой
+     * коллекции min, max, findFirst и findAny значение есть. filter и подобные по дороге могут его отнять
+     */
+    private boolean isOverNonEmptyCollection(Expression scope, MethodCallExpr call) {
+        if (!scope.isMethodCallExpr() || !NON_EMPTY_TERMINALS.contains(scope.asMethodCallExpr().getNameAsString())) {
+            return false;
+        }
+        Expression current = scope.asMethodCallExpr().getScope().map(Nodes::unwrap).orElse(null);
+        while (current instanceof MethodCallExpr step && !STREAM.equals(step.getNameAsString())) {
+            if (!SIZE_PRESERVING.contains(step.getNameAsString())) {
+                return false;
+            }
+            current = step.getScope().map(Nodes::unwrap).orElse(null);
+        }
+        if (!(current instanceof MethodCallExpr stream) || stream.getScope().isEmpty()) {
+            return false;
+        }
+        String collection = Nodes.unwrap(stream.getScope().get()).toString();
+        return Guards.isGuarded(call, check -> isEmptinessCheck(check, collection)) || isFilledBefore(call, collection);
+    }
+
+    // list.isEmpty(), list.size(), CollectionUtils.isNotEmpty(list)
+    private boolean isEmptinessCheck(Expression expression, String collection) {
+        if (!expression.isMethodCallExpr() || !EMPTINESS_CHECKS.contains(expression.asMethodCallExpr().getNameAsString())) {
+            return false;
+        }
+        MethodCallExpr check = expression.asMethodCallExpr();
+        return check.getScope().map(scope -> Nodes.unwrap(scope).toString()).filter(collection::equals).isPresent()
+                || check.getArguments().stream().anyMatch(argument -> Nodes.unwrap(argument).toString().equals(collection));
+    }
+
+    // matchedFileNames.add(name); ... matchedFileNames.stream().findFirst().get()
+    private boolean isFilledBefore(MethodCallExpr call, String collection) {
+        int line = call.getBegin().map(position -> position.line).orElse(0);
+        return Nodes.enclosingCallable(call).stream()
+                .flatMap(callable -> callable.findAll(MethodCallExpr.class).stream())
+                .filter(add -> ADDS.contains(add.getNameAsString()))
+                .filter(add -> add.getBegin().map(position -> position.line).orElse(Integer.MAX_VALUE) < line)
+                .anyMatch(add -> add.getScope().map(scope -> Nodes.unwrap(scope).toString()).filter(collection::equals)
+                        .isPresent());
     }
 
     // stream.findFirst().get(), repository.findById(id).get()

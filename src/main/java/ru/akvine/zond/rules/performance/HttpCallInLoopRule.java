@@ -28,6 +28,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * HTTP-запрос на каждый элемент цикла: N+1 по сети. Сетевой вызов дороже запроса к БД, а внешний сервис
@@ -44,6 +45,10 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
     private static final Set<String> BLOCKING_WAITS = Set.of("block", "blockFirst", "blockLast", "blockOptional");
     private static final Set<String> CONFIGURATION_ANNOTATIONS = Set.of(
             "Configuration", "EnableWebSecurity", "EnableAuthorizationServer", "EnableResourceServer");
+    // Ответ придет в обработчик: client.execute(action, request, listener) в Elasticsearch, sendAsync, enqueue.
+    // Цикл ответа не ждет - запросы уходят одновременно
+    private static final Pattern LISTENER = Pattern.compile("listener", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ASYNC_METHOD = Pattern.compile(".*Async$|^enqueue$");
 
     @Override
     public List<RuleParameter> parameters() {
@@ -107,7 +112,7 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
     }
 
     private Optional<Problem> describe(MethodCallExpr call, CallGraph graph) {
-        Optional<String> direct = HttpCalls.describe(call);
+        Optional<String> direct = describeBlocking(call);
         if (direct.isPresent()) {
             return Optional.of(new Problem("Сетевой вызов '" + direct.get() + "' в цикле", Confidence.CONFIRMED));
         }
@@ -115,7 +120,7 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
         // enrich(order) в цикле, а запрос к внешнему сервису - внутри enrich или еще глубже
         for (MethodDeclaration target : graph.targetsOf(call)) {
             Optional<CallChains.Found> found = CallChains.find(
-                    graph, target, value(MAX_CALL_DEPTH), method -> false, HttpCalls::describe);
+                    graph, target, value(MAX_CALL_DEPTH), method -> false, HttpCallInLoopRule::describeBlocking);
             if (found.isPresent()) {
                 return Optional.of(new Problem(
                         "Вызов '" + call.getNameAsString() + "(...)' в цикле делает сетевой вызов '"
@@ -124,6 +129,23 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
             }
         }
         return Optional.empty();
+    }
+
+    private static Optional<String> describeBlocking(Node node) {
+        return node instanceof MethodCallExpr call && isAnsweredByListener(call) ? Optional.empty() : HttpCalls.describe(node);
+    }
+
+    // projectClient.admin().indices().rolloverIndex(request, listener): обработчик стоит в любом звене цепочки
+    private static boolean isAnsweredByListener(MethodCallExpr call) {
+        Node current = call;
+        while (current instanceof MethodCallExpr step) {
+            if (ASYNC_METHOD.matcher(step.getNameAsString()).matches()
+                    || step.getArguments().stream().anyMatch(argument -> LISTENER.matcher(argument.toString()).find())) {
+                return true;
+            }
+            current = step.getParentNode().filter(parent -> parent instanceof MethodCallExpr).orElse(null);
+        }
+        return false;
     }
 
     // Класс настроек выполняется при запуске: clients.inMemory().withClient(id).additionalInformation(...) -

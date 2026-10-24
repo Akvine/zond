@@ -16,6 +16,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
@@ -33,6 +34,10 @@ public class NamingConventionRule extends AbstractRule {
 
     // static final, но по общепринятой практике пишутся не как константы
     private static final Set<String> CONSTANT_EXCEPTIONS = Set.of("serialVersionUID", "log", "logger");
+    // Неизменяемые значения: настоящая константа такого типа пишется как UPPER_SNAKE_CASE
+    private static final Set<String> CONSTANT_TYPES = Set.of(
+            "int", "long", "short", "byte", "char", "double", "float", "boolean", "Integer", "Long", "Short", "Byte",
+            "Character", "Double", "Float", "Boolean", "String", "BigDecimal", "BigInteger", "Duration", "Pattern");
 
     // Безымянная переменная
     private static final String UNNAMED = "_";
@@ -97,10 +102,18 @@ public class NamingConventionRule extends AbstractRule {
         Node parent = variable.getParentNode().orElse(null);
 
         if (parent instanceof FieldDeclaration field && field.isStatic() && field.isFinal()) {
-            if (!CONSTANT_EXCEPTIONS.contains(name)) {
+            // static final Map<...> cache = new HashMap<>(), static final Service instance: изменяемое значение -
+            // не константа, и lowerCamelCase для него обычен. Число и строка в lowerCamelCase - уже константа
+            boolean mutableValue = !CONSTANT_TYPES.contains(LocalTypes.typeName(variable.getType()));
+            if (!CONSTANT_EXCEPTIONS.contains(name)
+                    && !(mutableValue && LOWER_CAMEL_CASE.matcher(name).matches())) {
                 check(sourceFile, variable, name, CONSTANT_CASE, "Имя константы", "UPPER_SNAKE_CASE", violations);
             }
-        } else if (parent instanceof FieldDeclaration) {
+        } else if (parent instanceof FieldDeclaration field) {
+            // public static int DEFAULT_LIMIT = 100 - константа без final: о пропущенном final сообщает jr:35
+            if (field.isPublic() && field.isStatic() && CONSTANT_CASE.matcher(name).matches()) {
+                return;
+            }
             check(sourceFile, variable, name, LOWER_CAMEL_CASE, "Имя поля", "lowerCamelCase", violations);
         } else if (parent instanceof VariableDeclarationExpr) {
             check(sourceFile, variable, name, LOWER_CAMEL_CASE, "Имя переменной", "lowerCamelCase", violations);

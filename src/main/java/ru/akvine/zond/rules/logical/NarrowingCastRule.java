@@ -4,6 +4,7 @@ import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.CastExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.stmt.AssertStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -64,11 +65,13 @@ public class NarrowingCastRule extends AbstractRule {
     }
 
     // if (sum > Integer.MAX_VALUE) return Integer.MAX_VALUE; return (int) sum;
+    // assert indexIsInt(index); return (int) index: предел проверяет assert, как бы он ни был записан
     private boolean isRangeChecked(CastExpr cast) {
         String value = Nodes.unwrap(cast.getExpression()).toString();
         return Guards.isGuarded(cast, check -> {
             String text = check.toString();
-            return text.contains(value) && (text.contains(MAX_VALUE) || text.contains(MIN_VALUE));
+            return text.contains(value) && (text.contains(MAX_VALUE) || text.contains(MIN_VALUE)
+                    || check.findAncestor(AssertStmt.class).isPresent());
         });
     }
 

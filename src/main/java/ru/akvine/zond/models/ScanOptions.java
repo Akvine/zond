@@ -41,9 +41,14 @@ public record ScanOptions(
         Set<Path> changedFiles) {
     private static final int SINGLE_THREAD = 1;
     private static final String SEPARATOR = "[,;\\s]+";
-    private static final String TEST_DIRECTORY = "test";
+    // src/test, tests, javatests (Bazel и Google), integrationTest и testFixtures (Gradle). "it" сюда не входит:
+    // так называют и пакеты (com.company.it)
+    private static final Set<String> TEST_DIRECTORIES = Set.of(
+            "test", "tests", "javatests", "integrationTest", "integration-test", "integration-tests", "testFixtures");
     private static final String SOURCE_DIRECTORY = "src";
     private static final Set<String> BUILD_DIRECTORIES = Set.of("build", "target", "out");
+    private static final Set<String> VENDORED_DIRECTORIES = Set.of(
+            "third_party", "third-party", "thirdparty", "third_parties", "vendor", "vendored");
     private static final Set<String> SERVICE_DIRECTORIES =
             Set.of(".claude", ".git", ".idea", ".gradle", ".mvn", ".vscode", ".svn", ".hg");
     private static final String OLD_NAME_PREFIX = "Check";
@@ -157,6 +162,18 @@ public record ScanOptions(
      * форматтеры и генераторы, и сгенерированный код. Каталог с таким именем внутри src - обычный пакет
      */
     public boolean isBuildOutput(Path root, Path file) {
+        return isUnder(root, file, BUILD_DIRECTORIES);
+    }
+
+    /**
+     * @return true для чужого кода, вложенного в проект: third_party/java/proguard, vendor. Каталог с таким
+     * именем внутри src - обычный пакет (com.shop.vendor)
+     */
+    public boolean isVendored(Path root, Path file) {
+        return isUnder(root, file, VENDORED_DIRECTORIES);
+    }
+
+    private boolean isUnder(Path root, Path file, Set<String> directories) {
         Path absoluteRoot = root.toAbsolutePath().normalize();
         Path absoluteFile = file.toAbsolutePath().normalize();
         Path relative = absoluteFile.startsWith(absoluteRoot) ? absoluteRoot.relativize(absoluteFile) : file;
@@ -164,7 +181,7 @@ public record ScanOptions(
             if (SOURCE_DIRECTORY.equals(part.toString())) {
                 return false;
             }
-            if (BUILD_DIRECTORIES.contains(part.toString())) {
+            if (directories.contains(part.toString())) {
                 return true;
             }
         }
@@ -172,17 +189,21 @@ public record ScanOptions(
     }
 
     /**
-     * @return true для файла из каталога test: тестовый код и его ресурсы
+     * @return true для файла из каталога тестов (test, tests, javatests, integrationTest) либо тестового набора
+     * исходников Gradle (src/internalClusterTest, src/javaRestTest): тестовый код и его ресурсы
      */
     public boolean isTestFile(Path root, Path file) {
         // Смотрим только на часть пути ниже корня: если сканировать попросили сам каталог test, его и проверяем
         Path absoluteRoot = root.toAbsolutePath().normalize();
         Path absoluteFile = file.toAbsolutePath().normalize();
         Path relative = absoluteFile.startsWith(absoluteRoot) ? absoluteRoot.relativize(absoluteFile) : file;
+        String previous = "";
         for (Path part : relative) {
-            if (TEST_DIRECTORY.equals(part.toString())) {
+            String name = part.toString();
+            if (TEST_DIRECTORIES.contains(name) || TestPaths.isTestSourceSet(previous, name)) {
                 return true;
             }
+            previous = name;
         }
         return false;
     }

@@ -71,6 +71,9 @@ public class Types {
         // Только типы не из исходников проекта: JDK, библиотеки, а также предки, известные лишь по имени
         private final Set<String> libraryNames = new LinkedHashSet<>();
 
+        // Объявления типов иерархии из исходников проекта
+        private final List<TypeDeclaration<?>> sources = new ArrayList<>();
+
         private final Set<String> visited = new HashSet<>();
 
         // false, если какого-то предка разрешить не удалось и список может быть неполным
@@ -195,6 +198,22 @@ public class Types {
      */
     public synchronized Set<String> hierarchy(Expression expression) {
         return resolve(expression).map(type -> hierarchy(type).names).orElse(Set.of());
+    }
+
+    /**
+     * @return объявления типа выражения и его предков из исходников проекта; пусто, если тип неизвестен либо
+     * объявлен не в проекте
+     */
+    public synchronized List<TypeDeclaration<?>> projectHierarchy(Expression expression) {
+        return resolve(expression).map(type -> List.copyOf(hierarchy(type).sources)).orElse(List.of());
+    }
+
+    /**
+     * @return простые имена предков типа выражения не из исходников проекта: JpaRepository, CrudRepository
+     * и те, что известны лишь по имени из extends / implements
+     */
+    public synchronized Set<String> libraryHierarchy(Expression expression) {
+        return resolve(expression).map(type -> Set.copyOf(hierarchy(type).libraryNames)).orElse(Set.of());
     }
 
     /**
@@ -413,6 +432,7 @@ public class Types {
 
         Optional<TypeDeclaration<?>> source = sourceOf(type);
         hierarchy.names.add(type.getName());
+        source.ifPresent(hierarchy.sources::add);
         if (source.isEmpty()) {
             hierarchy.libraryNames.add(type.getName());
             // У класса из jar предок может лежать в неподключенной библиотеке, и решатель об этом промолчит

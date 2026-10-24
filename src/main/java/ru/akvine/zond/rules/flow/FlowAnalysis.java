@@ -4,6 +4,7 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.CallableDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
+import com.github.javaparser.ast.body.EnumDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.TypeDeclaration;
@@ -96,7 +97,10 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
         this.callGraph = CallGraph.of(sources);
         for (SourceFile source : sources) {
             for (MethodDeclaration method : source.unit().findAll(MethodDeclaration.class)) {
-                signatures.merge(signature(method), 1, Integer::sum);
+                // Объявление без тела (метод интерфейса) другого поведения не дает: считаем только тела
+                if (method.getBody().isPresent()) {
+                    signatures.merge(signature(method), 1, Integer::sum);
+                }
                 if (annotatedReturn(method) != null) {
                     annotatedMethods.add(method.getNameAsString());
                 }
@@ -179,22 +183,40 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
         MethodDeclaration target = targets.get(0);
         boolean isSameArity = target.getParameters().size() == call.getArguments().size()
                 && target.getParameters().stream().noneMatch(Parameter::isVarArgs);
-        if (!isSameArity || target.getBody().isEmpty() || !isFinalBehavior(target)) {
+        if (!isSameArity || target.getBody().isEmpty() || !isFinalBehavior(target, call)) {
             return Optional.empty();
         }
         return Optional.of(summary(target));
     }
 
     // Сводка верна, только если при вызове выполнится именно это тело: метод нельзя переопределить
-    // либо в проекте нет другого метода с тем же именем и числом параметров
-    private boolean isFinalBehavior(MethodDeclaration method) {
-        if (method.isPrivate() || method.isStatic() || method.isFinal()) {
+    // либо в проекте нет другого метода с тем же именем и числом параметров. Метод, угаданный по имени среди
+    // нескольких одноименных, мог оказаться чужим: threadPool.info(name).getMax() - не getMax() другого класса
+    private boolean isFinalBehavior(MethodDeclaration method, MethodCallExpr call) {
+        if (method.isPrivate()) {
+            return true;
+        }
+        boolean unique = signatures.getOrDefault(signature(method), 0) == 1;
+        if (!unique && !callGraph.isExact(call)) {
+            return false;
+        }
+        if (method.isStatic() || method.isFinal()) {
             return true;
         }
         Optional<TypeDeclaration<?>> type = method.findAncestor(TypeDeclaration.class).map(found -> (TypeDeclaration<?>) found);
-        boolean isFinalType = type.isPresent() && (type.get().isRecordDeclaration() || type.get().isEnumDeclaration()
+        boolean isFinalType = type.isPresent() && (type.get().isRecordDeclaration()
+                || type.get() instanceof EnumDeclaration enumeration && !isOverriddenByConstant(enumeration, method)
                 || type.get() instanceof ClassOrInterfaceDeclaration declaration && declaration.isFinal());
-        return isFinalType || signatures.getOrDefault(signature(method), 0) == 1;
+        return isFinalType || unique;
+    }
+
+    // LOGSDB { public boolean isStrictColumnar() { return true; } }: у константы перечисления свое тело метода
+    private boolean isOverriddenByConstant(EnumDeclaration enumeration, MethodDeclaration method) {
+        return enumeration.getEntries().stream()
+                .flatMap(constant -> constant.getClassBody().stream())
+                .anyMatch(member -> member instanceof MethodDeclaration other
+                        && other.getNameAsString().equals(method.getNameAsString())
+                        && other.getParameters().size() == method.getParameters().size());
     }
 
     private String signature(MethodDeclaration method) {

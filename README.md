@@ -1383,9 +1383,14 @@ int active = orderRepository.findAllByStatus(status).size();   // -> countByStat
 
 Правила о производительности, безопасности, датах и устойчивости к `null` написаны для кода приложения.
 В тестах они сообщают о том, что ошибкой не является: тест готовит данные запросом в цикле, вызывает
-`optional.get()` без проверки, а упавший тест и есть нужный исход. Поэтому в каталогах `test` — и в коде,
+`optional.get()` без проверки, а упавший тест и есть нужный исход. Поэтому в каталогах тестов — и в коде,
 и в файлах настроек — остаются находки только правил для тестов (jr:141 – jr:143, jr:198, jr:344 – jr:348
 и подобных).
+
+Тестами считаются каталоги `test`, `tests`, `javatests` (Bazel), `integrationTest`, `integration-test`,
+`testFixtures`, а также наборы исходников Gradle рядом с `src/test`, имя которых кончается на `Test`:
+`src/internalClusterTest`, `src/javaRestTest`, `src/yamlRestTest`, `src/heapPressureTest`. Пакет с таким же
+именем внутри `src/main` (`com.shop.loadTest`) — обычный код.
 
 ```properties
 # вернуть прежнее поведение: все правила проверяют и тесты
@@ -1401,6 +1406,11 @@ Java-файлы из каталогов `build`, `target` и `out` читают�
 метод используется. Но находки в них не показываются: править там нечего, а копия исходника, которую
 кладет туда форматтер или генератор, дала бы каждую находку дважды. Каталог с таким именем внутри `src` —
 обычный пакет, и он проверяется как всегда.
+
+Так же скрываются находки в чужом коде, вложенном в проект: каталоги `third_party`, `third-party`,
+`thirdparty`, `third_parties`, `vendor`, `vendored` (в Bazel это четверть всех находок).
+Код из них читается: по нему видно, что класс или метод используется. Каталог `vendor` внутри `src` — пакет
+проекта (`com.shop.vendor`), и он проверяется.
 
 ### Частные случаи
 
@@ -1454,7 +1464,7 @@ Java-файлы из каталогов `build`, `target` и `out` читают�
 | jr:302, свойство не читается | Свойства Jmix (`jmix.*`, `main.liquibase.*`) и EclipseLink: их читает фреймворк |
 | jr:7, изменяемое поле бина | Запись при запуске: `@EventListener(ApplicationReadyEvent.class)`, `CommandLineRunner.run`, `setApplicationContext` у `*Aware`. Ленивая инициализация `if (x == null) x = ...` — о ней сообщает jr:175 |
 | jr:2, вызов `@Transactional`-метода изнутри | Закрытый метод, который вызывают только открытые методы класса с `@Transactional`: транзакция уже открыта |
-| jr:14, сравнение ссылок | `flag == Boolean.TRUE`: упакованный `Boolean` — всегда один из двух объектов кэша |
+| jr:14, сравнение ссылок | Обертки `Boolean`: упаковка всегда дает `Boolean.TRUE` либо `Boolean.FALSE`, и ссылки совпадают |
 | jr:59, `@Transactional` на static | `@Transactional` стоит на классе, а метод статический: такой метод и не задуман транзакционным |
 | jr:151, путь из данных запроса | `SchemaType.resolve(type, name)` и свой метод `resolve(...)`: стоком считается только `resolve` у пути |
 | jr:173, коллекция в бине | Бин `@Scope("prototype")`; объект, который заполняет фабричный метод до того, как его кто-то увидит; метод, вызванный при запуске через `this::initForBank` |
@@ -1516,7 +1526,7 @@ Java-файлы из каталогов `build`, `target` и `out` читают�
 | jr:329, индекс из `indexOf` | Поиск по той же строке уже сравнили: `if (path.indexOf(SymbolConstant.AND) > -1)`, `name.indexOf(".") == -1 ? name : name.substring(0, name.lastIndexOf("."))`; строка - результат `matcher.group()` |
 | jr:38, неиспользуемый импорт | Импорт нужен аннотации пакета в `package-info.java`: `@NullMarked package ...` |
 | jr:303, сообщения разных языков | Значение продолжается на следующих строках через `\` - подстановки берутся из всего значения |
-| проверки Docker, Compose и Kubernetes; jr:204 и другие проверки настроек | Тестовые стенды: каталоги `test`, `tests`, `it`, `e2e`, `integrationTest`, `testFixtures` (`ci/tests/redis/docker-compose.yml`) и каталоги CI `.github`, `.gitlab`, `.circleci` (`.github/workflows/cluster-test/docker-compose-base.yaml`) |
+| проверки Docker, Compose и Kubernetes; jr:204 и другие проверки настроек | Тестовые стенды: каталоги `test`, `tests`, `javatests`, `it`, `e2e`, `integrationTest`, `testFixtures`, наборы исходников вида `src/internalClusterTest` (`ci/tests/redis/docker-compose.yml`) и каталоги CI `.github`, `.gitlab`, `.circleci` (`.github/workflows/cluster-test/docker-compose-base.yaml`) |
 | jr:324, возможный null | `default: return null` в `switch` по параметру - защитная ветка; `if (isBlank(address) \|\| group == null) return null` - пустота нескольких аргументов |
 | jr:7 и другие правила о бинах-одиночках | Класс с `@ServerEndpoint`: контейнер WebSocket создает экземпляр на каждое подключение |
 | jr:7, изменяемое поле бина; jr:63, запрос к БД в цикле | Метод выполняется только при запуске или остановке: его вызывает `@PostConstruct` другого бина, напрямую или через цепочку (`MasterServer.@PostConstruct -> masterRegistryClient.start() -> registryClient.setStoppable(...)`), `close()` у бина с `AutoCloseable`, `start()` / `stop()` у `Lifecycle`. Метод со ссылкой на него (`this::start`) или с аннотацией фреймворка так не считается; вызовы из тестов не учитываются - в рабочей среде их нет |
@@ -1533,6 +1543,30 @@ Java-файлы из каталогов `build`, `target` и `out` читают�
 | jr:66, `get(0)` без проверки | Постоянный список с элементами: `static final List<String> SCOPES = List.of("singleton", "application")` |
 | jr:284, `indexOf(...) > 0` | Односимвольный разделитель: `url.indexOf('?') > 0`, `email.indexOf("@") > 0` — перед ним должно что-то стоять |
 | jr:182, геттер отдает коллекцию | Поле заполняется только неизменяемой копией: `this.columns = List.copyOf(columns)` |
+| jr:40, магическое число | Таблицы данных: массив хотя бы из трех чисел (`{2, 4, 10, 3, 5, 9}` — веса контрольной цифры ИНН) и ячейки с числовыми индексами `gbkFreq[54][125] = 493`. Пара `{300, 700}` — коды, и находка остается |
+| jr:42, имена | `static final` изменяемого типа (`Map`, свой объект) в lowerCamelCase — не константа. `public static` без `final` в CONSTANT_CASE не проверяется: о нем говорит jr:35 |
+| jr:141, тест без проверки | Проверка в методе другого класса проекта — статическом либо у поля: `JacksonSerializationTest.canonicalSerialization(...)`; помощник `testLookup(...)` у объекта, созданного тут же (`ev.new Scenario().testLookup(...)`), `testExpression(...)` из базового класса библиотеки и библиотечный тестер (`tester.testAllPublicConstructors(...)` у `NullPointerTester` из Guava) — метод сервиса `service.testTran()` и свой помощник без проверок проверкой не считаются; тест с `@Ignore` / `@Disabled`; тест-заготовка во вложенном классе другого теста; комментарий «doesn't throw», «no exception» |
+| jr:17, незакрытый ресурс | Метод проекта отдает свое поле: общее соединение менеджера, а не новое |
+| jr:24, `Optional.get()` без проверки | `min()`, `max()`, `findFirst()` у стрима коллекции, которую выше проверили на пустоту либо заполнили |
+| jr:335, таблица без первичного ключа | Модели ключей Doris и StarRocks (`UNIQUE KEY(...)`, `DUPLICATE KEY`, `AGGREGATE KEY`) и `ENGINE = MergeTree` в ClickHouse |
+| jr:297, jr:312 и другие проверки Docker и Compose | Демо-стенды (`examples`, `demo`, `*-demo`, `quickstart`, каталог `docker-compose`, `third-party`) и образы сборки (`compilation`, `.devcontainer`, `build-env`); `.dockerignore` — не Dockerfile |
+| jr:63 и другие правила о репозиториях | Свой тип с «репозиторием» в имени, не связанный с хранилищем: репозиторий снапшотов Elasticsearch, `record ProjectRepo`, репозиторий кода Bazel (`label.getRepository()`). Хранилищем тип считается по имени `*Dao`, предку из Spring Data или MyBatis, `@Repository`, `@Query`, импортам JPA, JDBC, jOOQ, клиенту БД в полях, методам запросов (`findById`, `findByEmail`, `save`) либо по реализации, которая так работает (`HibernateAdministrationDAO` у интерфейса, адаптер с полем-репозиторием Spring Data), — так узнается и порт гексагональной архитектуры. `Repository.assertSnapshotMetaThread()` — статический метод типа, а не обращение к бину |
+| jr:181, `equals` с другой сигнатурой | Одноименный метод другой формы: `static boolean equals(a, b)`, `String hashCode(int)` — переопределять метод `Object` он и не пытается |
+| jr:105, потерянная причина | `throw new InterruptedException()` в `catch`: конструктора с причиной у него нет |
+| jr:15, `equals` без `hashCode` | Методы генерируют AutoValue, AutoOneOf, Lombok (`@Data`, `@Value`, `@EqualsAndHashCode`); объявление без тела (`public abstract int hashCode();`) — требование к наследникам, а не реализация без пары |
+| jr:126, проглоченное прерывание | Прерывание запомнили и восстанавливают позже: `catch (InterruptedException e) { interrupted = true; }` и `Thread.currentThread().interrupt()` в том же методе |
+| jr:43, утечка `this` | `this` в проверке или сообщении: `checkState(ok, "%s", this)`, `log.debug("{}", this)`, `String.valueOf(this)`, `builder.append(this)` |
+| jr:260, сравнение с `true` / `false` | Проект пишет отрицание как `foo == false` (так принято в Elasticsearch): таких сравнений не меньше 10 и больше, чем `!`. `== true` остается находкой |
+| jr:38, неиспользуемый приватный метод | Метод или поле берут по имени: `lookup.findStatic(DefMath.class, "rsh", type)`, `getDeclaredMethod("x")`, `getDeclaredField("value")` |
+| jr:286, приведение `long` к `int` | Предел проверяет `assert` выше: `assert indexIsInt(index); return (int) index` |
+| jr:324, jr:325, возможный null; jr:326 | `assert x != null` — обещание автора: null, который возможен только при ложном утверждении, не в счет. Кроме результата разбора чужих данных: `x = JSONUtils.parseObject(json, ...); assert x != null` в рабочей среде, где утверждения выключены, не защищает от неверного ввода. Обращение внутри самого `assert` (`assert byId(shard.allocationId().getId()) == shard`) выполняется только с `-ea`, в тестах, и о нем не сообщается. Проверка `if (x == null)` после такого `assert` — защита на случай выключенных утверждений, и о ней jr:326 не сообщает. `table.shard(i)` в цикле `for (i = 0; i < table.size(); i++)`: null такой метод отдает только за пределами размера того же объекта |
+| jr:326 и другие выводы анализа потока | Метод перечисления, который константа переопределяет своим телом (`LOGSDB { boolean isStrictColumnar() { return true; } }`); метод, угаданный по имени среди нескольких одноименных, — о его результате ничего не утверждается |
+| jr:14, сравнение ссылок | Сравнение ссылок задумано: `normalized != key`, где `normalized = normalize(key, prefix)`, — «вернул ли метод тот же объект»; `name == name.intern()`; сравнение внутри `assert`. Арифметика с одной стороны (`total == failed + ok`) распаковывает обертки |
+| jr:117, `case` без `break` | Разбор хвоста в хеш-функциях: `case 15: ... case 14: ...` — метки идут подряд по убыванию; комментарий `fallthru` |
+| jr:169, деньги в `double` | Коэффициенты: `indexBalanceFactor`, `RERANK_COST_WEIGHT`. Имена, которые бывают не только о деньгах (`cost`, `balance`, `discount`, `amount`, `sum`, `total`), — находка, только если о деньгах говорит сам файл (цена, валюта, платеж, `BigDecimal`) либо проект: такие слова есть хотя бы в 2% его файлов (в fineract — в 41%, в Elasticsearch — в 0,2%) |
+| jr:111, коллекция во входном DTO | Класс сам разбирает себя из потока: конструктор от `StreamInput` или `DataInput`, `writeTo`, `writeExternal`, `readFields` — запросы транспорта Elasticsearch, `Writable` из Hadoop. Bean Validation до них не доходит |
+| jr:427, сетевой вызов в цикле | Ответ придет в обработчик: `client.execute(action, request, listener)`, `...rolloverIndex(request, ActionListener.wrap(...))`, `sendAsync`, `enqueue` — цикл его не ждет |
+| jr:220, значение может быть null | Стандартные свойства JVM: `System.getProperty("os.name")`, `user.home`, `java.io.tmpdir` заданы всегда |
 
 ### Знания о проекте
 

@@ -35,6 +35,12 @@ public class ThisEscapeInConstructorRule extends AbstractRule {
             "mapToObj", "collect", "reduce", "peek", "sorted", "sort", "removeIf", "replaceAll", "computeIfAbsent",
             "computeIfPresent", "compute", "merge", "ifPresent", "ifPresentOrElse", "orElseGet", "min", "max",
             "takeWhile", "dropWhile");
+    // Preconditions.checkState(valid, this), String.format("%s", this), log.debug("{}", this): объект только
+    // печатают в сообщение и нигде не сохраняют
+    private static final Set<String> OBSERVING_CALLS = Set.of(
+            "checkState", "checkArgument", "checkNotNull", "checkElementIndex", "checkPositionIndex", "verify",
+            "verifyNotNull", "requireNonNull", "format", "valueOf", "append", "trace", "debug", "info", "warn", "error",
+            "println", "print", "printf");
     private static final int SNIPPET_LENGTH = 80;
 
     @Override
@@ -120,6 +126,7 @@ public class ThisEscapeInConstructorRule extends AbstractRule {
         // функцию сразу, в этом же потоке: ids.forEach(this::addMember) ничего наружу не выносит
         return parent instanceof MethodCallExpr call
                 && isArgument(value, call.getArguments())
+                && !OBSERVING_CALLS.contains(call.getNameAsString())
                 && call.getScope().filter(scope -> isOwnState(scope, false)).isEmpty()
                 && (value.isThisExpr() || !IMMEDIATE_CALLS.contains(call.getNameAsString()));
     }

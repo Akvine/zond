@@ -48,6 +48,12 @@ public class UnusedCodeRule extends AbstractRule {
             "Data", "Value", "Getter", "Setter", "Builder", "SuperBuilder", "With", "ToString", "EqualsAndHashCode",
             "AllArgsConstructor", "RequiredArgsConstructor");
 
+    // lookup.findStatic(DefMath.class, "rsh", type), getDeclaredField("value"): метод и поле взяты по имени
+    private static final Set<String> REFLECTIVE_LOOKUPS = Set.of(
+            "findStatic", "findVirtual", "findSpecial", "findGetter", "findSetter", "findStaticGetter",
+            "findStaticSetter", "findVarHandle", "findStaticVarHandle", "getDeclaredMethod", "getMethod",
+            "getDeclaredField", "getField");
+
     @Override
     public String code() {
         return RuleCodes.UNUSED_CODE_RULE_CODE;
@@ -66,11 +72,14 @@ public class UnusedCodeRule extends AbstractRule {
         Set<String> usedMethods = new HashSet<>();
         unit.findAll(MethodCallExpr.class).forEach(call -> usedMethods.add(call.getNameAsString()));
         unit.findAll(MethodReferenceExpr.class).forEach(reference -> usedMethods.add(reference.getIdentifier()));
+        Set<String> reflective = reflectivelyUsedNames(unit);
+        usedMethods.addAll(reflective);
 
         Set<String> usedVariables = new HashSet<>();
         unit.findAll(NameExpr.class).forEach(name -> usedVariables.add(name.getNameAsString()));
         unit.findAll(FieldAccessExpr.class).forEach(access -> usedVariables.add(access.getNameAsString()));
         usedVariables.addAll(methodReferenceScopes(unit));
+        usedVariables.addAll(reflective);
 
         for (ImportDeclaration importDeclaration : unit.getImports()) {
             if (!importDeclaration.isAsterisk() && !isImportUsed(unit, importDeclaration)) {
@@ -136,6 +145,15 @@ public class UnusedCodeRule extends AbstractRule {
                                 + method.getNameAsString() + "'"));
             }
         }
+    }
+
+    private Set<String> reflectivelyUsedNames(CompilationUnit unit) {
+        return unit.findAll(MethodCallExpr.class).stream()
+                .filter(call -> REFLECTIVE_LOOKUPS.contains(call.getNameAsString()))
+                .flatMap(call -> call.getArguments().stream())
+                .filter(Expression::isStringLiteralExpr)
+                .map(argument -> argument.asStringLiteralExpr().getValue())
+                .collect(Collectors.toSet());
     }
 
     // NAMES::contains - парсер не знает, переменная это или тип, и хранит NAMES как тип, а не как NameExpr

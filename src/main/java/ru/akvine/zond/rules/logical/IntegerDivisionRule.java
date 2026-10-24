@@ -40,7 +40,7 @@ public class IntegerDivisionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (LocalTypes.TypedExpression typed : LocalTypes.findTypedExpressions(sourceFile.unit())) {
+        for (LocalTypes.TypedExpression typed : LocalTypes.findTypedExpressions(sourceFile.unit(), this::hasDivision)) {
             if (!FLOATING_TYPES.contains(typed.targetType())) {
                 continue;
             }
@@ -51,6 +51,12 @@ public class IntegerDivisionRule extends AbstractRule {
                             + " приведите один из операндов к double")));
         }
         return violations;
+    }
+
+    // Тип места назначения нужен только выражению с делением
+    private boolean hasDivision(Expression expression) {
+        return expression.findAll(BinaryExpr.class).stream()
+                .anyMatch(binary -> binary.getOperator() == BinaryExpr.Operator.DIVIDE);
     }
 
     @Override

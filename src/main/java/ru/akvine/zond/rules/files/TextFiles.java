@@ -17,10 +17,17 @@ import java.util.regex.Pattern;
  */
 @UtilityClass
 public class TextFiles {
-    private static final Set<String> SAMPLE_DIRECTORIES = Set.of("samples", "fixtures", "testdata", "test-data");
+    // examples/, demo/, docker-compose/clickhouse/init/: схема примера или чужой базы для стенда, а не схема продукта
+    private static final Set<String> SAMPLE_DIRECTORIES = Set.of(
+            "samples", "fixtures", "testdata", "test-data", "example", "examples", "demo", "demos", "docker-compose",
+            "thirdparties", "third-party", "third_party");
     // multi-tenant-demo-backups, old-schema-files, sample_data, db-dumps: копии базы и устаревшие схемы
     private static final Pattern COPY_DIRECTORY = Pattern.compile("(?i).*(backup|dump|sample|archive).*|old[-_].*|.*[-_]old");
     private static final int SAMPLE_DEPTH = 3;
+    private static final Pattern DEMO_DIRECTORY =
+            Pattern.compile("(?i)examples?|demos?|.*[-_]demo|demo[-_].*|quickstart");
+    private static final Set<String> BUILD_IMAGE_DIRECTORIES =
+            Set.of("compilation", ".devcontainer", "devcontainer", "build-env");
     // key=value, key: value, key value
     private static final Pattern PROPERTY_LINE = Pattern.compile("^\\s*([^=:\\s]+)\\s*[=:]?\\s*(.*)$");
 
@@ -62,13 +69,38 @@ public class TextFiles {
         return file.type() == TextFileType.GRADLE;
     }
 
-    // Образы, docker-compose и манифесты тестовых стендов (ci/tests, src/test) в рабочую среду не попадают
+    // Образы, docker-compose и манифесты тестовых стендов (ci/tests, src/test), примеров и демо в рабочую среду
+    // не попадают. Образ для сборки (docker/compilation, .devcontainer) приложение не запускает
     public boolean isDockerfile(TextFile file) {
-        return file.type() == TextFileType.DOCKERFILE && !TestPaths.isTest(file.path());
+        return file.type() == TextFileType.DOCKERFILE && !TestPaths.isTest(file.path()) && !isDemo(file.path())
+                && !isNearestDirectory(file.path(), BUILD_IMAGE_DIRECTORIES);
     }
 
     public boolean isCompose(TextFile file) {
-        return file.type() == TextFileType.COMPOSE && !TestPaths.isTest(file.path());
+        return file.type() == TextFileType.COMPOSE && !TestPaths.isTest(file.path()) && !isDemo(file.path());
+    }
+
+    // docker/runtime/docker-compose-demo/example/...: пример или демо. Смотрим только ближайшие каталоги -
+    // в пути пакета Java com/example/demo эти имена ничего не значат
+    private boolean isDemo(Path path) {
+        Path parent = path.getParent();
+        for (int depth = 0; parent != null && depth < SAMPLE_DEPTH + 1; depth++, parent = parent.getParent()) {
+            String name = parent.getFileName() == null ? "" : parent.getFileName().toString();
+            if (DEMO_DIRECTORY.matcher(name).matches()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isNearestDirectory(Path path, Set<String> names) {
+        Path parent = path.getParent();
+        for (int depth = 0; parent != null && depth < SAMPLE_DEPTH; depth++, parent = parent.getParent()) {
+            if (parent.getFileName() != null && names.contains(parent.getFileName().toString())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public boolean isMessages(TextFile file) {

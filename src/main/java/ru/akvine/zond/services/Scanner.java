@@ -104,6 +104,8 @@ public class Scanner {
         // метод используется, - но находки в них не показываются: править там нечего, а копия дала бы
         // каждую находку дважды
         violations.removeIf(violation -> options.isBuildOutput(root, violation.file()));
+        // Чужой код, вложенный в проект (third_party, vendor), читается так же, но править его здесь не будут
+        violations.removeIf(violation -> options.isVendored(root, violation.file()));
 
         // В тестовом коде остаются находки только тех правил, которые тесты и проверяют
         if (options.testRulesOnly()) {

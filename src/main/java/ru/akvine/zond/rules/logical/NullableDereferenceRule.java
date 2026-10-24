@@ -39,6 +39,13 @@ public class NullableDereferenceRule extends AbstractRule {
     // Методы, которые возвращают null, если значения нет
     private static final Set<String> NULLABLE_SOURCES =
             Set.of("getParameter", "getHeader", "getAttribute", "getProperty", "getenv");
+    // System.getProperty("os.name"): стандартные свойства JVM заданы всегда
+    private static final String GET_PROPERTY = "getProperty";
+    private static final Set<String> STANDARD_PROPERTIES = Set.of(
+            "java.version", "java.vendor", "java.home", "java.vm.name", "java.vm.version", "java.vm.vendor",
+            "java.specification.version", "java.class.version", "java.class.path", "java.io.tmpdir", "os.name",
+            "os.arch", "os.version", "file.separator", "path.separator", "line.separator", "user.name", "user.home",
+            "user.dir", "file.encoding", "native.encoding");
 
     @Override
     public String code() {
@@ -96,6 +103,10 @@ public class NullableDereferenceRule extends AbstractRule {
         }
         if (OR_ELSE.equals(method) && arguments == 1 && call.getArgument(0).isNullLiteralExpr()) {
             return Optional.of("orElse(null)");
+        }
+        if (GET_PROPERTY.equals(method) && arguments == 1 && call.getArgument(0).isStringLiteralExpr()
+                && STANDARD_PROPERTIES.contains(call.getArgument(0).asStringLiteralExpr().getValue())) {
+            return Optional.empty();
         }
         return NULLABLE_SOURCES.contains(method) && arguments == 1 ? Optional.of(method + "(...)") : Optional.empty();
     }

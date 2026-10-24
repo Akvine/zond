@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules.resources;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.BinaryExpr;
@@ -152,11 +153,17 @@ public class UnclosedResourceRule extends AbstractRule implements ProjectRule {
      * для new FileReader(...) и подобных либо указание на метод проекта, который вернул открытый ресурс
      */
     private Optional<String> describeOpening(Expression initializer, CallGraph graph) {
+        Expression value = Nodes.unwrap(initializer);
+        // ConnectionManager.getInstance().getConnection(...) - свой метод проекта: открывает ли он ресурс,
+        // видно по его телу. Соединение, которое он хранит в поле и отдает каждый раз, - общее, закрывать его нельзя
+        if (value.isMethodCallExpr() && !graph.targetsOf(value.asMethodCallExpr()).isEmpty()
+                && graph.targetsOf(value.asMethodCallExpr()).stream().allMatch(this::returnsOwnField)) {
+            return Optional.empty();
+        }
         if (Resources.opens(initializer)) {
             return Optional.of("");
         }
 
-        Expression value = Nodes.unwrap(initializer);
         if (!value.isMethodCallExpr()) {
             return Optional.empty();
         }
@@ -166,6 +173,23 @@ public class UnclosedResourceRule extends AbstractRule implements ProjectRule {
         return opensInside
                 ? Optional.of(", полученный из '" + call.getNameAsString() + "(...)',")
                 : Optional.empty();
+    }
+
+    // return connection; где connection - поле класса: метод отдает один и тот же закешированный объект
+    private boolean returnsOwnField(MethodDeclaration method) {
+        List<ReturnStmt> returns = method.getBody().map(body -> body.findAll(ReturnStmt.class)).orElse(List.of()).stream()
+                .filter(returned -> !Nodes.isInNestedScope(returned, method))
+                .filter(returned -> returned.getExpression().filter(expression -> !expression.isNullLiteralExpr()).isPresent())
+                .toList();
+        return !returns.isEmpty() && returns.stream().allMatch(returned -> {
+            Expression value = Nodes.unwrap(returned.getExpression().get());
+            if (value.isFieldAccessExpr() && value.asFieldAccessExpr().getScope().isThisExpr()) {
+                return true;
+            }
+            return value.isNameExpr() && LocalTypes.findDeclaration(value)
+                    .filter(declaration -> declaration.getParentNode().orElse(null) instanceof FieldDeclaration)
+                    .isPresent();
+        });
     }
 
     // return new FileReader(...); либо return reader; где reader открыт в этом же методе; либо return open(...);

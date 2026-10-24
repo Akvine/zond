@@ -37,6 +37,7 @@ public enum TextFileType {
     private static final Pattern YAML_NAME = Pattern.compile(".*\\.ya?ml");
     private static final Pattern GRADLE_NAME = Pattern.compile("build\\.gradle(\\.kts)?");
     private static final Pattern DOCKERFILE_NAME = Pattern.compile("dockerfile(\\..*)?|.*\\.dockerfile");
+    private static final String DOCKERIGNORE = ".dockerignore";
     private static final Pattern MESSAGES_NAME = Pattern.compile("messages.*\\.properties");
     private static final Pattern LOGBACK_NAME = Pattern.compile("logback.*\\.xml");
     private static final Pattern LOG4J2_NAME = Pattern.compile("log4j2.*\\.xml");
@@ -90,7 +91,8 @@ public enum TextFileType {
         if (GRADLE_NAME.matcher(name).matches()) {
             return Optional.of(GRADLE);
         }
-        if (DOCKERFILE_NAME.matcher(name).matches()) {
+        // Dockerfile.dockerignore - список исключений, а не Dockerfile
+        if (DOCKERFILE_NAME.matcher(name).matches() && !name.endsWith(DOCKERIGNORE)) {
             return Optional.of(DOCKERFILE);
         }
         return MESSAGES_NAME.matcher(name).matches() ? Optional.of(MESSAGES) : Optional.empty();

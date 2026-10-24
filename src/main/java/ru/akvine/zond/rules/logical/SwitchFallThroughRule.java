@@ -16,12 +16,14 @@ import ru.akvine.zond.rules.RuleCodes;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 @Component
 public class SwitchFallThroughRule extends AbstractRule {
     // Комментарий, которым проваливание помечают как намеренное
-    private static final Pattern INTENTIONAL = Pattern.compile(".*fall.?through.*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern INTENTIONAL =
+            Pattern.compile(".*fall.?thr(ough|u).*", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     @Override
     public String code() {
@@ -45,7 +47,8 @@ public class SwitchFallThroughRule extends AbstractRule {
                 if (entry.getType() == SwitchEntry.Type.STATEMENT_GROUP
                         && !entry.getStatements().isEmpty()
                         && !endsWithJump(entry)
-                        && !isMarkedIntentional(entry, entries.get(index + 1))) {
+                        && !isMarkedIntentional(entry, entries.get(index + 1))
+                        && !isTailCascade(entry, entries.get(index + 1))) {
                     violations.add(violation(sourceFile, entry,
                             "case без break: после этой ветки выполнится и следующая; добавьте break либо пометьте"
                                     + " намеренное проваливание комментарием // fall through"));
@@ -91,6 +94,21 @@ public class SwitchFallThroughRule extends AbstractRule {
         }
         return statement.isBreakStmt() || statement.isReturnStmt() || statement.isThrowStmt()
                 || statement.isContinueStmt() || statement.isYieldStmt();
+    }
+
+    /**
+     * case 15: k2 ^= tail[14] << 48; case 14: k2 ^= tail[13] << 40; ...: разбор хвоста в хеш-функциях
+     * (MurmurHash) - каждая ветка добавляет свой байт и нарочно переходит к следующей по убыванию
+     */
+    private boolean isTailCascade(SwitchEntry entry, SwitchEntry next) {
+        return label(entry).isPresent() && label(next).isPresent() && label(next).get() == label(entry).get() - 1;
+    }
+
+    private Optional<Integer> label(SwitchEntry entry) {
+        if (entry.getLabels().size() != 1 || !entry.getLabels().get(0).isIntegerLiteralExpr()) {
+            return Optional.empty();
+        }
+        return Optional.of(entry.getLabels().get(0).asIntegerLiteralExpr().asNumber().intValue());
     }
 
     private boolean isMarkedIntentional(SwitchEntry entry, SwitchEntry next) {

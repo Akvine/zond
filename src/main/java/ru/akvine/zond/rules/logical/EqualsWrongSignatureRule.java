@@ -19,6 +19,12 @@ import java.util.Map;
 public class EqualsWrongSignatureRule extends AbstractRule {
     private static final String EQUALS = "equals";
     private static final String OBJECT = "Object";
+    private static final String HASH_CODE = "hashCode";
+    private static final String TO_STRING = "toString";
+    private static final String COMPARE_TO = "compareTo";
+    private static final String BOOLEAN = "boolean";
+    private static final String INT = "int";
+    private static final String STRING = "String";
 
     // Опечатка в имени: метод не переопределяет метод Object, а объявляет новый
     private static final Map<String, String> MISSPELLED = Map.of(
@@ -55,7 +61,7 @@ public class EqualsWrongSignatureRule extends AbstractRule {
                 }
 
                 String expected = MISSPELLED.get(name);
-                if (expected != null && !name.equals(expected)) {
+                if (expected != null && !name.equals(expected) && hasSignatureOf(method, expected)) {
                     violations.add(violation(sourceFile, method,
                             "Метод '" + name + "' вместо '" + expected + "': из-за опечатки это новый метод,"
                                     + " а не переопределение, вызываться он не будет; исправьте имя и добавьте"
@@ -74,6 +80,24 @@ public class EqualsWrongSignatureRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.LOGICAL;
+    }
+
+    /**
+     * Опечатка - когда все, кроме имени, совпадает с методом Object: boolean equal(Object other). Статический
+     * equal(double x, double y) и int equal(ReferenceValue other) - свои методы с таким именем
+     */
+    private boolean hasSignatureOf(MethodDeclaration method, String expected) {
+        if (method.isStatic()) {
+            return false;
+        }
+        String returned = LocalTypes.typeName(method.getType());
+        return switch (expected) {
+            case EQUALS -> method.getParameters().size() == 1 && BOOLEAN.equals(returned);
+            case HASH_CODE -> method.getParameters().isEmpty() && INT.equals(returned);
+            case TO_STRING -> method.getParameters().isEmpty() && STRING.equals(returned);
+            case COMPARE_TO -> method.getParameters().size() == 1 && INT.equals(returned);
+            default -> false;
+        };
     }
 
     private boolean takesObject(MethodDeclaration method) {

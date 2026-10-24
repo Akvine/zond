@@ -226,6 +226,30 @@ class ScannerTest {
     }
 
     @Test
+    void findingsInVendoredCodeAreNotReported(@TempDir Path dir) throws IOException {
+        String code = """
+                class Sample {
+                    @Transactional
+                    private void save() {}
+                }
+                """;
+        // Чужая библиотека в third_party и vendor, а рядом пакет проекта, который просто называется vendor
+        for (String path : List.of("src/main/java/Main.java", "third_party/java/proguard/src/proguard/Value.java",
+                "vendor/lib/Lib.java", "src/main/java/com/shop/vendor/Vendor.java")) {
+            Path file = dir.resolve(path);
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, code);
+        }
+
+        ScanResult result = scanner.scan(dir);
+
+        assertThat(result.filesCount()).isEqualTo(4);
+        assertThat(result.violations())
+                .extracting(violation -> violation.file().getFileName().toString())
+                .containsExactlyInAnyOrder("Main.java", "Vendor.java");
+    }
+
+    @Test
     void serviceDirectoriesAreNotScanned(@TempDir Path dir) throws IOException {
         String code = """
                 class Sample {
@@ -245,6 +269,32 @@ class ScannerTest {
 
         assertThat(result.filesCount()).isEqualTo(1);
         assertThat(result.violations()).hasSize(1);
+    }
+
+    @Test
+    void javatestsAndIntegrationTestsAreTests(@TempDir Path dir) throws IOException {
+        String code = """
+                class Sample {
+                    @Transactional
+                    private void save() {}
+                }
+                """;
+        // Bazel и Google кладут тесты в javatests, Gradle - в integrationTest и другие наборы вида
+        // src/internalClusterTest; пакет it и пакет loadTest внутри src/main - обычный код
+        for (String path : List.of("src/main/java/Main.java", "src/javatests/com/google/MainTest.java",
+                "src/integrationTest/java/MainIT.java", "src/main/java/com/company/it/Helpdesk.java",
+                "server/src/internalClusterTest/java/ClusterIT.java", "src/heapPressureTest/java/PressureIT.java",
+                "src/main/java/com/company/loadTest/Generator.java")) {
+            Path file = dir.resolve(path);
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, code);
+        }
+
+        ScanResult result = scanner.scan(dir);
+
+        assertThat(result.violations())
+                .extracting(violation -> violation.file().getFileName().toString())
+                .containsExactlyInAnyOrder("Main.java", "Helpdesk.java", "Generator.java");
     }
 
     @Test

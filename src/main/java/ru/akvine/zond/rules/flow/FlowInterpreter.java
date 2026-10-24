@@ -61,6 +61,7 @@ import com.github.javaparser.ast.stmt.YieldStmt;
 import com.github.javaparser.ast.type.Type;
 import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -87,6 +88,9 @@ public final class FlowInterpreter {
     private static final Set<String> INTEGRAL_TYPES = Set.of("int", "long", "short", "byte", "char");
     private static final String BOOLEAN_TYPE = "boolean";
     private static final String HAS = "has";
+    // Разбор чужих данных: parseObject, readValue, fromJson, deserialize
+    private static final Pattern INPUT_PARSING =
+            Pattern.compile("(parse|read|from|deserialize|decode|unmarshal)[A-Z].*|parse|deserialize");
     private static final String LENGTH = "length";
 
     private static final String IS_NULL = "isNull";
@@ -392,7 +396,9 @@ public final class FlowInterpreter {
             quietConditions++;
             Branches branches = branch(assertion.getCheck(), state);
             quietConditions--;
-            // Утверждения обычно выключены, поэтому путь "условие ложно" тоже продолжается
+            // Утверждения обычно выключены, поэтому путь "условие ложно" тоже продолжается: проверка
+            // if (x == null) после assert x != null нужна именно на этот случай. Но null, который пришел
+            // только с этого пути, разыменованием не считается - см. isAssertedAway
             return FlowState.join(branches.whenTrue(), branches.whenFalse());
         }
         if (statement instanceof ExplicitConstructorInvocationStmt invocation) {
@@ -1508,7 +1514,7 @@ public final class FlowInterpreter {
                         "В метод '" + method + "' передается null (" + describe(expression, argument) + "), а метод"
                                 + " обращается к этому параметру без проверки: вызов завершится NullPointerException",
                         Confidence.CONFIRMED);
-            } else if (argument.isNullish()) {
+            } else if (argument.isNullish() && !isAssertedAway(argument)) {
                 report(FlowAnalysis.Kind.NULL_ARGUMENT, expression,
                         "В метод '" + method + "' передается значение, которое может быть null ("
                                 + describe(expression, argument) + "), а метод обращается к этому параметру без"
@@ -1532,7 +1538,7 @@ public final class FlowInterpreter {
         }
 
         FlowValue returned = summary.returned();
-        if (returned.isNullish() && isAfterHasCheck(call)) {
+        if (returned.isNullish() && (isAfterHasCheck(call) || isIndexWithinSize(call))) {
             return FlowValue.unknown();
         }
         if (returned.isNullish()) {
@@ -1561,6 +1567,45 @@ public final class FlowInterpreter {
         return Guards.isGuarded(call, check -> check.findAll(MethodCallExpr.class).stream()
                 .anyMatch(has -> has.getNameAsString().startsWith(HAS)
                         && has.getScope().filter(scope -> scope.toString().equals(receiver)).isPresent()));
+    }
+
+    /**
+     * table.shard(i) в for (int i = 0; i < table.size(); i++): null такой метод отдает за пределами размера,
+     * а цикл идет по размеру того же объекта
+     */
+    private boolean isIndexWithinSize(MethodCallExpr call) {
+        if (call.getScope().isEmpty() || call.getArguments().size() != 1 || !call.getArgument(0).isNameExpr()) {
+            return false;
+        }
+        String receiver = call.getScope().get().toString();
+        String index = call.getArgument(0).asNameExpr().getNameAsString();
+        Node boundary = Nodes.enclosingCallable(call).orElse(null);
+        Node current = call.getParentNode().orElse(null);
+        while (current != null && current != boundary) {
+            if (current instanceof ForStmt loop && loop.getCompare()
+                    .filter(compare -> isBelowSizeOf(compare, index, receiver)).isPresent()) {
+                return true;
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
+    }
+
+    // i < table.size(), i < shards.length
+    private boolean isBelowSizeOf(Expression compare, String index, String receiver) {
+        if (!compare.isBinaryExpr() || compare.asBinaryExpr().getOperator() != BinaryExpr.Operator.LESS
+                || !compare.asBinaryExpr().getLeft().toString().equals(index)) {
+            return false;
+        }
+        Expression bound = compare.asBinaryExpr().getRight();
+        if (bound.isMethodCallExpr()) {
+            return SIZE_METHODS.contains(bound.asMethodCallExpr().getNameAsString())
+                    && bound.asMethodCallExpr().getScope()
+                    .filter(scope -> scope.toString().equals(receiver))
+                    .isPresent();
+        }
+        return bound.isFieldAccessExpr() && SIZE_METHODS.contains(bound.asFieldAccessExpr().getNameAsString())
+                && bound.asFieldAccessExpr().getScope().toString().equals(receiver);
     }
 
     // column.length() у своей записи Column(Integer length) - обычное поле, которое бывает null, а не размер строки
@@ -1622,6 +1667,23 @@ public final class FlowInterpreter {
      * @param target выражение, к значению которого обращаются: user в user.getName()
      * @param place  само обращение - на него показывает находка
      */
+    // null пришел с пути, где assert x != null ложен: автор утверждает, что так не бывает. Но результат разбора
+    // чужих данных (x = JSONUtils.parseObject(schedule, ...); assert x != null) утверждение не защищает: в
+    // рабочей среде оно выключено, а неверный ввод там как раз бывает
+    private boolean isAssertedAway(FlowValue value) {
+        Node origin = value.origin();
+        if (origin == null || origin.findAncestor(AssertStmt.class).isEmpty()
+                || !(origin instanceof BinaryExpr check)) {
+            return false;
+        }
+        Expression checked = unwrap(check.getLeft()).isNullLiteralExpr() ? check.getRight() : check.getLeft();
+        return LocalTypes.findInitializer(unwrap(checked))
+                .map(this::unwrap)
+                .filter(initializer -> initializer instanceof MethodCallExpr call
+                        && INPUT_PARSING.matcher(call.getNameAsString()).matches())
+                .isEmpty();
+    }
+
     private void dereference(Expression target, FlowValue value, Node place, FlowState state) {
         Expression unwrapped = unwrap(target);
         if (value.isNull()) {
@@ -1631,7 +1693,9 @@ public final class FlowInterpreter {
                         "'" + snippet(unwrapped) + "' здесь всегда null (" + describe(unwrapped, value) + "): обращение '"
                                 + snippet(place) + "' завершится NullPointerException");
             }
-        } else if (value.nullness() == FlowValue.Nullness.MAYBE_NULL) {
+        } else if (value.nullness() == FlowValue.Nullness.MAYBE_NULL && !isAssertedAway(value)
+                && place.findAncestor(AssertStmt.class).isEmpty()) {
+            // Внутри assert обращение выполняется только с -ea, то есть в тестах, и опирается на инварианты автора
             report(FlowAnalysis.Kind.POSSIBLE_NULL_DEREFERENCE, place,
                     "'" + snippet(unwrapped) + "' может быть null (" + describe(unwrapped, value) + "), а обращение '"
                             + snippet(place) + "' идет без проверки; добавьте проверку либо обработайте отсутствие значения");

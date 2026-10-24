@@ -18,8 +18,9 @@ import java.util.Set;
 
 @Component
 public class EqualsHashCodeRule extends AbstractRule {
-    // Lombok сгенерирует недостающий метод сам
-    private static final Set<String> LOMBOK_ANNOTATIONS = Set.of("EqualsAndHashCode", "Data", "Value");
+    // Lombok и AutoValue сгенерируют оба метода сами
+    private static final Set<String> GENERATING_ANNOTATIONS =
+            Set.of("EqualsAndHashCode", "Data", "Value", "AutoValue", "AutoOneOf");
 
     @Override
     public String code() {
@@ -36,7 +37,7 @@ public class EqualsHashCodeRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
         for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
             if (type.isInterface()
-                    || TestClasses.annotationNames(type).stream().anyMatch(LOMBOK_ANNOTATIONS::contains)) {
+                    || TestClasses.annotationNames(type).stream().anyMatch(GENERATING_ANNOTATIONS::contains)) {
                 continue;
             }
 
@@ -70,6 +71,8 @@ public class EqualsHashCodeRule extends AbstractRule {
     private Optional<MethodDeclaration> findMethod(ClassOrInterfaceDeclaration type, String name, int parameters) {
         return type.getMethodsByName(name).stream()
                 .filter(method -> method.getParameters().size() == parameters)
+                // @Memoized public abstract int hashCode(): объявление без тела ничего не переопределяет
+                .filter(method -> method.getBody().isPresent())
                 .findFirst();
     }
 }

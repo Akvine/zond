@@ -47,7 +47,8 @@ public class IntOverflowBeforeLongRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (LocalTypes.TypedExpression typed : LocalTypes.findTypedExpressions(sourceFile.unit())) {
+        for (LocalTypes.TypedExpression typed
+                : LocalTypes.findTypedExpressions(sourceFile.unit(), this::hasMultiplication)) {
             if (!LONG_TYPES.contains(typed.targetType())) {
                 continue;
             }
@@ -63,6 +64,12 @@ public class IntOverflowBeforeLongRule extends AbstractRule {
             }
         }
         return violations;
+    }
+
+    // Тип места назначения нужен только выражению с умножением
+    private boolean hasMultiplication(Expression expression) {
+        return expression.findAll(BinaryExpr.class).stream()
+                .anyMatch(binary -> binary.getOperator() == BinaryExpr.Operator.MULTIPLY);
     }
 
     @Override

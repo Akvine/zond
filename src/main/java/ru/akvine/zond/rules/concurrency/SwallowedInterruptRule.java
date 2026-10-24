@@ -2,6 +2,7 @@ package ru.akvine.zond.rules.concurrency;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.CatchClause;
@@ -104,6 +105,22 @@ public class SwallowedInterruptRule extends AbstractRule {
         boolean interrupts = clause.getBody().findAll(MethodCallExpr.class).stream()
                 .anyMatch(call -> INTERRUPT.equals(call.getNameAsString()));
         return interrupts || clause.getBody().findAll(ThrowStmt.class).stream()
-                .anyMatch(throwStmt -> !Nodes.isInNestedScope(throwStmt, clause.getBody()));
+                .anyMatch(throwStmt -> !Nodes.isInNestedScope(throwStmt, clause.getBody()))
+                || remembersInterrupt(clause);
+    }
+
+    /**
+     * catch (InterruptedException e) { interrupted = true; } ... finally { if (interrupted) Thread.currentThread()
+     * .interrupt(); }: прерывание запомнили, чтобы восстановить, когда ожидание закончится
+     */
+    private boolean remembersInterrupt(CatchClause clause) {
+        boolean remembers = clause.getBody().findAll(AssignExpr.class).stream()
+                .anyMatch(assignment -> assignment.getTarget().isNameExpr()
+                        && assignment.getValue().isBooleanLiteralExpr()
+                        && assignment.getValue().asBooleanLiteralExpr().getValue());
+        return remembers && Nodes.enclosingCallable(clause)
+                .filter(callable -> callable.findAll(MethodCallExpr.class).stream()
+                        .anyMatch(call -> INTERRUPT.equals(call.getNameAsString())))
+                .isPresent();
     }
 }

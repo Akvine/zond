@@ -196,6 +196,138 @@ class TypeResolutionTest {
     }
 
     @Test
+    void ownTypeNamedRepositoryWithoutStorageIsNotDatabase() throws IOException {
+        List<SourceFile> sources = load(Map.of(
+                "Repository", """
+                        package demo;
+
+                        public interface Repository extends LifecycleComponent {
+                            RepositoryMetadata getMetadata();
+                            static void assertSnapshotMetaThread() {}
+                        }
+                        """,
+                "ProjectRepo", """
+                        package demo;
+
+                        public record ProjectRepo(String projectId, String name) {}
+                        """,
+                "UserRepository", """
+                        package demo;
+
+                        public interface UserRepository {
+                            Optional<User> findById(Long id);
+                        }
+                        """,
+                "Sample", """
+                        package demo;
+
+                        class Sample {
+                            private Repository repository;
+                            private ProjectRepo projectRepo;
+                            private UserRepository userRepository;
+
+                            void run() {
+                                repository.getMetadata();
+                                Repository.assertSnapshotMetaThread();
+                                projectRepo.name();
+                                userRepository.findById(1L);
+                            }
+                        }
+                        """));
+
+        // Репозиторий снапшотов Elasticsearch и record - свои типы, никак не связанные с хранилищем;
+        // статический метод вызывается у типа, а не у бина
+        assertThat(Repositories.isRepositoryCall(call(sources, "repository.getMetadata()"))).isFalse();
+        assertThat(Repositories.isRepositoryCall(call(sources, "Repository.assertSnapshotMetaThread()"))).isFalse();
+        assertThat(Repositories.isRepositoryCall(call(sources, "projectRepo.name()"))).isFalse();
+        // Порт гексагональной архитектуры узнаем по методу запроса
+        assertThat(Repositories.isRepositoryCall(call(sources, "userRepository.findById(1L)"))).isTrue();
+    }
+
+    @Test
+    void storageIsKnownByImplementation() throws IOException {
+        List<SourceFile> sources = load(Map.of(
+                "AdministrationDAO", """
+                        package demo;
+
+                        public interface AdministrationDAO {
+                            String getGlobalProperty(String name);
+                        }
+                        """,
+                "RuleRepository", """
+                        package demo;
+
+                        public interface RuleRepository {
+                            Rule byName(String name);
+                        }
+                        """,
+                "HibernateRuleRepository", """
+                        package demo;
+
+                        import org.hibernate.SessionFactory;
+
+                        class HibernateRuleRepository implements RuleRepository {
+                            private SessionFactory sessionFactory;
+                            public Rule byName(String name) { return null; }
+                        }
+                        """,
+                "OrderRepository", """
+                        package demo;
+
+                        public interface OrderRepository {
+                            Order byNumber(String number);
+                        }
+                        """,
+                "OrderRepositoryAdapter", """
+                        package demo;
+
+                        class OrderRepositoryAdapter implements OrderRepository {
+                            private OrderJpaRepository jpa;
+                            public Order byNumber(String number) { return jpa.byNumber(number); }
+                        }
+                        """,
+                "IWorkflowRepository", """
+                        package demo;
+
+                        public interface IWorkflowRepository {
+                            Workflow get(Long id);
+                        }
+                        """,
+                "WorkflowRepository", """
+                        package demo;
+
+                        class WorkflowRepository implements IWorkflowRepository {
+                            private final Map<Long, Workflow> workflows = new ConcurrentHashMap<>();
+                            public Workflow get(Long id) { return workflows.get(id); }
+                        }
+                        """,
+                "Sample", """
+                        package demo;
+
+                        class Sample {
+                            private AdministrationDAO dao;
+                            private RuleRepository ruleRepository;
+                            private OrderRepository orderRepository;
+                            private IWorkflowRepository workflowRepository;
+
+                            void run() {
+                                dao.getGlobalProperty("locale");
+                                ruleRepository.byName("x");
+                                orderRepository.byNumber("1");
+                                workflowRepository.get(1L);
+                            }
+                        }
+                        """));
+
+        // DAO - всегда хранилище; интерфейс без признаков базы, реализация которого работает с Hibernate или
+        // отдает вызовы репозиторию Spring Data, - тоже. Кеш в памяти - нет
+        assertThat(Repositories.isRepositoryCall(call(sources, "dao.getGlobalProperty(\"locale\")"))).isTrue();
+        assertThat(Repositories.isRepositoryCall(call(sources, "ruleRepository.byName(\"x\")"))).isTrue();
+        assertThat(Repositories.isRepositoryCall(call(sources, "orderRepository.byNumber(\"1\")"))).isTrue();
+        assertThat(Repositories.isRepositoryCall(call(sources, "workflowRepository.get(1L)"))).isFalse();
+    }
+
+    @Test
     void knowsLoggerByType() throws IOException {
         List<SourceFile> sources = load(Map.of("Sample", """
                 package demo;

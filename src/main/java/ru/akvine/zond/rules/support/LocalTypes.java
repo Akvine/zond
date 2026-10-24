@@ -18,6 +18,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -208,15 +209,25 @@ public class LocalTypes {
     }
 
     public List<TypedExpression> findTypedExpressions(Node root) {
+        return findTypedExpressions(root, expression -> true);
+    }
+
+    /**
+     * То же, но тип места назначения ищется только для выражений, которые прошли быструю проверку: решатель
+     * дорог, а в таблице из тысяч присваиваний GBKFreq[54][125] = 493 нужное выражение - одно-два
+     *
+     * @param worthTyping нужно ли выражение правилу (например, есть ли в нем деление)
+     */
+    public List<TypedExpression> findTypedExpressions(Node root, Predicate<Expression> worthTyping) {
         List<TypedExpression> expressions = new ArrayList<>();
 
         for (VariableDeclarator variable : root.findAll(VariableDeclarator.class)) {
-            variable.getInitializer().ifPresent(initializer -> declaredType(variable)
+            variable.getInitializer().filter(worthTyping).ifPresent(initializer -> declaredType(variable)
                     .ifPresent(type -> expressions.add(new TypedExpression(type, initializer))));
         }
 
         for (AssignExpr assign : root.findAll(AssignExpr.class)) {
-            if (assign.getOperator() == AssignExpr.Operator.ASSIGN) {
+            if (assign.getOperator() == AssignExpr.Operator.ASSIGN && worthTyping.test(assign.getValue())) {
                 typeOf(assign.getTarget())
                         .ifPresent(type -> expressions.add(new TypedExpression(type, assign.getValue())));
             }
@@ -224,7 +235,7 @@ public class LocalTypes {
 
         for (ReturnStmt returnStmt : root.findAll(ReturnStmt.class)) {
             Optional<Node> callable = Nodes.enclosingCallable(returnStmt);
-            if (returnStmt.getExpression().isPresent()
+            if (returnStmt.getExpression().filter(worthTyping).isPresent()
                     && callable.isPresent()
                     && callable.get() instanceof MethodDeclaration method
                     && !Nodes.isInNestedScope(returnStmt, method)) {
