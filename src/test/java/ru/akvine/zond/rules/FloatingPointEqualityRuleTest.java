@@ -28,4 +28,26 @@ class FloatingPointEqualityRuleTest {
                 }
                 """)).containsExactly(4, 5, 6, 7);
     }
+
+    @Test
+    void exactComparisonsInNumericCode() {
+        assertThat(RuleTests.lines(rule, """
+                class FastMath {
+                    private double epsilon;
+                    static double pow(double x, double y, RealVector v) {
+                        if (x == Double.POSITIVE_INFINITY || v.getEntry(0) == ZERO) {
+                            return x;
+                        }
+                        long longValue = (long) y;
+                        if (longValue == y && Math.floor(x) == x) {
+                            return 1;
+                        }
+                        return x == y ? 1 : x * y;
+                    }
+                    public boolean equals(Object other) {
+                        return other instanceof FastMath rhs && epsilon == rhs.epsilon;
+                    }
+                }
+                """)).containsExactly(11);
+    }
 }

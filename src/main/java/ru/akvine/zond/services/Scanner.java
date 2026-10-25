@@ -10,6 +10,7 @@ import ru.akvine.zond.loaders.ConfigLoader;
 import ru.akvine.zond.loaders.SourceLoader;
 import ru.akvine.zond.loaders.TextFileLoader;
 import ru.akvine.zond.models.ConfigFile;
+import ru.akvine.zond.models.GeneratedSources;
 import ru.akvine.zond.models.LoadResult;
 import ru.akvine.zond.models.RuleTiming;
 import ru.akvine.zond.models.ScanContext;
@@ -106,6 +107,9 @@ public class Scanner {
         violations.removeIf(violation -> options.isBuildOutput(root, violation.file()));
         // Чужой код, вложенный в проект (third_party, vendor), читается так же, но править его здесь не будут
         violations.removeIf(violation -> options.isVendored(root, violation.file()));
+        // Сгенерированный код (@Generated, "Auto-generated ... DO NOT MODIFY") правят через генератор, а не здесь
+        Set<Path> generated = GeneratedSources.of(loaded.sources());
+        violations.removeIf(violation -> generated.contains(violation.file()));
 
         // В тестовом коде остаются находки только тех правил, которые тесты и проверяют
         if (options.testRulesOnly()) {

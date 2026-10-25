@@ -170,6 +170,12 @@ public final class CallGraph {
         Optional<String> typeName;
         if (scope.isEmpty() || scope.get().isThisExpr()) {
             typeName = enclosingType(site).map(type -> type.getNameAsString());
+        } else if (scope.get().isObjectCreationExpr()) {
+            // new Helper().build(param): метод того класса, объект которого только что создан
+            typeName = Optional.of(scope.get().asObjectCreationExpr().getType().getNameAsString());
+        } else if (isTypeReference(scope.get())) {
+            // Utils.build(param): статический метод класса проекта
+            typeName = Optional.of(scope.get().asNameExpr().getNameAsString());
         } else {
             typeName = LocalTypes.typeOf(scope.get());
         }
@@ -181,6 +187,13 @@ public final class CallGraph {
                 .toList();
         // Несколько подходящих методов - перегрузки или одноименные классы; угадывать не будем
         return candidates.size() == 1 ? candidates : List.of();
+    }
+
+    // Имя с большой буквы, которое не объявлено переменной или полем, - имя класса проекта
+    private boolean isTypeReference(Expression scope) {
+        return scope.isNameExpr() && Character.isUpperCase(scope.asNameExpr().getNameAsString().charAt(0))
+                && byTypeName.containsKey(scope.asNameExpr().getNameAsString())
+                && LocalTypes.findDeclaration(scope).isEmpty();
     }
 
     // Вызов метода без тела (интерфейс, абстрактный класс) на деле попадает в одну из реализаций

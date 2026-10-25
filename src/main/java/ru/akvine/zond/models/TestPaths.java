@@ -20,6 +20,9 @@ public final class TestPaths {
     // Наборы исходников Gradle рядом с src/test: src/internalClusterTest, src/javaRestTest, src/heapPressureTest
     private static final Pattern TEST_SOURCE_SET = Pattern.compile("[a-z][A-Za-z0-9]*(Test|Tests|TestFixtures)");
     private static final String SOURCE_DIRECTORY = "src";
+    // Примеры и демо: activiti-examples, examples, samples, demo
+    private static final Pattern SAMPLE_DIRECTORY =
+            Pattern.compile("(?i)(.*[-_])?(examples?|samples?|demos?)([-_].*)?");
 
     private TestPaths() {
     }
@@ -32,6 +35,18 @@ public final class TestPaths {
                 return true;
             }
             previous = name;
+        }
+        return false;
+    }
+
+    /**
+     * @return true для кода примеров и демо: examples/ForwardingService.java, activiti-examples/...
+     */
+    public static boolean isSample(Path path) {
+        for (Path part : path) {
+            if (SAMPLE_DIRECTORY.matcher(part.toString()).matches()) {
+                return true;
+            }
         }
         return false;
     }

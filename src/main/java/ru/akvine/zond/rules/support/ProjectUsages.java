@@ -16,8 +16,13 @@ import com.github.javaparser.ast.nodeTypes.NodeWithExtends;
 import com.github.javaparser.ast.nodeTypes.NodeWithImplements;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import ru.akvine.zond.models.SourceFile;
+import ru.akvine.zond.models.TestPaths;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.ref.WeakReference;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -33,6 +38,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Что в проекте используется: до каких классов и методов выполнение может дойти от точек входа.
@@ -50,6 +56,18 @@ public final class ProjectUsages {
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
     private static final String TEST_DIRECTORY = "test";
     private static final String MAIN = "main";
+    private static final String SOURCE_DIRECTORY = "src";
+    private static final Path SERVICES_DIRECTORY = Path.of("src", "main", "resources", "META-INF", "services");
+    // Шаблоны представлений вызывают методы по имени: ${it.hasScript()} в Jelly, th:text="${user.fullName()}"
+    private static final List<Path> VIEW_DIRECTORIES = List.of(
+            Path.of("src", "main", "resources"), Path.of("src", "main", "webapp"));
+    private static final Pattern VIEW_FILE = Pattern.compile(
+            "(?i).*\\.(jelly|groovy|jsp|jspx|tag|html|xhtml|ftl|ftlh|vm|peb|mustache|hbs)$");
+    // Больше файлов не читаем: имена из шаблонов - лишь запас против ложных находок
+    private static final int MAX_VIEW_FILES = 20_000;
+    // doCheckUrl, doFillGoalTypeItems, doConfigSubmit: веб-методы Stapler (Jenkins) вызываются по адресу запроса
+    private static final Pattern STAPLER_WEB_METHOD = Pattern.compile("^do[A-Z]\\w*");
+    private static final String STAPLER_PACKAGE = "org.kohsuke.stapler";
     private static final String SPRING_BOOT_APPLICATION = "SpringBootApplication";
 
     // Аннотации, которые не означают, что кодом пользуется фреймворк
@@ -62,6 +80,10 @@ public final class ProjectUsages {
 
     // getName(), setName(...), isActive(): их вызывают по имени свойства Jackson, JPA, шаблоны и Spring
     private static final Pattern ACCESSOR = Pattern.compile("^(get|set|is)[A-Z].*");
+
+    // Обработчик события JavaFX: onAction="#settingsClicked" в разметке FXML вызывает его по имени
+    private static final String JAVAFX_PACKAGE = "javafx.";
+    private static final Pattern UI_EVENT = Pattern.compile(".*Event$");
 
     // Методы, которые вызывает сама JVM или стандартная библиотека
     private static final Set<String> STANDARD_METHODS = Set.of(
@@ -77,6 +99,12 @@ public final class ProjectUsages {
     // Слова из строк: Class.forName("demo.Report"), @PreAuthorize("@access.check(#id)")
     private final Set<String> stringWords = new HashSet<>();
     private final Set<CompilationUnit> testUnits = identitySet();
+    // Модуль файла - путь до каталога src: activiti-core/activiti-engine, bitcoinj/core
+    private final Map<CompilationUnit, String> moduleOf = new IdentityHashMap<>();
+    private final Set<String> modulesWithEntry = new HashSet<>();
+    private final Set<CompilationUnit> sampleUnits = identitySet();
+    // Классы из META-INF/services: их создает ServiceLoader, а не код проекта
+    private final Set<String> serviceClasses = new HashSet<>();
     // В проекте нет ни main, ни @SpringBootApplication: это библиотека
     private final boolean library;
 
@@ -130,6 +158,10 @@ public final class ProjectUsages {
             if (isInTestDirectory(source)) {
                 testUnits.add(source.unit());
             }
+            if (TestPaths.isSample(source.path())) {
+                sampleUnits.add(source.unit());
+            }
+            moduleOf.put(source.unit(), moduleOf(source.path()));
             for (Node node : source.unit().findAll(Node.class)) {
                 index(node);
             }
@@ -139,10 +171,17 @@ public final class ProjectUsages {
                 collectCalls(node, graph);
             }
         }
+        new HashSet<>(moduleOf.values()).forEach(this::readServiceRegistrations);
+        new HashSet<>(moduleOf.values()).forEach(this::readViewWords);
+        // Приложение из примеров (activiti-examples/DemoApplication) библиотеку приложением не делает
+        types.stream()
+                .filter(type -> !isInTests(type) && isApplication(type))
+                .forEach(type -> type.findCompilationUnit().map(moduleOf::get).ifPresent(modulesWithEntry::add));
+        // activiti-engine со служебным DbSchemaCreate.main - все равно библиотека: им пользуются другие модули
+        modulesWithEntry.removeIf(this::isUsedByOtherModules);
         library = types.stream()
-                .filter(type -> !isInTests(type))
-                .noneMatch(type -> Annotations.has(type, SPRING_BOOT_APPLICATION)
-                        || type.getMethods().stream().anyMatch(this::isMain));
+                .filter(type -> !isInTests(type) && !isInSamples(type))
+                .noneMatch(this::isApplication);
         markLiveTypes();
         markLiveMethods();
     }
@@ -153,6 +192,23 @@ public final class ProjectUsages {
      */
     public boolean isTypeDead(TypeDeclaration<?> type) {
         return !liveTypes.contains(type);
+    }
+
+    /**
+     * @return true для открытого класса или метода модуля без своей точки входа (main, @SpringBootApplication):
+     * bitcoinj/core, внутренний модуль большого приложения. Им могут пользоваться снаружи проекта, и о том,
+     * что они не нужны, можно только подозревать
+     */
+    public boolean isModuleApi(Node declaration) {
+        Optional<TypeDeclaration<?>> owner = declaration instanceof TypeDeclaration<?> type ? Optional.of(type)
+                : declaration instanceof MethodDeclaration method ? ownerOf(method) : Optional.empty();
+        boolean visible = !(declaration instanceof MethodDeclaration method)
+                || method.isPublic() || method.isProtected();
+        return owner.isPresent() && visible && isPublicApi(owner.get())
+                && owner.get().findCompilationUnit()
+                .map(moduleOf::get)
+                .filter(module -> !modulesWithEntry.contains(module))
+                .isPresent();
     }
 
     /**
@@ -318,6 +374,7 @@ public final class ProjectUsages {
     // тесты запускает сборка, аннотации используются без вызовов
     private boolean isEntryType(TypeDeclaration<?> type) {
         return type instanceof AnnotationDeclaration
+                || serviceClasses.contains(type.getNameAsString())
                 || isInTests(type)
                 || isFrameworkEntry(type)
                 || type.getMethods().stream().anyMatch(this::isMain)
@@ -338,9 +395,21 @@ public final class ProjectUsages {
                 || isMain(method)
                 || ACCESSOR.matcher(name).matches()
                 || STANDARD_METHODS.contains(name)
+                || isFxmlHandler(method)
+                || isStaplerWebMethod(method)
                 || stringWords.contains(name)
                 || library && (method.isPublic() || method.isProtected()) && isPublicApi(owner)
                 || mayOverride(method, owner, new HashSet<>());
+    }
+
+    // settingsClicked(ActionEvent event) в контроллере JavaFX: разметку FXML проверка не читает, а по коду такой
+    // метод не вызывает никто
+    private boolean isFxmlHandler(MethodDeclaration method) {
+        return method.getParameters().size() == 1
+                && UI_EVENT.matcher(LocalTypes.typeName(method.getParameter(0).getType())).matches()
+                && method.findCompilationUnit().stream()
+                .flatMap(unit -> unit.getImports().stream())
+                .anyMatch(declaration -> declaration.getNameAsString().startsWith(JAVAFX_PACKAGE));
     }
 
     // Открытый класс, вложенный только в открытые: виден снаружи библиотеки
@@ -368,6 +437,97 @@ public final class ProjectUsages {
 
     private boolean isInTests(Node node) {
         return TestClasses.isInside(node) || node.findCompilationUnit().filter(testUnits::contains).isPresent();
+    }
+
+    // META-INF/services/com.hazelcast.SerializerHook: com.hazelcast.jet.avro.impl.AvroSerializerHooks$GenericContainerHook
+    private void readServiceRegistrations(String module) {
+        if (module.isEmpty()) {
+            return;
+        }
+        Path services = Path.of(module).resolve(SERVICES_DIRECTORY);
+        if (!Files.isDirectory(services)) {
+            return;
+        }
+        try (Stream<Path> files = Files.list(services)) {
+            for (Path file : files.filter(Files::isRegularFile).toList()) {
+                for (String line : Files.readAllLines(file)) {
+                    String name = line.replaceAll("#.*", "").trim();
+                    if (!name.isEmpty()) {
+                        serviceClasses.add(name.substring(Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1));
+                    }
+                }
+            }
+        } catch (IOException | UncheckedIOException exception) {
+            // Файл не прочитался - о классах из него судим по коду, как раньше
+        }
+    }
+
+    // Имена из шаблонов модуля считаются возможными вызовами - так же, как имена в строках кода
+    private void readViewWords(String module) {
+        if (module.isEmpty()) {
+            return;
+        }
+        for (Path directory : VIEW_DIRECTORIES) {
+            Path views = Path.of(module).resolve(directory);
+            if (!Files.isDirectory(views)) {
+                continue;
+            }
+            try (Stream<Path> files = Files.walk(views)) {
+                files.filter(path -> VIEW_FILE.matcher(path.getFileName().toString()).matches())
+                        .limit(MAX_VIEW_FILES)
+                        .forEach(this::readWords);
+            } catch (IOException | UncheckedIOException exception) {
+                // Шаблоны не прочитались - о методах судим по коду, как раньше
+            }
+        }
+    }
+
+    private void readWords(Path file) {
+        try {
+            Matcher matcher = IDENTIFIER.matcher(Files.readString(file, StandardCharsets.ISO_8859_1));
+            while (matcher.find()) {
+                stringWords.add(matcher.group());
+            }
+        } catch (IOException exception) {
+            // Один шаблон не прочитался - остальные все равно пригодятся
+        }
+    }
+
+    // public HttpResponse doConfigSubmit(StaplerRequest req) в файле, где используется Stapler
+    private boolean isStaplerWebMethod(MethodDeclaration method) {
+        return STAPLER_WEB_METHOD.matcher(method.getNameAsString()).matches()
+                && method.findCompilationUnit().stream()
+                .flatMap(unit -> unit.getImports().stream())
+                .anyMatch(declaration -> declaration.getNameAsString().startsWith(STAPLER_PACKAGE));
+    }
+
+    private boolean isUsedByOtherModules(String module) {
+        return types.stream()
+                .filter(type -> type.findCompilationUnit().map(moduleOf::get).filter(module::equals).isPresent())
+                .flatMap(type -> identifiers.getOrDefault(type.getNameAsString(), List.of()).stream())
+                .filter(usage -> !isInTests(usage))
+                .anyMatch(usage -> usage.findCompilationUnit().map(moduleOf::get)
+                        .filter(other -> !other.equals(module)).isPresent());
+    }
+
+    private boolean isApplication(TypeDeclaration<?> type) {
+        return Annotations.has(type, SPRING_BOOT_APPLICATION) || type.getMethods().stream().anyMatch(this::isMain);
+    }
+
+    private boolean isInSamples(Node node) {
+        return node.findCompilationUnit().filter(sampleUnits::contains).isPresent();
+    }
+
+    // /projects/bitcoinj/core/src/main/java/... -> /projects/bitcoinj/core
+    private String moduleOf(Path path) {
+        Path current = path.toAbsolutePath().normalize();
+        while (current != null) {
+            if (current.getFileName() != null && SOURCE_DIRECTORY.equals(current.getFileName().toString())) {
+                return current.getParent() == null ? "" : current.getParent().toString();
+            }
+            current = current.getParent();
+        }
+        return "";
     }
 
     private boolean isInTestDirectory(SourceFile source) {

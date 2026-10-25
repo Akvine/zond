@@ -54,6 +54,12 @@ public class ResponseWriteWithoutEscapingRule extends AbstractTaintRule {
         return violations;
     }
 
+    // Данные попадают в ответ браузеру: экранирование для другого места их не обезвреживает
+    @Override
+    protected Taint.Sink sink() {
+        return Taint.Sink.HTML;
+    }
+
     @Override
     public ErrorLevel errorLevel() {
         return ErrorLevel.MAJOR;

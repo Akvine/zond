@@ -22,6 +22,8 @@ import java.util.regex.Pattern;
 public class AssertEqualsArgumentOrderRule extends AbstractRule {
     private static final Set<String> ASSERTIONS = Set.of(
             "assertEquals", "assertNotEquals", "assertSame", "assertNotSame", "assertArrayEquals", "assertIterableEquals");
+    // List.of("a", "b"), Arrays.asList(1, 2): набор констант - тоже ожидаемое значение
+    private static final Set<String> COLLECTION_FACTORIES = Set.of("of", "asList", "singletonList", "copyOf");
     private static final Pattern CONSTANT_NAME = Pattern.compile("[A-Z][A-Z0-9_]*");
     private static final String JUNIT4_ASSERT = "org.junit.Assert";
     // У TestNG порядок обратный: проверяемое значение идет первым
@@ -89,6 +91,19 @@ public class AssertEqualsArgumentOrderRule extends AbstractRule {
         }
         if (value.isLiteralExpr() || value.isClassExpr()) {
             return true;
+        }
+        // assertArrayEquals(new String[] {"id"}, Constants.KEYS): проверяют саму константу, порядок верный
+        if (value.isArrayCreationExpr()) {
+            return value.asArrayCreationExpr().getInitializer()
+                    .filter(initializer -> initializer.getValues().stream().allMatch(this::isConstant))
+                    .isPresent();
+        }
+        if (value.isArrayInitializerExpr()) {
+            return value.asArrayInitializerExpr().getValues().stream().allMatch(this::isConstant);
+        }
+        if (value.isMethodCallExpr() && COLLECTION_FACTORIES.contains(value.asMethodCallExpr().getNameAsString())) {
+            return !value.asMethodCallExpr().getArguments().isEmpty()
+                    && value.asMethodCallExpr().getArguments().stream().allMatch(this::isConstant);
         }
         if (value.isNameExpr()) {
             return CONSTANT_NAME.matcher(value.asNameExpr().getNameAsString()).matches();

@@ -38,6 +38,13 @@ public abstract class AbstractTaintRule extends AbstractRule implements ProjectR
         return Confidence.CONFIRMED;
     }
 
+    /**
+     * @return куда попадают данные у этого правила: от этого зависит, какое экранирование их обезвреживает
+     */
+    protected Taint.Sink sink() {
+        return Taint.Sink.ANY;
+    }
+
     // Находка достоверна настолько, насколько достоверен источник, найденный перед ней: данные запроса -
     // подтверждено, сообщение из очереди или ответ другого сервиса - вероятно, источник не найден - подозрение
     @Override
@@ -52,6 +59,7 @@ public abstract class AbstractTaintRule extends AbstractRule implements ProjectR
         current = taint;
         taint.takeConfidence();
         taint.limitDepth(value(MAX_CALL_DEPTH));
+        taint.useSink(sink());
         return sourceFiles.stream().flatMap(sourceFile -> check(sourceFile, taint).stream()).toList();
     }
 }

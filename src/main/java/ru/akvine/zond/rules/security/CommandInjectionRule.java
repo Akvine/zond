@@ -12,6 +12,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractTaintRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.StringLiterals;
@@ -27,6 +28,8 @@ public class CommandInjectionRule extends AbstractTaintRule {
     private static final String EXEC = "exec";
     private static final String GET_RUNTIME = "getRuntime";
     private static final String PROCESS_BUILDER = "ProcessBuilder";
+    private static final String COMMAND = "command";
+    private static final String RUNTIME = "Runtime";
     private static final String STRING = "String";
     private static final String FORMAT = "format";
 
@@ -44,22 +47,21 @@ public class CommandInjectionRule extends AbstractTaintRule {
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
 
-        // Runtime.getRuntime().exec("ping " + host)
+        // Runtime.getRuntime().exec("ping " + host), r.exec(args, env), processBuilder.command(arguments)
         for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
-            boolean isRuntimeExec = EXEC.equals(call.getNameAsString())
-                    && call.getScope()
-                    .filter(scope -> scope.isMethodCallExpr()
-                            && GET_RUNTIME.equals(scope.asMethodCallExpr().getNameAsString()))
-                    .isPresent();
-            if (isRuntimeExec && call.getArguments().stream().anyMatch(this::isBuiltFromVariables)) {
-                violations.add(report(sourceFile, call, "Runtime.exec(...)" + describeOrigin(call.getArguments(), taint)));
+            boolean isRuntimeExec = EXEC.equals(call.getNameAsString()) && call.getScope().filter(this::isRuntime).isPresent();
+            boolean isCommand = COMMAND.equals(call.getNameAsString()) && !call.getArguments().isEmpty()
+                    && call.getScope().filter(this::isProcessBuilder).isPresent();
+            if ((isRuntimeExec || isCommand) && isDangerous(call.getArguments(), taint)) {
+                String sink = isRuntimeExec ? "Runtime.exec(...)" : "ProcessBuilder.command(...)";
+                violations.add(report(sourceFile, call, sink + describeOrigin(call.getArguments(), taint)));
             }
         }
 
         // new ProcessBuilder("sh", "-c", "ping " + host)
         for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
             if (PROCESS_BUILDER.equals(creation.getType().getNameAsString())
-                    && creation.getArguments().stream().anyMatch(this::isBuiltFromVariables)) {
+                    && isDangerous(creation.getArguments(), taint)) {
                 violations.add(report(sourceFile, creation,
                         "new ProcessBuilder(...)" + describeOrigin(creation.getArguments(), taint)));
             }
@@ -67,6 +69,12 @@ public class CommandInjectionRule extends AbstractTaintRule {
 
         violations.sort(Comparator.comparingInt(Violation::line));
         return violations;
+    }
+
+    // Данные попадают в команда ОС: экранирование для другого места их не обезвреживает
+    @Override
+    protected Taint.Sink sink() {
+        return Taint.Sink.COMMAND;
     }
 
     @Override
@@ -94,6 +102,27 @@ public class CommandInjectionRule extends AbstractTaintRule {
                 source + " со строкой команды, собранной из переменных: если в значение попадет ';' или '&&',"
                         + " выполнится чужая команда; передавайте программу и каждый аргумент отдельными"
                         + " элементами и не запускайте через оболочку");
+    }
+
+    // Строка команды собрана из переменных либо в команду, ее аргументы или окружение попадают данные клиента
+    private boolean isDangerous(List<Expression> arguments, Taint taint) {
+        return arguments.stream().anyMatch(this::isBuiltFromVariables)
+                || arguments.stream().anyMatch(argument -> taint.findSource(argument).isPresent());
+    }
+
+    // Runtime.getRuntime() либо переменная, в которую его положили
+    private boolean isRuntime(Expression scope) {
+        Expression value = Nodes.unwrap(scope);
+        if (value.isMethodCallExpr()) {
+            return GET_RUNTIME.equals(value.asMethodCallExpr().getNameAsString());
+        }
+        return LocalTypes.typeOf(value).filter(RUNTIME::equals).isPresent()
+                || LocalTypes.findInitializer(value).filter(this::isRuntime).isPresent();
+    }
+
+    private boolean isProcessBuilder(Expression scope) {
+        Expression value = Nodes.unwrap(scope);
+        return LocalTypes.typeOf(value).filter(PROCESS_BUILDER::equals).isPresent();
     }
 
     // "ping " + host либо String.format("ping %s", host)

@@ -4,6 +4,7 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.VariableDeclarationExpr;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
@@ -39,10 +40,36 @@ public class Resources {
             "getConnection", "prepareStatement", "prepareCall", "createStatement", "executeQuery", "openStream");
 
     private final static Set<String> CLOSEABLE = Set.of("AutoCloseable");
+    private final static Set<String> STANDARD_STREAMS = Set.of("System.out", "System.err", "System.in");
+    private final static Set<String> IN_MEMORY_STREAMS = Set.of(
+            "ByteArrayOutputStream", "ByteArrayInputStream", "StringWriter", "StringReader", "CharArrayWriter",
+            "CharArrayReader");
 
     /**
      * @return true, если выражение открывает ресурс: new FileInputStream(...), Files.lines(...), getConnection()
      */
+    /**
+     * new DataOutputStream(new ByteArrayOutputStream()), new PrintWriter(System.out): обертка над буфером в памяти
+     * не держит ни файла, ни сокета, а System.out закрывать нельзя - закрывать тут нечего
+     */
+    private boolean wrapsNothingToClose(ObjectCreationExpr wrapper) {
+        if (wrapper.getArguments().isEmpty()) {
+            return false;
+        }
+        Expression inner = Nodes.unwrap(wrapper.getArgument(0));
+        if (inner.isNameExpr()) {
+            inner = LocalTypes.findInitializer(inner).map(Nodes::unwrap).orElse(inner);
+        }
+        if (inner.isFieldAccessExpr() && STANDARD_STREAMS.contains(inner.toString())) {
+            return true;
+        }
+        if (!inner.isObjectCreationExpr()) {
+            return false;
+        }
+        return IN_MEMORY_STREAMS.contains(inner.asObjectCreationExpr().getType().getNameAsString())
+                || wrapsNothingToClose(inner.asObjectCreationExpr());
+    }
+
     public boolean opens(Expression initializer) {
         Expression value = Nodes.unwrap(initializer);
         if (value.isObjectCreationExpr()) {
@@ -52,7 +79,7 @@ public class Resources {
             boolean isResource = Types.isKindOf(type, RESOURCE_TYPES)
                     .orElseGet(() -> RESOURCE_TYPES.contains(typeName) && !isOwnClassNamedScanner(value, typeName));
             // new Scanner(System.in): стандартный ввод закрывать не нужно
-            return isResource && !value.toString().contains(SYSTEM_IN);
+            return isResource && !value.toString().contains(SYSTEM_IN) && !wrapsNothingToClose(value.asObjectCreationExpr());
         }
         if (value.isMethodCallExpr()) {
             MethodCallExpr call = value.asMethodCallExpr();

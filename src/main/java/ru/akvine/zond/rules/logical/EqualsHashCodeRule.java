@@ -49,10 +49,13 @@ public class EqualsHashCodeRule extends AbstractRule {
                         "В классе '" + type.getNameAsString() + "' переопределен equals без hashCode:"
                                 + " равные объекты попадут в разные корзины HashMap / HashSet"));
             }
-            if (hashCode.isPresent() && equals.isEmpty()) {
+            // hashCode без equals договор HashMap не нарушает: равные по ссылке объекты и так дают один хэш.
+            // У наследника (FunctionType extends ... JSType) equals обычно объявлен у предка
+            if (hashCode.isPresent() && equals.isEmpty() && type.getExtendedTypes().isEmpty()) {
                 violations.add(violation(sourceFile, hashCode.get(),
                         "В классе '" + type.getNameAsString() + "' переопределен hashCode без equals:"
-                                + " объекты с одинаковым хэшем не будут считаться равными"));
+                                + " объекты с одинаковым хэшем не будут считаться равными")
+                        .withLevel(ErrorLevel.MINOR));
             }
         }
         return violations;

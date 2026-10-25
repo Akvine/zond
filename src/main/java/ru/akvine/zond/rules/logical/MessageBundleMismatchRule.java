@@ -25,6 +25,7 @@ import java.util.regex.Pattern;
 public class MessageBundleMismatchRule extends AbstractContextRule {
     // messages.properties, messages_ru.properties, messages_en_US.properties -> messages
     private static final Pattern LOCALE_SUFFIX = Pattern.compile("(_[a-z]{2,3}(_[A-Z]{2})?)?\\.properties$");
+    private static final Pattern ENGLISH = Pattern.compile("_en\\.properties$");
 
     // {0}, {1,number}
     private static final Pattern ARGUMENT = Pattern.compile("\\{(\\d+)[^}]*}");
@@ -83,9 +84,13 @@ public class MessageBundleMismatchRule extends AbstractContextRule {
 
         // Ключ есть в одном языке и отсутствует в другом: пользователь увидит код сообщения вместо текста.
         // Если есть основной файл без языка (messages.properties), недостающий перевод Spring берет из него
+        // Без такого файла основным считается английский: Keycloak и многие темы берут недостающее из messages_en
         Optional<TextFile> base = entries.keySet().stream()
                 .filter(file -> !hasLocale(file.name()))
-                .findFirst();
+                .findFirst()
+                .or(() -> entries.keySet().stream()
+                        .filter(file -> ENGLISH.matcher(file.name()).find())
+                        .findFirst());
         entries.forEach((file, byKey) -> {
             if (base.isPresent() && base.get() != file) {
                 return;

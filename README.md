@@ -1,7 +1,7 @@
 # Zond
 
 Консольный статический анализатор Java-кода. Проверяет исходники, файлы настроек Spring-приложения,
-миграции БД, файлы сборки, Docker, Kubernetes, CI и настройки логирования по набору правил (сейчас их 422) и выводит найденные проблемы в консоль, текстовый файл или Excel.
+миграции БД, файлы сборки, Docker, Kubernetes, CI и настройки логирования по набору правил (сейчас их 451) и выводит найденные проблемы в консоль, текстовый файл или Excel.
 
 Работает без базы данных и внешних сервисов: на входе папка с кодом, на выходе отчет.
 
@@ -11,6 +11,7 @@
 - [Настройки: app.properties](#настройки-appproperties)
 - [Отчет](#отчет)
 - [Уверенность находки](#уверенность-находки)
+- [Проверка на эталонных наборах](#проверка-на-эталонных-наборах)
 - [Что проверяется кроме Java](#что-проверяется-кроме-java)
 - [Очереди сообщений](#очереди-сообщений)
 - [Гонки и целостность в базе](#гонки-и-целостность-в-базе)
@@ -18,6 +19,7 @@
 - [Файлы в памяти](#файлы-в-памяти)
 - [Квадратичные алгоритмы на коллекциях](#квадратичные-алгоритмы-на-коллекциях)
 - [Лишняя работа в циклах и пулы потоков](#лишняя-работа-в-циклах-и-пулы-потоков)
+- [Скрытые отказы и опасный разбор данных](#скрытые-отказы-и-опасный-разбор-данных)
 - [Контейнер Spring в коде приложения](#контейнер-spring-в-коде-приложения)
 - [Доступ и безопасность запросов](#доступ-и-безопасность-запросов)
 - [Эксплуатация](#эксплуатация)
@@ -317,6 +319,45 @@ zond.report.confidence=false
 - **Остальные правила** — вероятно.
 
 У правил, которые не прослеживают данные и не строят цепочек, уверенность по-прежнему одна на все находки.
+
+## Проверка на эталонных наборах
+
+Точность и полнота правил измерялись на наборах, где заранее известно, что ошибка, а что нет.
+
+**OWASP Benchmark 1.2** — 2740 сервлетов, около половины из них — ловушки без уязвимости:
+
+| Категория | Правила | Найдено уязвимостей (TPR) | Ложных тревог (FPR) |
+|---|---|---|---|
+| cmdi | jr:138 | 73.8% | 26.4% |
+| crypto | jr:149 | 74.6% | 0% |
+| hash | jr:106 | 69.0% | 0% |
+| ldapi | jr:340 | 55.6% | 0% |
+| pathtraver | jr:151 | 60.9% | 0% |
+| securecookie | jr:249 | 100% | 0% |
+| sqli | jr:18, jr:87 | 53.7% | 0% |
+| trustbound | jr:452 | 43.4% | 0% |
+| weakrand | jr:137 | 91.7% | 0% |
+| xpathi | jr:341 | 40.0% | 0% |
+| xss | jr:212 | 58.1% | 0% |
+| **всего** | | **66.6%** | **2.5%**, точность 96.6% |
+
+Все ложные тревоги — в cmdi: строка команды, собранная из переменных, без прослеженного источника. Такие
+находки получают уверенность «подозрение»; без них точность — 100% при полноте 40.7%.
+
+**Defects4J** — 820 настоящих ошибок из Commons Lang / Math / Codec, Jackson, Jsoup, Closure, Joda-Time,
+Mockito и других, в версии с ошибкой и исправленной. Ошибку на измененных строках правило называет в 7–9
+из них (около 1%): приведение к `Comparable` без проверки (Math-89), обращение к полю в ветке, где оно `null`
+(JacksonDatabind-3), к `parent` до проверки (Jsoup-89), сравнение `double` через `==` (Math-50, Math-63).
+Для статических анализаторов на этом наборе это обычный уровень. Исправленные версии — хорошо проверенный код:
+находки на них показали шаблоны ложных срабатываний jr:14, jr:15, jr:17, jr:27 и jr:324, которые описаны в
+разделе «Частные случаи».
+
+**Vul4J** — 77 настоящих уязвимостей (CVE) и 50 исправлений по предупреждениям SpotBugs и Sonar. Уязвимость
+называет правило в 6 из 77: XXE в jackson-dataformat-xml и плагине JUnit для Jenkins (jr:150), небезопасный
+`new Yaml()` в swagger-parser и commons-configuration2 (jr:445), предсказуемый `new Random()` для токена CSRF в
+Struts (jr:137), разбор версии без проверки в ONOS. Из 50 исправлений по предупреждениям анализаторов zond сам
+указывает на 24: внутреннее поле отдается наружу (jr:182), изменяемое `public static` поле (jr:35, jr:287),
+возможный `null` (jr:324).
 
 ## Что проверяется кроме Java
 
@@ -1185,6 +1226,133 @@ int active = orderRepository.findAllByStatus(status).size();   // -> countByStat
   вызов метода.
 - **jr:253** сообщает и о `spring.jpa.properties.hibernate.generate_statistics=true` в рабочих настройках.
 
+## Скрытые отказы и опасный разбор данных
+
+Правила jr:437 – jr:451 ищут ошибки, которые не видны сразу: код компилируется и проходит обычные тесты,
+а ломается на больших данных, под нагрузкой, через неделю работы или на присланной строке.
+
+| Правило | Что находит | Уровень |
+|---|---|---|
+| jr:437 | `split(".")`, `split("\|")`, `replaceAll(".", ...)`: спецсимвол регулярного выражения вместо строки | MAJOR |
+| jr:438 | компаратор, который никогда не возвращает 0: `a > b ? 1 : -1` | MAJOR |
+| jr:439 | `hashCode()` сущности по `id` с `@GeneratedValue` | MAJOR |
+| jr:440 | обращение к потоку, соединению или сессии после `close()` | MAJOR |
+| jr:441 | периодическая задача `ScheduledExecutorService` или `Timer` без `catch` | MAJOR |
+| jr:442 | два замка, которые методы класса берут в разном порядке | CRITICAL |
+| jr:443 | `subscribe()` у `Mono`, `Flux` или RxJava без обработчика ошибки | MAJOR |
+| jr:444 | `ByteBuf` из пула Netty, который не освобождают и никуда не передают | MAJOR |
+| jr:445 | десериализация, где класс задает присланный текст: default typing в Jackson, `@JsonTypeInfo(use = Id.CLASS)`, SnakeYAML, XStream | CRITICAL |
+| jr:446 | распаковка ZIP, GZIP и других архивов целиком без предела размера (zip-бомба) | MAJOR |
+| jr:447 | адрес клиента из `X-Forwarded-For` и подобных заголовков | MAJOR |
+| jr:448 | регулярное выражение с повтором внутри повтора: `(a+)+`, `(\w+\s?)*` (ReDoS) | MAJOR |
+| jr:449 | текст шаблона FreeMarker, Velocity, Thymeleaf или имя представления из данных запроса | CRITICAL |
+| jr:450 | `@Mock` без `MockitoExtension`, `verify(mock);` без вызова, `when(...)` у настоящего объекта | MAJOR |
+| jr:451 | `RestTemplate`, `HttpClient`, `WebClient`, `OkHttpClient` создаются при каждом вызове метода | MAJOR |
+
+```java
+// jr:437: точка - любой символ, массив всегда пустой
+String[] parts = version.split(".");          // -> split("\\.")
+
+// jr:438: равные элементы "больше" друг друга - sort падает с "Comparison method violates its general contract!"
+orders.sort((a, b) -> a.getPrice() > b.getPrice() ? 1 : -1);   // -> Comparator.comparing(Order::getPrice)
+
+// jr:441: первое исключение молча отменит все следующие запуски
+executor.scheduleAtFixedRate(() -> client.sync(), 0, 1, TimeUnit.MINUTES);
+
+// jr:442: transfer и refund, вызванные одновременно, ждут друг друга вечно
+void transfer() { synchronized (from) { synchronized (to) { move(); } } }
+void refund()   { synchronized (to)   { synchronized (from) { move(); } } }
+```
+
+- **jr:437.** Проверяются `split`, `replaceAll` и `replaceFirst` у строки, аргумент которых - один символ
+  `.`, `|`, `$`, `^`, `*`, `+`, `?`, `(`, `[` или `\`. Экранированный символ (`"\\."`), `Pattern.quote(...)` и
+  методы, которые понимают разделитель буквально (`StringUtils.split`, `Splitter.on`), не считаются.
+- **jr:438.** Метод `compare(a, b)` и `compareTo(other)` с типом `int` и лямбда из двух параметров, которую
+  передают в `sort`, `sorted`, `max`, `min`, `thenComparing` или конструктор `TreeSet`, `TreeMap`,
+  `PriorityQueue`: находка, если все ее результаты - тернарные операторы и числа без нуля. Ветка с нулем,
+  `Integer.compare(...)` и разбор случаев без тернарного оператора не считаются.
+- **jr:439.** Сущность с `@Entity`, у которой `hashCode()` берет поле с `@Id` и `@GeneratedValue` (`Objects.hash(id)`,
+  `id.hashCode()`, `getId()`). Постоянный хеш (`getClass().hashCode()`) и id, заданный вручную, не меняются
+  после `save()`. О `@Data` на сущности сообщает jr:80.
+- **jr:440.** `x.close();` отдельным оператором и операция ввода-вывода с `x` в следующих операторах того же
+  блока, пока переменной не присвоили новый объект: `read`, `write`, `print`, `flush`, `execute`, `prepare`,
+  `commit`, `send`, `next`, `getInputStream`, `getString(...)` у `ResultSet` и подобные. Геттеры итога
+  (`getResult()`, `getErrorPath()`, `endpoint()`), `toByteArray()` у `ByteArrayOutputStream` и `close()`
+  элемента в построителе XML после закрытия разрешены.
+- **jr:441.** `scheduleAtFixedRate` и `scheduleWithFixedDelay` с четырьмя аргументами (`ScheduledExecutorService`)
+  и `timer.schedule(new TimerTask() {...}, delay, period)`. Тело задачи должно целиком стоять в `try` с
+  `catch (Exception)`, `RuntimeException` или `Throwable`; для `this::poll` и `() -> poll()` смотрится метод
+  `poll` своего класса. Перед `try` можно выйти (`if (!enabled) return;`), объявить переменную без вызовов,
+  взять замок (`lock.lock()`) и записать в лог; цикл `for` по элементам считается защищенным, если каждая
+  его итерация внутри такого `try`. Вызов своего метода, тело которого тоже защищено (`notifyHealth()` после
+  `try` в Zabbix-мониторинге), находкой не считается.
+  `TaskScheduler` из Spring ошибки ловит сам и не проверяется; задача, тела которой не видно (переменная,
+  метод другого класса), находкой не считается.
+- **jr:442.** В пределах класса собираются пары «замок, который держится» - «замок, который берется»: вложенные
+  `synchronized`, `synchronized`-метод (замок `this`) и `lock()` / `lockInterruptibly()` до `unlock()`. Пара,
+  которая где-то встречается в обратном порядке, - находка один раз, на более поздней. `tryLock` не считается:
+  он не ждет вечно.
+- **jr:443.** Проверяются файлы, которые импортируют `reactor.core.publisher` или `io.reactivex`. `subscribe()`
+  без аргументов или только с обработчиком значения у `Mono`, `Flux`, `Flowable`, `Observable`, `Single`,
+  `Maybe`, `Completable` - находка. Обработчик ошибки вторым аргументом, `doOnError`, `onErrorResume`,
+  `onErrorReturn` выше по цепочке и свой объект-подписчик (`new LoggingSubscriber()`, `subscribe(this)`) не
+  считаются.
+- **jr:444.** Переменная `ByteBuf` из `alloc().buffer()`, `directBuffer()`, `ioBuffer()`, `compositeBuffer()`,
+  `readRetainedSlice(...)`, `retainedDuplicate()`, `Unpooled.directBuffer()`, с которой ничего не происходит:
+  ее не освобождают (`release()`, `ReferenceCountUtil.release`), не передают аргументом, не возвращают, не
+  кладут в поле и не захватывают лямбдой. `Unpooled.buffer()` в куче пулом не управляется и не проверяется.
+- **jr:445.** `enableDefaultTyping` и `activateDefaultTyping` с `LaissezFaireSubTypeValidator` или
+  `allowIfBaseType(Object.class)`; `@JsonTypeInfo(use = Id.CLASS | Id.MINIMAL_CLASS)` у поля типа `Object`,
+  `Serializable`, `Comparable` (в том числе в `List<Object>`, `Map<String, Object>`). `new Yaml()` без
+  `SafeConstructor`, которым читают документ (`load`, `loadAs`, `loadAll`), и `new XStream()` без
+  `allowTypes(...)` в файле получают уверенность «подозрение»: в SnakeYAML 2 и XStream 1.4.18 и новее
+  опасные классы запрещены по умолчанию.
+- **jr:446.** Поток `ZipInputStream`, `GZIPInputStream`, `InflaterInputStream`, `ZipArchiveInputStream`,
+  `TarArchiveInputStream`, `zipFile.getInputStream(entry)`, который читают целиком: `readAllBytes()`,
+  `transferTo(...)`, `IOUtils.toByteArray(...)`, `IOUtils.copy(...)`, `Files.copy(...)` или циклом
+  `while ((n = zis.read(buffer)) > 0)`. Находки нет, если в методе есть предел: имя с `max`, `limit`, `bound`,
+  `quota`, `threshold`, проверка `entry.getSize()`, обертка `BoundedInputStream`, счетчик в условии цикла
+  (`while (total < size && (n = in.read(...)) != -1)`). Архив из ресурсов приложения (`getResourceAsStream`) и
+  данные, которые класс сжал сам (`GZIPOutputStream` того же файла в поле), не проверяются. Тип потока берется
+  из объявления переменной. Если в файле нет признаков данных извне (`MultipartFile`, `HttpServletRequest`,
+  `@RequestBody`, `@PostMapping`, `URLConnection`, имена с `upload`), находка получает уверенность «подозрение»:
+  скорее всего, это свой файл или артефакт сборки.
+- **jr:447.** `getHeader("X-Forwarded-For")`, `X-Real-IP`, `X-Client-IP`, `True-Client-IP`, `Forwarded`,
+  `Proxy-Client-IP` и подобные. Адрес из заголовка решает, пускать ли клиента (условие или вызов со словами
+  `block`, `allow`, `limit`, `rate`, `whitelist`, `attempt`, `lock`, `auth`, `captcha` и другими) - уверенность
+  «вероятно»; метод только отдает адрес наружу (`getIpAddr`) - «подозрение»; адрес идет только в лог - не
+  находка. Слова сравниваются целиком: `rate` в `generate` не считается.
+- **jr:448.** Шаблон из литерала, склейки литералов или константы в `Pattern.compile`, `Pattern.matches`,
+  `matches`, `replaceAll`, `replaceFirst`, `split` и в `@Pattern(regexp = ...)`. Находка - группа с
+  неограниченным повтором (`*`, `+`, `{n,}`), внутри которой тоже есть неограниченный повтор, а все остальное
+  в ней необязательно либо съедается тем же повтором (`.*`, `\S`, `[^...]`). `(\d+\.)+` и `(\s+[A-Za-z]+)*`
+  однозначны и не считаются; притяжательные квантификаторы (`++`, `*+`) и атомарные группы `(?>...)` возвратов
+  не делают. В `replaceAll`, `replaceFirst` и `split` вложенный повтор в самом конце шаблона без `$`
+  (`^([^#]*('[^']*')?)*`) находкой не считается: поиск жадно забирает что может и сразу удается.
+- **jr:449.** Как и jr:138 и jr:211, правило прослеживает данные клиента от запроса до места использования.
+  Проверяются `new Template(name, new StringReader(text), cfg)` во FreeMarker, `Velocity.evaluate(...)`,
+  `getLiteralTemplate`, `createTemplate`, `process`, `render`, `compile` у объекта, чье имя говорит о
+  шаблонизаторе (`templateEngine`, `pebble`, `jinjava`, `mustache`, `freemarker`), и строка, которую обработчик
+  `@Controller` (не `@RestController` и не `@ResponseBody`) возвращает как имя представления: Thymeleaf
+  выполняет выражение `__${...}__` прямо в имени. `"redirect:" + ...` - забота jr:152.
+- **jr:450.** `@Mock`, `@Spy`, `@Captor`, `@InjectMocks` в классе, у которого ни у него, ни у предков из проекта
+  нет `@ExtendWith(MockitoExtension.class)`, `@MockitoSettings`, `@RunWith(MockitoJUnitRunner.class)`, правила
+  `MockitoJUnit.rule()` и вызова `MockitoAnnotations.openMocks` / `initMocks`. Своя аннотация с таким расширением,
+  контекст Spring (`@SpringBootTest`, `@WebMvcTest` и другие заполняют `@Mock` сами), предок из библиотеки и
+  внешний класс для `@Nested` тоже считаются. Поле, которому значение присваивают в самом классе (например, в
+  `setUp`), находкой не считается. `verify(mock);` и `verify(mock, times(2));` отдельным оператором ничего не проверяют;
+  проверяется только `Mockito.verify` и `verify`, импортированный из `Mockito` / `BDDMockito`, - `verify` из
+  WireMock и свой метод `verify(...)` класса не считаются. `when(order.total())` у переменной, созданной через
+  `new` (не `spy(...)`) и больше нигде не переприсвоенной, вызывает настоящий метод.
+- **jr:451.** `new RestTemplate()`, `new OkHttpClient()`, `HttpClient.newHttpClient()`, `HttpClients.createDefault()`,
+  `WebClient.create(...)`, `RestClient.create()` и `build()` их построителей в обычном методе. Не считаются:
+  поле, конструктор, `@Bean`, `@PostConstruct` и код запуска, `main`, метод, который возвращает клиент
+  (фабрика), ленивое создание в поле (`if (client == null) client = ...`) и клиент, переданный в конструктор
+  другого объекта. Класс с тем же именем из другой библиотеки или проекта (`com.hazelcast.spi.utils.RestClient`)
+  тоже не считается: клиентом считается только импорт из Spring, `java.net.http`, Apache HttpClient, OkHttp и
+  Vert.x либо класс без импорта. Клиент в `try (... = HttpClients.createDefault())` закрывается и сокетов не
+  держит, поэтому такая находка получает уверенность «подозрение». Создание в цикле находит jr:419.
+
 ## Контейнер Spring в коде приложения
 
 Класс, который сам достает бины из `ApplicationContext` или `BeanFactory`, нарушает инверсию управления:
@@ -1223,6 +1391,7 @@ int active = orderRepository.findAllByStatus(status).size();   // -> countByStat
 | jr:380 | пароль, токен или ключ в адресе запроса: `@PathVariable`, `@RequestParam` |
 | jr:381 | версия библиотеки с известной уязвимостью |
 | jr:382 | запись берется по идентификатору из запроса без проверки владельца |
+| jr:452 | данные запроса кладутся в HTTP-сессию без проверки (CWE-501) |
 
 - **Адрес может быть объявлен в интерфейсе.** jr:379, jr:380, jr:382 и jr:385 понимают контроллер, который
   реализует интерфейс с `@GetMapping` и `@PathVariable`: аннотации берутся оттуда. Интерфейс HTTP-клиента
@@ -1253,6 +1422,11 @@ int active = orderRepository.findAllByStatus(status).size();   // -> countByStat
   `permission`, `AccessDenied`); идентификатор из запроса уходит в `findById` / `deleteById` — прямо
   или через сервис, который тоже не знает о пользователе; у сущности есть поле владельца (`user`,
   `owner`, `account`, `customer`, `client`, `author`, `tenant`, `createdBy` и их `...Id`).
+- **jr:452.** `setAttribute(name, value)` и `putValue(name, value)` у `request.getSession()`, `HttpSession`
+  или переменной `session`, когда в имя атрибута или значение прослежены данные клиента. Код, который потом
+  читает сессию, считает ее содержимое установленным сервером, и клиент подменяет идентификатор,
+  роль или признак пройденной проверки. Значение, приведенное к числу или проверенное по списку
+  допустимых, находкой не считается.
 
 ## Эксплуатация
 
@@ -1412,6 +1586,15 @@ Java-файлы из каталогов `build`, `target` и `out` читают�
 Код из них читается: по нему видно, что класс или метод используется. Каталог `vendor` внутри `src` — пакет
 проекта (`com.shop.vendor`), и он проверяется.
 
+И так же — в сгенерированном коде: на классе стоит `@Generated` либо в шапке файла до тела класса написано
+«auto-generated», «@generated», «Generated by ...», «DO NOT EDIT» (кодеки протокола Hazelcast, классы protobuf
+и ANTLR). Его правят через генератор, а изменения, внесенные вручную, пропадут при следующей генерации.
+
+MyBatis Generator часто настраивают без комментариев (`suppressAllComments`), и его классы узнаются по
+устройству: `XxxExample` с вложенным классом `GeneratedCriteria`, интерфейс `XxxMapper`, в котором только
+методы генератора (`countByExample`, `selectByPrimaryKey`, `updateByExampleSelective` и подобные, не меньше
+четырех), и модель с `toString`, где есть `"Hash = "`. В mall это убрало 7 200 находок из 7 800.
+
 ### Частные случаи
 
 Найдены прогоном на настоящих проектах: каждый из них правила раньше отмечали зря.
@@ -1567,6 +1750,38 @@ Java-файлы из каталогов `build`, `target` и `out` читают�
 | jr:111, коллекция во входном DTO | Класс сам разбирает себя из потока: конструктор от `StreamInput` или `DataInput`, `writeTo`, `writeExternal`, `readFields` — запросы транспорта Elasticsearch, `Writable` из Hadoop. Bean Validation до них не доходит |
 | jr:427, сетевой вызов в цикле | Ответ придет в обработчик: `client.execute(action, request, listener)`, `...rolloverIndex(request, ActionListener.wrap(...))`, `sendAsync`, `enqueue` — цикл его не ждет |
 | jr:220, значение может быть null | Стандартные свойства JVM: `System.getProperty("os.name")`, `user.home`, `java.io.tmpdir` заданы всегда |
+| jr:266, проверка константы | `assertEquals("Path not empty", 0, path.size())` в JUnit 4: первым идет сообщение, а проверяется `path.size()` |
+| jr:205, jr:206, неиспользуемый код | Обработчик JavaFX с параметром-событием (`settingsClicked(ActionEvent event)`): его вызывает разметка FXML (`onAction="#settingsClicked"`). Класс из `META-INF/services`: его создает ServiceLoader. Приложение в каталоге примеров (`activiti-examples`) библиотеку приложением не делает. Открытый класс или метод модуля без своей точки входа (`main`, `@SpringBootApplication`) либо модуля, которым пользуются другие модули проекта (`activiti-engine` со служебным `DbSchemaCreate.main`), — API, которым могут пользоваться снаружи: такая находка получает уверенность «подозрение» |
+| jr:40, магическое число | Номер бита (`BitUtil.check(status, 5)`), длина и смещение поля двоичного протокола (`buf.skipBytes(4)`, `buf.readSlice(15)`, `buf.getUnsignedShort(buf.readerIndex() + 4)`), множитель единицы в `*` и `/` (степени десяти, 60, 3600, 24, 1024). `speed * 1.852` остается находкой |
+| jr:222, приведение без проверки | Параметр `Object` метода с `@Override`, сигнатуру которого задает фреймворк: `decode(Channel channel, SocketAddress address, Object msg)` в декодере Netty. `equals` после `if (!super.equals(o)) return false;` — родитель уже сравнил классы |
+| jr:114, jr:223, разбор числа и индекс без проверки | Метод объявлен `throws Exception` либо его внутри класса вызывают только такие методы: декодер протокола отдает неверный ввод фреймворку |
+| jr:36, вывод в консоль | Вывод в `main` и его закрытых статических помощниках (`printUsage()`), команда консольной программы (`@Command` из picocli, `@ShellComponent`) и код примеров (`examples/`): их вывод и есть консоль. `main`, забытый в рабочем классе, не прячет вывод из остальных его методов |
+| jr:290, jr:293 и другие проверки по миграциям | Скрипт удаления схемы (`db/drop/activiti.mysql.drop.engine.sql`) — не миграция. Строчный комментарий MySQL `# ...` не склеивается со следующей командой |
+| jr:337, индекс без CONCURRENTLY | Скрипт для другой базы, если это видно по пути: `activiti.mysql.upgradestep.sql`, `db/oracle/...` |
+| jr:141, тест без проверки | Вызов унаследованного метода у своего обработчика, который проверяет в переопределенных методах: `handler.handle(message)` → `handleMembersViewEvent(...)` с `assertTrue`. Пустой тест с `@Override` — так в подклассе отключают унаследованный тест. Больше десяти пустых тестов в файле на 200 и больше тестов (набор, созданный генератором, — `ClientCompatibilityTest_2_10` в Hazelcast на 985 тестов) — одна находка на файл с их числом. В обычном классе тестов каждая находка своя |
+| jr:326 и другие выводы анализа потока | `int version = 0; if (longFormat) version = buf.readUnsignedByte();` — после неизвестного числа переменная может быть любым `int`, а не только 0 и 1, как `boolean` |
+| jr:324, значение может быть null | `SystemProperties.getString(KEY, DEFAULT_VALUE)` в Jenkins: метод возвращает `null`, только если `null` передали в запасное значение. В сводке метода запоминаются такие параметры, и при непустом аргументе результат не считается возможным `null` |
+| jr:218, одинаковый адрес обработчиков | Адрес контроллера из константы (`@RequestMapping(Constants.A2A.ADMIN_PATH)`, `BASE + "/nodes"`) в Nacos: выражение не вычисляется и не сливается в `/`, а сравнивается как есть — одна и та же константа дает один адрес |
+| jr:205, неиспользуемый метод | Веб-метод Stapler (`doCheckUrl`, `doConfigSubmit` в файле, где есть импорт `org.kohsuke.stapler`) и имена из шаблонов модуля (`.jelly`, `.groovy`, `.jsp`, `.html`, `.ftl`, `.vm` в `src/main/resources` и `src/main/webapp`): `${it.hasScript()}` в Jelly вызывает метод по имени |
+| jr:88, пул без MDC | Проект сам ничего не кладет в MDC (`MDC.put`, `ThreadContext.put` нигде нет): передавать в потоки пула нечего |
+| jr:303, расхождение переводов | Без основного `messages.properties` основным считается `messages_en.properties`: Keycloak и темы берут недостающий перевод из английского |
+| jr:266, jr:345, проверка константы и проверки в `catch` | `assertTrue(false)` после вызова, который должен бросить, — старая запись `fail()`; в `catch` она означает «исключения быть не должно» |
+| jr:344, переставленные аргументы | Проверяют саму константу: `assertArrayEquals(new String[] {"id"}, Keys.PRIMARY)`, `assertEquals(List.of("a"), Names.DEFAULT)` |
+| jr:427, сетевой вызов в цикле | Описание или настройки клиента, а не он сам: `HttpClientDefinition.lookup(...)`, `httpClientConfig.update(...)` в разборе XML Keycloak. Имя должно кончаться на клиента, статический метод класса запросом не считается |
+| jr:40, магическое число | Значение по умолчанию элемента аннотации (`int time() default 60`), основание системы счисления (`Integer.parseInt(hex, 16)`, `Character.digit(c, 16)`, `new BigInteger(text, 2)`), величина сдвига (`bits >> 16`) |
+| jr:141, тест без проверки | Тестер проекта, созданный тут же: `new SerializationTester(...).runTests()` в Bazel — проверки ищутся в его методах. Тест, который сам падает при нарушенном условии: `if (result.hasError()) throw result.getError().getException()` |
+| jr:27, сравнение дробных через `==` | Найдено на исправленных версиях Defects4J (Commons Math, Joda-Time). Сравнение с точно представимой константой (`Double.POSITIVE_INFINITY`, `MAX_VALUE`, `MIN_VALUE`, своя `ZERO`); проверка, что число целое: `longValue == value` при `long longValue = (long) value`, `Math.floor(x) == x`; сравнение полей в `equals(Object)` |
+| jr:324, значение может быть null | `Preconditions.checkState(name != null)`, `Assert.isTrue(...)`, `Validate.isTrue(...)` — дальше условие истинно. `Node params = isFn ? node.getFirstChild() : null;` и ниже `isFn ? params.getNext() : null` — тот же флаг. Метод, который может вернуть `null`, но в проекте его результат почти никто не проверяет (`tb.currentElement()` в Jsoup: из 5 и больше вызовов проверяют меньше пятой части), — так принято, и непроверенный вызов не отклонение. На метод с `@Nullable` это не распространяется |
+| jr:14, сравнение ссылок | Быстрый ответ перед `equals`: `a == b \|\| a.equals(b)`, `if (s1 == s2) return true;` и `s1.equals(s2)` ниже. Строка-метка, которую класс сам кладет как значение: `namespaces.put(prefix, UNKNOWN_NAMESPACE)` и `namespace == UNKNOWN_NAMESPACE` |
+| jr:17, ресурс не закрыт | Обертка над буфером в памяти (`new DataOutputStream(new ByteArrayOutputStream())`, `StringWriter`, `ByteArrayInputStream`) и над `System.out` / `System.err`: закрывать нечего, а `System.out` закрывать нельзя |
+| jr:15, equals и hashCode | `hashCode` без `equals` у наследника (`FunctionType extends ... JSType`): `equals` объявлен у предка. Без предка это не нарушение договора `HashMap`, а лишний код, и уровень находки — `MINOR` |
+| jr:397, разбор значения запроса без обработки | Обработчик JAX-RS: `class DateParseMapper implements ExceptionMapper<DateTimeParseException>` отвечает на ошибку так же, как `@ExceptionHandler` в Spring. Общий `ExceptionMapper<RuntimeException>`, который отдает 500, обработкой не считается |
+| jr:449, шаблон из данных клиента | `htmlTemplate.process(model, writer)` у собранного шаблона FreeMarker (`getTemplate(...)`, `new Template(...)`): первым идет модель данных, а не текст шаблона |
+| jr:207, SSRF | Адрес из ответа того же API, к которому обращаются: куда загрузить файл, ссылка на следующую страницу. Адрес, сохраненный из запроса в свойство объекта (адрес вебхука), — находка |
+| jr:208, данные запроса в логе | `getQueryString()`, `getRequestURI()`, `getRequestURL()` не раскодированы — перевод строки в них бывает только как `%0A`; в значении заголовка сырой CR/LF не пропустит разбор HTTP. `getParameter`, `getPathInfo` раскодированы и проверяются |
+| jr:36, вывод в консоль | Файл разбирает аргументы командной строки через Commons CLI, JCommander, jopt-simple или args4j: команда консольной программы (`TopicListSubCommand` в `mqadmin` RocketMQ) |
+| jr:452 и другие правила о данных извне | Поиск по ключу клиента у объекта: `externalLoginKeys.get(key)`, `cache.get(id)` возвращают серверный объект, а не данные клиента. `getOrDefault(key, fallback)` несет только `fallback`; `Paths.get(dir, name)` у класса собирает значение из аргументов |
+| jr:208 и другие правила о данных извне | Свой метод с именем, как у чтения запроса: `getHeader(mediaType)` в `RestUtil` JeecgBoot собирает `HttpHeaders`. Вызов без получателя читает запрос, только если класс — обертка над запросом (`extends HttpServletRequestWrapper`) |
 
 ### Знания о проекте
 
@@ -1889,6 +2104,13 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
   параметры методов до источника. Источники:
   - HTTP-запрос: `@RequestParam`, `@PathVariable`, тело запроса, строковый параметр обработчика —
     в том числе когда адрес и аннотации параметров объявлены в интерфейсе, который контроллер реализует;
+  - запрос JAX-RS (Jersey, RESTEasy, Keycloak): `@QueryParam`, `@PathParam`, `@FormParam`, `@HeaderParam`,
+    `@CookieParam`, `@BeanParam` и параметр без аннотаций у метода с `@POST`, `@PUT`, `@PATCH`, `@DELETE` —
+    это тело запроса;
+  - запрос сервлета: `getParameter`, `getHeader`, `getQueryString`, а у объекта `HttpServletRequest`
+    (или переменной `request` / `req`) еще `getParameterValues`, `getParameterMap`, `getParameterNames`,
+    `getHeaders`, `getCookies`, `getReader`, `getInputStream`, `getPart`. У `HttpHeaders` из ответа другого
+    сервиса `getHeaders` источником не считается;
   - загруженный файл: `MultipartFile.getBytes()`, `getInputStream()`;
   - сообщение из очереди: параметры методов с `@KafkaListener`, `@RabbitListener`, `@JmsListener`,
     `@SqsListener`, `@MessageMapping`;
@@ -1902,6 +2124,23 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
   - результат маппера без тела (MapStruct, библиотека): `mapper.toEntity(dto)` несет то же, что `dto`;
   - параметр лямбды: в `tags.forEach(tag -> ...)` значение `tag` — элемент `tags`.
 
+  Значение проходит и через:
+  - **свой метод, который его возвращает:** `bar = decorate(param)`, `new Helper().build(param)`,
+    `Utils.wrap(param)`. Разбирается тело метода, а его параметры берут значения из аргументов именно этого
+    вызова: `decorate("guest")` рядом с `decorate(param)` данных клиента не несет;
+  - **коллекцию и `StringBuilder`:** `sql.append(name)`, `names.add(name)`, `params.put("name", name)`.
+    Чтение по известному ключу из карты, собранной в том же методе, несет только положенное под этот ключ:
+    `map.get("keyA")` рядом с `map.put("keyB", param)` чист. Для списка, который наполняют `add` и
+    `remove(0)` подряд без ветвлений, известно, какой элемент вернет `get(1)`;
+  - **массив:** `String[] env = {param}`.
+
+  Не учитываются ветки, которые не выполнятся никогда, и перезаписанные значения:
+  - условие `if`, `?:` и `switch`, известное без запуска: `(7 * 18) + num > 200 ? "safe" : param` при
+    `int num = 106`, `switch ("ABC".charAt(1))`. Считаются литералы, арифметика, константы `final` и
+    локальные переменные, которым больше ничего не присваивают;
+  - присваивание, которое безусловно перезаписано следующим оператором того же блока еще до
+    использования: `bar = param; bar = "safe"; use(bar)`.
+
   Значение перестает считаться опасным, если оно:
   - числового типа, дата или `UUID`;
   - приведено к числу, `UUID` или `enum`: `Long.parseLong(id)`, `Status.valueOf(status)`;
@@ -1913,7 +2152,10 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
     дальше идут как раз все остальные значения. Условие с `||`, которое не гарантирует проверку, тоже
     не считается;
   - прошло вызов-утверждение отдельной строкой: `validate(name)`, `requireAllowed(sort)`;
-  - прошло метод очистки: `escape...`, `sanitize...`, `validate...`, `normalize...`.
+  - прошло метод очистки: `escape...`, `sanitize...`, `validate...`, `normalize...`. Очистка учитывает, куда
+    попадает значение: экранирование для HTML (`encodeForHTML`, `htmlEscape`, `escapeHtml`) защищает вывод в
+    ответ, но не SQL, путь к файлу и команду; `encodeForSQL` защищает только SQL. Base64 и hex
+    (`encodeBase64`, `decodeBase64`, `encodeHex`) не защищают ничего: значение восстанавливается как было.
 
   Правило о подделке строк лога учитывает только прямой ввод (запрос, файл, сообщение): ответ другого
   сервиса в логе — обычное дело. Для запуска команд источник дописывается в сообщение.
@@ -1922,6 +2164,13 @@ zond.scan.classpath=C:/projects/shop/libs;C:/projects/shop/extra/driver.jar
   считается: нарушитель этими значениями не управляет. Сам по себе `Statement` тоже не находка.
   На том же механизме работают правила об SSRF, подделке строк лога, регулярных выражениях, рефлексии,
   выражениях SpEL / XPath / LDAP и выводе в ответ без экранирования (jr:207 - jr:212).
+  Запуск команд (jr:138) проверяется у `Runtime.getRuntime().exec(...)` и у переменной, в которую положили
+  `Runtime.getRuntime()`, у `new ProcessBuilder(...)` и `processBuilder.command(...)`. Находка — строка
+  команды, собранная из переменных (без прослеженного источника — «подозрение»), либо данные клиента в
+  команде, ее аргументах или окружении: `String[] env = {param}; r.exec(args, env)`.
+  Предсказуемый генератор (jr:137) ищется не только по имени вокруг (`token`, `password`, `rememberMe`):
+  значение прослеживается по присваиваниям метода, и `float rand = new Random().nextFloat()`, которое
+  становится `rememberMeKey` или значением `new Cookie(...)`, — находка с уверенностью «вероятно».
 - **Секреты.** Имя `password` или `token` само по себе не делает значение секретом. Правила о записи в лог
   (jr:155), `toString()` (jr:154) и сравнении (jr:251) смотрят, что происходит на деле:
   - имя говорит о защите — `encryptedPassword`, `passwordHash`, `maskedToken` — не секрет;
@@ -2034,9 +2283,15 @@ zond.flow.library=flow-library-extra.properties
 ```properties
 # flow-library-extra.properties
 asserts-not-null=requirePresent, mustExist
+asserts-true=ensureThat
 true-for-null=isMissing
 never-returns=abort
 ```
+
+`asserts-true` — методы, после которых условие-аргумент истинно: встроены `checkState`, `checkArgument`
+из Guava, `isTrue` и `state` из Spring `Assert`, `isTrue` и `validState` из Commons `Validate`, `verify` из
+Guava `Verify`. Первым аргументом должно стоять условие (`x != null`, `!list.isEmpty()`), поэтому
+`verify(mock)` из Mockito сюда не попадает.
 
 Записи своего файла добавляются к встроенным. Методы задаются именами без классов.
 

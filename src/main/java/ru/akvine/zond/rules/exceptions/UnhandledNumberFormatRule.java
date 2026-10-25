@@ -57,8 +57,10 @@ public class UnhandledNumberFormatRule extends AbstractRule {
 
             // Литерал ("42") разобрать нельзя неправильно; тесты не трогаем
             boolean parsesLiteral = !call.getArguments().isEmpty() && call.getArgument(0).isStringLiteralExpr();
-            // Число из настроек при запуске: неверное значение - ошибка конфигурации, и упасть сразу правильно
-            if (!parsesLiteral && !isHandled(call) && !TestClasses.isInside(call) && !CodeContexts.isStartup(call)) {
+            // Число из настроек при запуске: неверное значение - ошибка конфигурации, и упасть сразу правильно.
+            // В методе с throws Exception (декодер протокола) неверный ввод и так уходит вызывающему
+            if (!parsesLiteral && !isHandled(call) && !TestClasses.isInside(call) && !CodeContexts.isStartup(call)
+                    && !CodeContexts.isDeclaredToFail(call)) {
                 violations.add(violation(sourceFile, call,
                         "'" + call + "' без обработки NumberFormatException: на нечисловой строке метод упадет"
                                 + " с исключением, которое вызывающий код не ждет; оберните разбор в try / catch"

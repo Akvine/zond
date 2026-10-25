@@ -10,6 +10,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
@@ -56,7 +57,8 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
             }
             Expression scope = Nodes.unwrap(call.getScope().get());
             if (scope.isNameExpr() && LocalTypes.typeOf(scope).filter(STRING::equals).isPresent()
-                    && !TestClasses.isInside(call) && !isLengthChecked(call, scope.toString()) && !isFixedLength(scope)) {
+                    && !TestClasses.isInside(call) && !isLengthChecked(call, scope.toString()) && !isFixedLength(scope)
+                    && !CodeContexts.isDeclaredToFail(call)) {
                 violations.add(violation(sourceFile, call,
                         "'" + call + "' без проверки длины строки: на короткой или пустой строке будет"
                                 + " StringIndexOutOfBoundsException; проверьте length() или isEmpty()"));
@@ -74,7 +76,9 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
                     .map(Nodes::unwrap)
                     .filter(value -> value.isMethodCallExpr() && SPLIT.equals(value.asMethodCallExpr().getNameAsString()))
                     .isPresent();
-            if (fromSplit && !TestClasses.isInside(access) && !isArrayLengthChecked(access)) {
+            // Разбор в методе с throws Exception: короткая строка - неверный ввод, и он уходит вызывающему
+            if (fromSplit && !TestClasses.isInside(access) && !isArrayLengthChecked(access)
+                    && !CodeContexts.isDeclaredToFail(access)) {
                 violations.add(violation(sourceFile, access,
                         "'" + access + "' без проверки числа частей после split: если разделителя в строке"
                                 + " не окажется, будет ArrayIndexOutOfBoundsException; проверьте length"));

@@ -154,6 +154,39 @@ class ProjectStructureRulesTest {
     }
 
     @Test
+    void duplicateEndpointWithPathsFromConstants() {
+        // Адреса из разных констант не известны и не сливаются в "/"; одна и та же константа - один адрес
+        assertThat(RuleTests.checkProject(new DuplicateEndpointRule(), Map.of(
+                "AgentController.java", """
+                        @RestController
+                        @RequestMapping(Constants.A2A.ADMIN_PATH)
+                        class AgentController {
+                            @PostMapping
+                            void register() {}
+                        }
+                        """,
+                "ClusterController.java", """
+                        @RestController
+                        @RequestMapping({AddressServerConstants.BASE_URL + "/nodes"})
+                        class ClusterController {
+                            @RequestMapping(value = "", method = RequestMethod.POST)
+                            void create() {}
+                        }
+                        """,
+                "AgentCopyController.java", """
+                        @RestController
+                        @RequestMapping(Constants.A2A.ADMIN_PATH)
+                        class AgentCopyController {
+                            @PostMapping
+                            void registerAgain() {}
+                        }
+                        """)))
+                .singleElement()
+                .extracting(Violation::message).asString()
+                .contains("AgentController.register", "AgentCopyController.registerAgain");
+    }
+
+    @Test
     void missingEnableAnnotation() {
         List<Violation> found = RuleTests.checkProject(new MissingEnableAnnotationRule(), Map.of(
                 "App.java", "@SpringBootApplication\nclass App {}",

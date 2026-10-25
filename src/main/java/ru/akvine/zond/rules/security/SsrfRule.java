@@ -28,10 +28,14 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class SsrfRule extends AbstractTaintRule {
     // Методы, первым аргументом которых идет адрес: RestTemplate, WebClient, RestClient
+    // Значение пришло ответом другого сервиса, в том числе через свойство объекта
+    private static final Pattern EXTERNAL_ORIGIN = Pattern.compile(
+            "^(getForObject|getForEntity|postForObject|postForEntity|patchForObject|exchange|bodyToMono|bodyToFlux)\\(");
     private static final Set<String> REQUEST_METHODS = Set.of(
             "getForObject", "getForEntity", "postForObject", "postForEntity", "postForLocation", "patchForObject",
             "exchange", "uri");
@@ -94,7 +98,10 @@ public class SsrfRule extends AbstractTaintRule {
                 || taint.findSource(first).isEmpty() && pathAfter(first).isPresent()) {
             return;
         }
-        taint.findSource(address).ifPresent(source -> violations.add(violation(sourceFile, node,
+        // Адрес из ответа того же API (куда загрузить файл, ссылка на следующую страницу) - обычная работа с ним
+        taint.findSource(address)
+                .filter(source -> source.kind() != Taint.Kind.EXTERNAL && !EXTERNAL_ORIGIN.matcher(source.text()).find())
+                .ifPresent(source -> violations.add(violation(sourceFile, node,
                 "Адрес запроса берется из данных клиента '" + source + "': так можно заставить сервер обратиться"
                         + " к внутренним адресам (SSRF); сверяйте узел со списком разрешенных")));
     }

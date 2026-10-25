@@ -4,7 +4,10 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -14,10 +17,13 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.MethodCalls;
+import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 @Component
@@ -27,10 +33,13 @@ public class InsecureRandomRule extends AbstractRule {
     private static final String MATH_RANDOM = "random";
     private static final String THREAD_LOCAL_RANDOM = "ThreadLocalRandom";
     private static final String CURRENT = "current";
+    private static final String COOKIE = "Cookie";
+    // Через сколько присваиваний прослеживается случайное значение внутри метода
+    private static final int MAX_FLOW_STEPS = 3;
 
     // Типы не разрешаем: о том, что значение секретное, судим по имени переменной, метода или класса вокруг
     private static final Pattern SECRET_CONTEXT = Pattern.compile(
-            ".*(token|password|passwd|secret|salt|nonce|otp|sessionid|apikey|captcha|verification).*",
+            ".*(token|password|passwd|secret|salt|nonce|otp|sessionid|apikey|captcha|verification|rememberme|resetkey).*",
             Pattern.CASE_INSENSITIVE);
 
     @Override
@@ -50,10 +59,14 @@ public class InsecureRandomRule extends AbstractRule {
             if (!isPredictableRandom(expression)) {
                 continue;
             }
-            findSecretContext(expression).ifPresent(context -> violations.add(violation(sourceFile, expression,
+            // Путь значения до секрета или cookie виден прямо по коду - это уже не догадка по имени вокруг
+            Optional<String> named = findSecretContext(expression);
+            Optional<String> traced = named.isPresent() ? Optional.empty() : findFlowContext(expression);
+            named.or(() -> traced).ifPresent(context -> violations.add(violation(sourceFile, expression,
                     "'" + expression + "' при генерации секрета ('" + context + "'): последовательность обычного"
                             + " генератора предсказуема, по нескольким значениям восстанавливаются остальные;"
-                            + " используйте SecureRandom")));
+                            + " используйте SecureRandom")
+                    .withConfidence(traced.isPresent() ? Confidence.PROBABLE : null)));
         }
         return violations;
     }
@@ -104,5 +117,54 @@ public class InsecureRandomRule extends AbstractRule {
             current = current.getParentNode().orElse(null);
         }
         return Optional.empty();
+    }
+
+    // float rand = new Random().nextFloat(); String rememberMeKey = Float.toString(rand); new Cookie(name, rememberMeKey):
+    // число само в переменной с обычным именем, но дальше становится секретом либо значением cookie
+    private Optional<String> findFlowContext(Expression random) {
+        Optional<Node> callable = Nodes.enclosingCallable(random);
+        Optional<String> holder = holderName(random);
+        if (callable.isEmpty() || holder.isEmpty()) {
+            return Optional.empty();
+        }
+        Set<String> carriers = new HashSet<>(Set.of(holder.get()));
+        for (int step = 0; step < MAX_FLOW_STEPS; step++) {
+            for (ObjectCreationExpr creation : callable.get().findAll(ObjectCreationExpr.class)) {
+                if (COOKIE.equals(creation.getType().getNameAsString()) && mentions(creation, carriers)) {
+                    return Optional.of(creation.toString());
+                }
+            }
+            Set<String> reached = new HashSet<>();
+            for (VariableDeclarator variable : callable.get().findAll(VariableDeclarator.class)) {
+                if (variable.getInitializer().filter(value -> mentions(value, carriers)).isPresent()) {
+                    if (SECRET_CONTEXT.matcher(variable.getNameAsString()).matches()) {
+                        return Optional.of(variable.getNameAsString());
+                    }
+                    reached.add(variable.getNameAsString());
+                }
+            }
+            if (!carriers.addAll(reached)) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
+    }
+
+    // Переменная, которой присваивают случайное значение: float rand = new Random().nextFloat()
+    private Optional<String> holderName(Expression random) {
+        Node current = random.getParentNode().orElse(null);
+        while (current instanceof Expression && !(current instanceof AssignExpr)) {
+            current = current.getParentNode().orElse(null);
+        }
+        if (current instanceof VariableDeclarator variable) {
+            return Optional.of(variable.getNameAsString());
+        }
+        return current instanceof AssignExpr assignment && assignment.getTarget().isNameExpr()
+                ? Optional.of(assignment.getTarget().asNameExpr().getNameAsString())
+                : Optional.empty();
+    }
+
+    private boolean mentions(Node node, Set<String> names) {
+        return node.findAll(NameExpr.class).stream().anyMatch(name -> names.contains(name.getNameAsString()));
     }
 }

@@ -25,6 +25,8 @@ import java.util.regex.Pattern;
 @Component
 public class CastWithoutInstanceofRule extends AbstractRule {
     private static final String OBJECT = "Object";
+    private static final String EQUALS = "equals";
+    private static final String OVERRIDE = "Override";
     private static final Set<String> CLASS_CHECKS = Set.of("getClass", "isInstance", "getUserClass");
     private static final String CLASS = "Class";
 
@@ -49,7 +51,7 @@ public class CastWithoutInstanceofRule extends AbstractRule {
                 .filter(cast -> Nodes.unwrap(cast.getExpression()).isNameExpr())
                 .filter(cast -> LocalTypes.typeOf(cast.getExpression()).filter(OBJECT::equals).isPresent())
                 .filter(cast -> !TestClasses.isInside(cast))
-                .filter(cast -> !isTypeChecked(cast) && !isDeclaredType(cast))
+                .filter(cast -> !isTypeChecked(cast) && !isDeclaredType(cast) && !isFrameworkMessage(cast))
                 .map(cast -> violation(sourceFile, cast,
                         "'" + cast + "': Object приводится к " + cast.getType() + " без проверки типа - если там"
                                 + " окажется другой объект, будет ClassCastException; проверьте через instanceof"))
@@ -80,8 +82,12 @@ public class CastWithoutInstanceofRule extends AbstractRule {
             return false;
         }
         MethodCallExpr call = check.asMethodCallExpr();
+        // if (!super.equals(o)) return false;: родительский equals уже сравнил классы
+        boolean superEquals = EQUALS.equals(call.getNameAsString())
+                && call.getScope().filter(Expression::isSuperExpr).isPresent()
+                && call.getArguments().stream().anyMatch(argument -> argument.toString().equals(variable));
         // value.getClass(), Hibernate.getClass(value), Type.class.isInstance(value)
-        return CLASS_CHECKS.contains(call.getNameAsString())
+        return superEquals || CLASS_CHECKS.contains(call.getNameAsString())
                 && (call.getScope().filter(scope -> scope.toString().equals(variable)).isPresent()
                 || call.getArguments().stream().anyMatch(argument -> argument.toString().equals(variable)));
     }
@@ -90,6 +96,23 @@ public class CastWithoutInstanceofRule extends AbstractRule {
      * Стратегия сама объявляет, с каким типом работает: {@code Class<Boolean> getType()}. Вызывающий код
      * выбирает ее по этому типу, и приведение (Boolean) object внутри нее безопасно.
      */
+    /**
+     * decode(Channel channel, SocketAddress address, Object msg) с @Override в декодере Netty: тип сообщения
+     * задает конвейер, который собирает сам проект, а сигнатуру - фреймворк. В equals(Object) тип приходит
+     * от кого угодно, и проверка там нужна
+     */
+    private boolean isFrameworkMessage(CastExpr cast) {
+        String name = Nodes.unwrap(cast.getExpression()).asNameExpr().getNameAsString();
+        return Nodes.enclosingCallable(cast)
+                .filter(callable -> callable instanceof MethodDeclaration)
+                .map(callable -> (MethodDeclaration) callable)
+                .filter(method -> !EQUALS.equals(method.getNameAsString()) && method.isAnnotationPresent(OVERRIDE))
+                .filter(method -> method.getParameters().stream()
+                        .anyMatch(parameter -> parameter.getNameAsString().equals(name)
+                                && OBJECT.equals(LocalTypes.typeName(parameter.getType()))))
+                .isPresent();
+    }
+
     private boolean isDeclaredType(CastExpr cast) {
         String target = cast.getType().asClassOrInterfaceType().getNameAsString();
         return cast.findAncestor(ClassOrInterfaceDeclaration.class).stream()

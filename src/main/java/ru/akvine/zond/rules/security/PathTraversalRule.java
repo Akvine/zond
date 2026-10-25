@@ -63,6 +63,12 @@ public class PathTraversalRule extends AbstractTaintRule {
         return violations;
     }
 
+    // Данные попадают в путь к файлу: экранирование для другого места их не обезвреживает
+    @Override
+    protected Taint.Sink sink() {
+        return Taint.Sink.PATH;
+    }
+
     @Override
     public ErrorLevel errorLevel() {
         return ErrorLevel.CRITICAL;

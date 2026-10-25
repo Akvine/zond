@@ -27,6 +27,7 @@ public final class FlowLibrary {
     private static final String SEPARATOR = "[,\\s]+";
 
     private static final String ASSERTS_NOT_NULL = "asserts-not-null";
+    private static final String ASSERTS_TRUE = "asserts-true";
     private static final String TRUE_FOR_NULL = "true-for-null";
     private static final String FALSE_FOR_NULL = "false-for-null";
     private static final String NEVER_RETURNS = "never-returns";
@@ -68,6 +69,14 @@ public final class FlowLibrary {
      */
     public static boolean assertsNotNull(String method) {
         return has(ASSERTS_NOT_NULL, method);
+    }
+
+    /**
+     * @return true, если после вызова первый аргумент-условие истинен: Preconditions.checkState(x != null),
+     * Assert.isTrue(...), Validate.isTrue(...) бросают исключение, когда условие ложно
+     */
+    public static boolean assertsTrue(String method) {
+        return has(ASSERTS_TRUE, method);
     }
 
     /**

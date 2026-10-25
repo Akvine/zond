@@ -63,6 +63,10 @@ public class ConstantAssertionRule extends AbstractRule {
             Expression condition = call.getArguments().size() > 1 && AssertMessages.isText(first)
                     ? Nodes.unwrap(call.getArgument(1))
                     : first;
+            // assertTrue(false) после вызова, который должен бросить, - это fail(): тест падает намеренно
+            if (condition.isBooleanLiteralExpr()) {
+                return condition.asBooleanLiteralExpr().getValue() == ASSERT_TRUE.equals(method);
+            }
             return condition.isLiteralExpr();
         }
         // assertThat("reason", actual, matcher) в Hamcrest: строка - пояснение, а не проверяемое значение
@@ -70,11 +74,18 @@ public class ConstantAssertionRule extends AbstractRule {
             return call.getArguments().size() == 1 ? first.isLiteralExpr()
                     : !AssertMessages.isText(first) && first.isLiteralExpr();
         }
+        if (!COMPARING_ASSERTIONS.contains(method) || call.getArguments().size() < 2) {
+            return false;
+        }
+        // assertEquals("Path not empty", 0, path.size()) в JUnit 4: сообщение, ожидаемое, проверяемое -
+        // проверяется вычисленное значение
+        boolean messageFirst = call.getArguments().size() >= 3 && AssertMessages.isText(first)
+                && !Nodes.unwrap(call.getArgument(2)).isLiteralExpr();
+        if (messageFirst) {
+            return false;
+        }
         // assertEquals(5, 5); третий аргумент - сообщение
-        return COMPARING_ASSERTIONS.contains(method)
-                && call.getArguments().size() >= 2
-                && first.isLiteralExpr()
-                && Nodes.unwrap(call.getArgument(1)).isLiteralExpr();
+        return first.isLiteralExpr() && Nodes.unwrap(call.getArgument(1)).isLiteralExpr();
     }
 
     // Правило проверяет сами тесты

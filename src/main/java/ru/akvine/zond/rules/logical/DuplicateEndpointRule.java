@@ -49,7 +49,7 @@ public class DuplicateEndpointRule extends AbstractRule implements ProjectRule {
                 if (!Annotations.hasAny(type, CONTROLLER_ANNOTATIONS)) {
                     continue;
                 }
-                List<String> prefixes = Mappings.find(type).map(Mappings::paths).orElse(List.of(""));
+                List<String> prefixes = Mappings.find(type).map(Mappings::pathKeys).orElse(List.of(""));
                 for (MethodDeclaration method : type.getMethods()) {
                     String handler = type.getNameAsString() + "." + method.getNameAsString();
                     for (String endpoint : endpointsOf(method, prefixes)) {
@@ -87,7 +87,7 @@ public class DuplicateEndpointRule extends AbstractRule implements ProjectRule {
             return endpoints;
         }
         for (String prefix : prefixes) {
-            for (String path : Mappings.paths(mapping.get())) {
+            for (String path : Mappings.pathKeys(mapping.get())) {
                 endpoints.add(Mappings.httpMethod(mapping.get()) + " " + normalize(prefix + SLASH + path));
             }
         }

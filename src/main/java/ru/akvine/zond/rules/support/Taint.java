@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules.support;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.EnumDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
@@ -56,11 +57,16 @@ public final class Taint {
     // Сколько вызовов можно пройти вверх от метода к тем, кто его вызывает, если правило не задало свое число
     private static final int DEFAULT_CALL_DEPTH = 4;
 
-    private static final Set<String> REQUEST_ANNOTATIONS =
-            Set.of("RequestParam", "PathVariable", "RequestHeader", "RequestPart", "CookieValue", "MatrixVariable");
+    // Spring MVC и JAX-RS (@QueryParam, @PathParam, @FormParam у Jersey, RESTEasy, Keycloak)
+    private static final Set<String> REQUEST_ANNOTATIONS = Set.of(
+            "RequestParam", "PathVariable", "RequestHeader", "RequestPart", "CookieValue", "MatrixVariable",
+            "QueryParam", "PathParam", "FormParam", "HeaderParam", "CookieParam", "MatrixParam");
 
     // Объект, собранный из запроса: данные клиента - это его поля
-    private static final Set<String> BODY_ANNOTATIONS = Set.of("RequestBody", "ModelAttribute");
+    private static final Set<String> BODY_ANNOTATIONS = Set.of("RequestBody", "ModelAttribute", "BeanParam");
+
+    // Метод ресурса JAX-RS: параметр без аннотаций - тело запроса
+    private static final Set<String> JAX_RS_BODY_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
 
     // Spring связывает с запросом и параметры без аннотаций, если метод - обработчик запроса
     private static final Set<String> MAPPING_ANNOTATIONS = Set.of(
@@ -78,6 +84,31 @@ public final class Taint {
     // request.getParameter("name"), file.getOriginalFilename()
     private static final Set<String> REQUEST_METHODS =
             Set.of("getParameter", "getHeader", "getOriginalFilename", "getQueryString", "getPathInfo");
+
+    // request.getParameterValues("id"), request.getCookies(): эти имена есть и у других классов (getHeaders у
+    // ответа другого сервиса), поэтому источником они считаются только у запроса сервлета
+    private static final Set<String> SERVLET_REQUEST_METHODS = Set.of(
+            "getParameterValues", "getParameterMap", "getParameterNames", "getHeaders", "getHeaderNames",
+            "getCookies", "getReader", "getInputStream", "getParts", "getPart");
+    private static final Set<String> SERVLET_REQUEST_TYPES = Set.of(
+            "HttpServletRequest", "ServletRequest", "HttpServletRequestWrapper", "MultipartHttpServletRequest",
+            "StaplerRequest", "StaplerRequest2");
+    private static final Pattern REQUEST_VARIABLE = Pattern.compile("(?i)(http)?(servlet)?req(uest)?");
+    private static final String REQUEST_TYPE_WORD = "Request";
+
+    // sql.append(name), params.put("name", name), names.add(name): объект накапливает то, что в него положили
+    private static final Set<String> CONTAINER_WRITES = Set.of(
+            "append", "add", "addAll", "put", "putAll", "putIfAbsent", "insert", "set", "push", "offer",
+            "addFirst", "addLast", "addElement", "setProperty");
+    // Методы, которые кладут значение под ключ или номер: само значение - второй аргумент
+    private static final Set<String> KEYED_WRITES = Set.of("put", "putIfAbsent", "setProperty", "set", "insert");
+    private static final Set<String> KEYED_READS = Set.of("get", "getOrDefault", "getProperty");
+    private static final String APPEND = "append";
+    private static final String ADD = "add";
+    private static final String REMOVE = "remove";
+    private static final String GET = "get";
+    private static final String GET_OR_DEFAULT = "getOrDefault";
+    private static final Set<String> LIST_READS = Set.of("get", "size", "isEmpty", "contains", "indexOf");
 
     // Содержимое файла, который загрузил клиент
     private static final Set<String> FILE_TYPES = Set.of("MultipartFile", "Part", "FilePart");
@@ -101,6 +132,11 @@ public final class Taint {
     private static final Pattern SANITIZER = Pattern.compile(
             ".*(encode|escape|sanitize|normalize|cleanPath|canonical|validate|whitelist|allowed).*",
             Pattern.CASE_INSENSITIVE);
+    // Base64 и hex значение не обезвреживают: decodeBase64(encodeBase64(name)) вернет его как было
+    private static final Pattern REVERSIBLE_ENCODING = Pattern.compile("(?i).*(base64|hex|encodeToString).*");
+    // Экранирование для HTML: в ответе оно спасает, а в SQL, пути к файлу или команде ничего не меняет
+    private static final Pattern HTML_ESCAPE = Pattern.compile("(?i).*(html|xml|javascript|css|xss).*");
+    private static final Pattern SQL_ESCAPE = Pattern.compile("(?i).*(sql).*");
 
     // Приведение к числу, UUID или enum: если значение не подошло, будет исключение, а не инъекция
     private static final Set<String> CONVERTERS = Set.of(
@@ -130,6 +166,13 @@ public final class Taint {
 
     private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
     private static Taint cached;
+
+    /**
+     * Куда попадает значение: от этого зависит, какое экранирование его обезвреживает
+     */
+    public enum Sink {
+        ANY, SQL, HTML, PATH, COMMAND
+    }
 
     /**
      * Откуда значение: от этого зависит, насколько находка достоверна
@@ -204,6 +247,12 @@ public final class Taint {
     private final ThreadLocal<Confidence> found = new ThreadLocal<>();
     // Предел глубины для правила, которое сейчас работает в этом потоке
     private final ThreadLocal<Integer> depthLimit = ThreadLocal.withInitial(() -> DEFAULT_CALL_DEPTH);
+    // Куда попадает значение у правила, которое сейчас работает в этом потоке
+    private final ThreadLocal<Sink> sink = ThreadLocal.withInitial(() -> Sink.ANY);
+    // Методы, внутрь которых анализ спустился от вызова bar = clean(param): их параметры берут значение
+    // из аргументов этого вызова, а не из всех мест, где метод вызывается
+    private final ThreadLocal<Map<MethodDeclaration, MethodCallExpr>> descended =
+            ThreadLocal.withInitial(IdentityHashMap::new);
 
     private Taint(List<SourceFile> sources) {
         this.graph = CallGraph.of(sources);
@@ -275,6 +324,13 @@ public final class Taint {
     }
 
     /**
+     * Задает, куда попадает значение у правила, работающего в этом потоке: SQL, HTML, путь, команда
+     */
+    public void useSink(Sink kind) {
+        sink.set(kind);
+    }
+
+    /**
      * @return уверенность находки по источникам, найденным с прошлого вызова этого метода: самый достоверный
      * из них; если источник не найден, находка - лишь подозрение
      */
@@ -304,14 +360,31 @@ public final class Taint {
                     .or(() -> source(value.asBinaryExpr().getRight(), depth, visited));
         }
         if (value.isConditionalExpr()) {
-            return source(value.asConditionalExpr().getThenExpr(), depth, visited)
-                    .or(() -> source(value.asConditionalExpr().getElseExpr(), depth, visited));
+            // (7 * 18) + num > 200 ? "safe" : param - условие известно, вторая ветка не выполнится
+            ConditionalExpr branch = value.asConditionalExpr();
+            Optional<Boolean> known = ConstantValues.condition(branch.getCondition());
+            if (known.isPresent()) {
+                return source(known.get() ? branch.getThenExpr() : branch.getElseExpr(), depth, visited);
+            }
+            return source(branch.getThenExpr(), depth, visited)
+                    .or(() -> source(branch.getElseExpr(), depth, visited));
+        }
+        if (value.isCastExpr()) {
+            return source(value.asCastExpr().getExpression(), depth, visited);
         }
         if (value.isObjectCreationExpr()) {
             return firstSource(value.asObjectCreationExpr().getArguments(), depth, visited);
         }
         if (value.isArrayAccessExpr()) {
             return source(value.asArrayAccessExpr().getName(), depth, visited);
+        }
+        // String[] args = {"sh", "-c", command}: массив несет то же, что его элементы
+        if (value.isArrayInitializerExpr()) {
+            return firstSource(value.asArrayInitializerExpr().getValues(), depth, visited);
+        }
+        if (value.isArrayCreationExpr()) {
+            return value.asArrayCreationExpr().getInitializer()
+                    .flatMap(initializer -> firstSource(initializer.getValues(), depth, visited));
         }
         return Optional.empty();
     }
@@ -341,13 +414,24 @@ public final class Taint {
             return iterated;
         }
 
-        Optional<Origin> initial = variable.getInitializer().flatMap(value -> source(value, depth, visited));
+        Optional<Node> callable = Nodes.enclosingCallable(name);
+        List<AssignExpr> assignments = callable.stream()
+                .flatMap(found -> found.findAll(AssignExpr.class).stream())
+                .filter(assign -> assign.getTarget().isNameExpr() && assign.getOperator() == AssignExpr.Operator.ASSIGN
+                        && LocalTypes.findDeclaration(assign.getTarget()).filter(target -> target == variable).isPresent())
+                .toList();
+
+        boolean initializerOverwritten = variable.findAncestor(Statement.class)
+                .filter(statement -> isOverwritten(statement, assignments, name))
+                .isPresent();
+        Optional<Origin> initial = initializerOverwritten
+                ? Optional.empty()
+                : variable.getInitializer().flatMap(value -> source(value, depth, visited));
         if (initial.isPresent()) {
             return initial;
         }
 
         // Все присваивания этой переменной в методе, а не только последнее перед использованием
-        Optional<Node> callable = Nodes.enclosingCallable(name);
         if (callable.isEmpty()) {
             return Optional.empty();
         }
@@ -356,14 +440,219 @@ public final class Taint {
                     && LocalTypes.findDeclaration(assign.getTarget())
                     .filter(target -> target == variable)
                     .isPresent();
-            if (sameVariable) {
+            boolean overwritten = assign.getParentNode()
+                    .filter(Statement.class::isInstance)
+                    .filter(statement -> isOverwritten((Statement) statement, assignments, name))
+                    .isPresent();
+            // case 'A': bar = param при switch по известному 'B' не выполнится; bar = param; bar = "safe"; use(bar)
+            if (sameVariable && !overwritten && !ConstantValues.isUnreachable(assign, callable.get())) {
                 Optional<Origin> assigned = source(assign.getValue(), depth, visited);
                 if (assigned.isPresent()) {
                     return assigned;
                 }
             }
         }
+        return sourceOfContents(variable, callable.get(), depth, visited);
+    }
+
+    /**
+     * bar = map.get("keyB"); bar = map.get("keyA"); use(bar): до использования значение безусловно перезаписано
+     * следующим оператором того же блока - первое присваивание до него не доходит
+     */
+    private boolean isOverwritten(Statement statement, List<AssignExpr> assignments, NameExpr usage) {
+        if (!(statement.getParentNode().orElse(null) instanceof BlockStmt block) || statement.isAncestorOf(usage)) {
+            return false;
+        }
+        int index = indexOf(block, statement);
+        for (AssignExpr later : assignments) {
+            if (!(later.getParentNode().orElse(null) instanceof ExpressionStmt laterStatement)
+                    || laterStatement.getParentNode().orElse(null) != block
+                    || indexOf(block, laterStatement) <= index
+                    || later.getValue().findAll(NameExpr.class).stream()
+                    .anyMatch(used -> used.getNameAsString().equals(usage.getNameAsString()))) {
+                continue;
+            }
+            // Использование стоит после перезаписи, а не между двумя присваиваниями
+            boolean usedAfter = laterStatement.getEnd().flatMap(end -> usage.getBegin().map(begin -> begin.isAfter(end)))
+                    .orElse(false);
+            if (usedAfter) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private int indexOf(BlockStmt block, Statement statement) {
+        for (int index = 0; index < block.getStatements().size(); index++) {
+            if (block.getStatement(index) == statement) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    // StringBuilder sql = new StringBuilder(); sql.append(name) - объект несет то, что в него положили
+    private Optional<Origin> sourceOfContents(VariableDeclarator variable, Node callable, int depth, Set<Node> visited) {
+        for (MethodCallExpr write : writesInto(variable, callable)) {
+            for (Expression stored : storedValues(write)) {
+                Optional<Origin> origin = source(stored, depth, visited);
+                if (origin.isPresent()) {
+                    return origin;
+                }
+            }
+        }
         return Optional.empty();
+    }
+
+    // sql.append(a).append(b): обе записи - в sql
+    private List<MethodCallExpr> writesInto(VariableDeclarator variable, Node callable) {
+        return callable.findAll(MethodCallExpr.class).stream()
+                .filter(call -> CONTAINER_WRITES.contains(call.getNameAsString()))
+                .filter(call -> receiverRoot(call).filter(root -> LocalTypes.findDeclaration(root)
+                        .filter(found -> found == variable).isPresent()).isPresent())
+                .filter(call -> !ConstantValues.isUnreachable(call, callable))
+                .toList();
+    }
+
+    private Optional<NameExpr> receiverRoot(MethodCallExpr call) {
+        Optional<Expression> scope = call.getScope().map(Nodes::unwrap);
+        while (scope.isPresent() && scope.get() instanceof MethodCallExpr inner
+                && CONTAINER_WRITES.contains(inner.getNameAsString())) {
+            scope = inner.getScope().map(Nodes::unwrap);
+        }
+        return scope.filter(Expression::isNameExpr).map(Expression::asNameExpr);
+    }
+
+    // put(key, value), set(index, value), add(index, value) - значение вторым; append(chars, offset, length) - первым
+    private List<Expression> storedValues(MethodCallExpr write) {
+        List<Expression> arguments = write.getArguments();
+        if (arguments.isEmpty()) {
+            return List.of();
+        }
+        boolean valueSecond = arguments.size() >= 2 && (KEYED_WRITES.contains(write.getNameAsString())
+                || ADD.equals(write.getNameAsString()));
+        if (APPEND.equals(write.getNameAsString()) || !valueSecond) {
+            return List.of(arguments.get(0));
+        }
+        return List.of(arguments.get(1));
+    }
+
+    /**
+     * Чтение по известному ключу из коллекции, собранной в этом же методе: map.get("keyB") несет только то, что
+     * положили под "keyB"; list.get(1) после add("safe"), add(param), remove(0) - только param.
+     *
+     * @return пусто, если так определить нельзя и коллекция считается целиком
+     */
+    private Optional<Optional<Origin>> sourceOfKeyedRead(MethodCallExpr read, int depth, Set<Node> visited) {
+        if (!KEYED_READS.contains(read.getNameAsString()) || read.getArguments().isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<VariableDeclarator> collection = read.getScope()
+                .map(Nodes::unwrap)
+                .filter(Expression::isNameExpr)
+                .flatMap(LocalTypes::findDeclaration)
+                .filter(VariableDeclarator.class::isInstance)
+                .map(VariableDeclarator.class::cast)
+                .filter(variable -> !isField(variable))
+                .filter(variable -> variable.getInitializer().map(Nodes::unwrap)
+                        .filter(initializer -> initializer.isObjectCreationExpr()
+                                && initializer.asObjectCreationExpr().getArguments().isEmpty())
+                        .isPresent());
+        Optional<Node> callable = Nodes.enclosingCallable(read);
+        Optional<Object> key = ConstantValues.evaluate(read.getArgument(0));
+        if (collection.isEmpty() || callable.isEmpty() || key.isEmpty()) {
+            return Optional.empty();
+        }
+        List<MethodCallExpr> writes = writesInto(collection.get(), callable.get());
+        boolean keyed = writes.stream().anyMatch(write -> KEYED_WRITES.contains(write.getNameAsString())
+                && !"set".equals(write.getNameAsString()) && !"insert".equals(write.getNameAsString()));
+        if (keyed) {
+            for (MethodCallExpr write : writes) {
+                Optional<Object> written = write.getArguments().isEmpty()
+                        ? Optional.empty()
+                        : ConstantValues.evaluate(write.getArgument(0));
+                boolean sameKey = written.isEmpty() || ConstantValues.same(written.get(), key.get());
+                if (!sameKey) {
+                    continue;
+                }
+                for (Expression stored : storedValues(write)) {
+                    Optional<Origin> origin = source(stored, depth, visited);
+                    if (origin.isPresent()) {
+                        return Optional.of(origin);
+                    }
+                }
+            }
+            // getOrDefault("key", fallback): если ключа не было, вернется запасное значение
+            return Optional.of(read.getArguments().size() > 1
+                    ? source(read.getArgument(1), depth, visited)
+                    : Optional.empty());
+        }
+        return listElement(collection.get(), read, key.get())
+                .map(element -> source(element, depth, visited));
+    }
+
+    // list.add(...), list.remove(0) отдельными операторами подряд, без циклов и ветвлений - и list.get(i) после них
+    private Optional<Expression> listElement(VariableDeclarator list, MethodCallExpr read, Object index) {
+        Optional<Statement> declaration = list.findAncestor(Statement.class);
+        Optional<BlockStmt> block = declaration.flatMap(statement -> statement.getParentNode())
+                .filter(BlockStmt.class::isInstance)
+                .map(BlockStmt.class::cast);
+        if (!(index instanceof Long position) || block.isEmpty() || !GET.equals(read.getNameAsString())) {
+            return Optional.empty();
+        }
+        List<Expression> elements = new ArrayList<>();
+        boolean started = false;
+        for (Statement statement : block.get().getStatements()) {
+            if (statement == declaration.get()) {
+                started = true;
+                continue;
+            }
+            if (!started) {
+                continue;
+            }
+            List<NameExpr> uses = statement.findAll(NameExpr.class).stream()
+                    .filter(name -> LocalTypes.findDeclaration(name).filter(found -> found == list).isPresent())
+                    .toList();
+            if (statement.isAncestorOf(read)) {
+                // До чтения в этом же операторе со списком ничего не делают
+                boolean onlyRead = uses.size() == 1 && read.getScope().filter(scope -> scope == uses.get(0)).isPresent();
+                return onlyRead && position >= 0 && position < elements.size()
+                        ? Optional.of(elements.get(position.intValue()))
+                        : Optional.empty();
+            }
+            // String first = list.get(0), list.size(): чтение список не меняет
+            boolean onlyReads = uses.stream().allMatch(use -> use.getParentNode()
+                    .filter(parent -> parent instanceof MethodCallExpr call && LIST_READS.contains(call.getNameAsString())
+                            && call.getScope().filter(scope -> scope == use).isPresent())
+                    .isPresent());
+            if (onlyReads) {
+                continue;
+            }
+            if (uses.size() != 1 || !applyListChange(statement, uses.get(0), elements)) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
+    }
+
+    private boolean applyListChange(Statement statement, NameExpr list, List<Expression> elements) {
+        if (!(statement instanceof ExpressionStmt expression) || !(expression.getExpression() instanceof MethodCallExpr call)
+                || call.getScope().filter(scope -> scope == list).isEmpty()) {
+            return false;
+        }
+        if (ADD.equals(call.getNameAsString()) && call.getArguments().size() == 1) {
+            elements.add(call.getArgument(0));
+            return true;
+        }
+        if (REMOVE.equals(call.getNameAsString()) && call.getArguments().size() == 1) {
+            Optional<Object> removed = ConstantValues.evaluate(call.getArgument(0));
+            if (removed.isPresent() && removed.get() instanceof Long position
+                    && position >= 0 && position < elements.size()) {
+                elements.remove(position.intValue());
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -540,12 +829,19 @@ public final class Taint {
         if (Annotations.hasAny(method.get(), LISTENER_ANNOTATIONS) && !isEnum(parameter)) {
             return Optional.of(new Origin(parameter.getNameAsString(), method.get(), Kind.MESSAGE));
         }
+        int index = method.get().getParameters().indexOf(parameter);
+        // Анализ пришел в метод от конкретного вызова: параметр несет аргумент этого вызова
+        MethodCallExpr bound = descended.get().get(method.get());
+        if (bound != null) {
+            return index < bound.getArguments().size()
+                    ? source(bound.getArgument(index), depth, visited)
+                    : Optional.empty();
+        }
         if (depth >= depthLimit.get()) {
             return Optional.empty();
         }
 
         // Обычный параметр: смотрим, что в него передают там, где метод вызывается
-        int index = method.get().getParameters().indexOf(parameter);
         for (CallGraph.Call call : graph.callsTo(method.get())) {
             if (index < call.site().getArguments().size()) {
                 Optional<Origin> passed = source(call.site().getArgument(index), depth + 1, visited);
@@ -570,11 +866,23 @@ public final class Taint {
     private Optional<Origin> sourceOfCall(MethodCallExpr call, int depth, Set<Node> visited) {
         String method = call.getNameAsString();
         Optional<Node> callable = Nodes.enclosingCallable(call);
-        if (REQUEST_METHODS.contains(method)) {
+        // getHeader(mediaType) без получателя - свой метод класса, а не чтение запроса: кроме обертки над
+        // запросом (class XssRequestWrapper extends HttpServletRequestWrapper)
+        boolean readsRequest = call.getScope().isPresent() || isRequestWrapper(call);
+        if (REQUEST_METHODS.contains(method) && readsRequest
+                || SERVLET_REQUEST_METHODS.contains(method) && call.getScope().filter(this::isServletRequest).isPresent()) {
             return callable.map(found -> new Origin(call.toString(), found, Kind.REQUEST));
+        }
+        // Base64.decodeBase64(...), Hex.encodeHex(...) и экранирование не для этого места: значение то же
+        if (SANITIZER.matcher(method).matches() && !protects(method) || REVERSIBLE_ENCODING.matcher(method).matches()) {
+            return firstSource(call.getArguments(), depth, visited);
         }
         if (SANITIZER.matcher(method).matches() || isConversion(call)) {
             return Optional.empty();
+        }
+        Optional<Optional<Origin>> keyed = sourceOfKeyedRead(call, depth, visited);
+        if (keyed.isPresent()) {
+            return keyed.get();
         }
 
         if (call.getScope().isPresent()) {
@@ -607,6 +915,17 @@ public final class Taint {
                 return written;
             }
         }
+        Optional<Origin> returned = sourceOfReturned(call, depth, visited);
+        if (returned.isPresent()) {
+            return returned;
+        }
+        // externalLoginKeys.get(key), cache.get(id): по ключу клиента находится серверный объект, а не его данные.
+        // Paths.get(dir, name) у класса собирает значение из аргументов; getOrDefault(key, fallback) отдает fallback
+        if (KEYED_READS.contains(method) && call.getScope().filter(scope -> !isTypeReference(scope)).isPresent()) {
+            return method.equals(GET_OR_DEFAULT) && call.getArguments().size() > 1
+                    ? source(call.getArgument(1), depth, visited)
+                    : Optional.empty();
+        }
         if (PASSING_METHODS.contains(method)) {
             return firstSource(call.getArguments(), depth, visited);
         }
@@ -616,6 +935,76 @@ public final class Taint {
                 ? firstSource(call.getArguments(), depth, visited)
                         .map(origin -> new Origin(origin.text() + " через " + method + "(...)", origin.callable(), Kind.PROPERTY))
                 : Optional.empty();
+    }
+
+    // bar = doSomething(request, param), path = buildPath(name): что возвращает свой метод. Его параметры
+    // берутся из аргументов именно этого вызова; узлы, пройденные внутри, не мешают другому вызову того же метода
+    private Optional<Origin> sourceOfReturned(MethodCallExpr call, int depth, Set<Node> visited) {
+        if (depth >= depthLimit.get()) {
+            return Optional.empty();
+        }
+        Map<MethodDeclaration, MethodCallExpr> active = descended.get();
+        for (MethodDeclaration target : graph.targetsOf(call)) {
+            if (target.getBody().isEmpty() || active.containsKey(target)) {
+                continue;
+            }
+            active.put(target, call);
+            try {
+                Set<Node> inside = Collections.newSetFromMap(new IdentityHashMap<>());
+                inside.addAll(visited);
+                for (ReturnStmt statement : target.findAll(ReturnStmt.class)) {
+                    // return внутри лямбды или вложенного класса возвращает не из этого метода
+                    if (Nodes.isInNestedScope(statement, target) || statement.getExpression().isEmpty()) {
+                        continue;
+                    }
+                    Optional<Origin> origin = source(statement.getExpression().get(), depth + 1, inside);
+                    if (origin.isPresent()) {
+                        return origin;
+                    }
+                }
+            } finally {
+                active.remove(target);
+            }
+        }
+        return Optional.empty();
+    }
+
+    // encodeForHTML(name) защищает ответ, но не запрос к базе; encodeBase64(name) не защищает ничего
+    private boolean protects(String sanitizer) {
+        if (REVERSIBLE_ENCODING.matcher(sanitizer).matches()) {
+            return false;
+        }
+        Sink target = sink.get();
+        if (HTML_ESCAPE.matcher(sanitizer).matches()) {
+            return target == Sink.ANY || target == Sink.HTML;
+        }
+        if (SQL_ESCAPE.matcher(sanitizer).matches()) {
+            return target == Sink.ANY || target == Sink.SQL;
+        }
+        return true;
+    }
+
+    // Paths, Optional, Map: имя с большой буквы, которое не объявлено переменной, - класс
+    private boolean isTypeReference(Expression scope) {
+        Expression value = Nodes.unwrap(scope);
+        return value.isNameExpr() && Character.isUpperCase(value.asNameExpr().getNameAsString().charAt(0))
+                && LocalTypes.findDeclaration(value).isEmpty();
+    }
+
+    private boolean isRequestWrapper(Node node) {
+        return node.findAncestor(ClassOrInterfaceDeclaration.class)
+                .filter(type -> type.getExtendedTypes().stream()
+                        .anyMatch(parent -> parent.getNameAsString().contains(REQUEST_TYPE_WORD)))
+                .isPresent();
+    }
+
+    // request.getCookies() у HttpServletRequest; переменная без известного типа - по имени: request, req
+    private boolean isServletRequest(Expression scope) {
+        Expression value = Nodes.unwrap(scope);
+        if (LocalTypes.typeOf(value).filter(SERVLET_REQUEST_TYPES::contains).isPresent()) {
+            return true;
+        }
+        return value.isNameExpr() && REQUEST_VARIABLE.matcher(value.asNameExpr().getNameAsString()).matches();
     }
 
     // Integer.parseInt(value), UUID.fromString(value), Status.valueOf(value); String.valueOf(...) значение не меняет
@@ -692,6 +1081,11 @@ public final class Taint {
         }
         // Объект, собранный из тела запроса, целиком состоит из данных клиента
         if (isBoundToRequest(parameter) || isBoundToRequest(declared)) {
+            return true;
+        }
+        // @POST public Response create(UserRepresentation user): в JAX-RS параметр без аннотаций - тело запроса
+        if (Annotations.hasAny(method, JAX_RS_BODY_METHODS) && parameter.getAnnotations().isEmpty()
+                && declared.getAnnotations().isEmpty()) {
             return true;
         }
         // Строковый параметр обработчика без аннотаций Spring берет из параметров запроса по имени

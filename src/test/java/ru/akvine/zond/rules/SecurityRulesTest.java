@@ -10,6 +10,7 @@ import ru.akvine.zond.rules.security.InsecureRandomRule;
 import ru.akvine.zond.rules.security.RequestBodyWithoutValidRule;
 import ru.akvine.zond.rules.security.SeededSecureRandomRule;
 import ru.akvine.zond.rules.security.TrustAllSslRule;
+import ru.akvine.zond.rules.security.TrustBoundaryViolationRule;
 import ru.akvine.zond.rules.security.UnboundedRequestCollectionRule;
 import ru.akvine.zond.rules.security.UnsafeDeserializationRule;
 import ru.akvine.zond.rules.security.WeakHashRule;
@@ -166,6 +167,29 @@ class SecurityRulesTest {
     }
 
     @Test
+    void insecureRandomFlowsIntoSecret() {
+        assertThat(RuleTests.lines(new InsecureRandomRule(), """
+                class VisitorCookies {
+                    void remember(HttpServletResponse response) {
+                        float rand = new java.util.Random().nextFloat();
+                        String rememberMeKey = Float.toString(rand).substring(2);
+                        response.addCookie(new Cookie("rememberMe", rememberMeKey));
+                    }
+                    void cookie(HttpServletResponse response) {
+                        long value = new Random().nextLong();
+                        String text = Long.toString(value);
+                        response.addCookie(new Cookie("visitor", text));
+                    }
+                    void shuffle(List<String> items) {
+                        int index = new Random().nextInt(items.size());
+                        String picked = items.get(index);
+                        log.info("picked {}", picked);
+                    }
+                }
+                """)).containsExactly(3, 8);
+    }
+
+    @Test
     void commandInjection() {
         assertThat(RuleTests.lines(new CommandInjectionRule(), """
                 class Sample {
@@ -177,6 +201,45 @@ class SecurityRulesTest {
                     }
                 }
                 """)).containsExactly(3, 4);
+    }
+
+    @Test
+    void trustBoundaryViolation() {
+        assertThat(RuleTests.lines(new TrustBoundaryViolationRule(), """
+                class Login extends HttpServlet {
+                    public void doPost(HttpServletRequest request, HttpServletResponse response) {
+                        String param = request.getParameter("user");
+                        request.getSession().setAttribute("userid", param);
+                        HttpSession session = request.getSession();
+                        session.putValue(param, "10340");
+                        session.setAttribute("role", "guest");
+                        session.setAttribute("count", Integer.parseInt(param));
+                        cache.setAttribute("user", param);
+                    }
+                }
+                """)).containsExactly(4, 6);
+    }
+
+    @Test
+    void commandInjectionThroughRuntimeVariableAndArguments() {
+        assertThat(RuleTests.lines(new CommandInjectionRule(), """
+                class Exec extends HttpServlet {
+                    public void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+                        String param = request.getHeader("X-Name");
+                        Runtime r = Runtime.getRuntime();
+                        String[] argsEnv = {param};
+                        r.exec(new String[] {"ls"}, argsEnv);
+                        List<String> argList = new ArrayList<String>();
+                        argList.add("sh");
+                        argList.add("-c");
+                        argList.add("echo " + param);
+                        ProcessBuilder pb = new ProcessBuilder();
+                        pb.command(argList);
+                        r.exec(new String[] {"ls", "-la"});
+                        pb.command("ls", "-la");
+                    }
+                }
+                """)).containsExactly(6, 12);
     }
 
     @Test

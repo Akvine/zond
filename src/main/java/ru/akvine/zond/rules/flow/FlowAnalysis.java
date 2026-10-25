@@ -8,11 +8,17 @@ import com.github.javaparser.ast.body.EnumDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.CastExpr;
+import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.rules.support.CallGraph;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 import ru.akvine.zond.rules.support.Types;
 
@@ -41,6 +47,12 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
 
     // Проверять, что вернет метод для null, имеет смысл только у коротких методов-проверок
     private static final int MAX_CHECKED_PARAMETERS = 3;
+    // Соглашение проекта видно, когда вызовов хотя бы столько, а проверяют на null меньше пятой части из них
+    private static final int MIN_CALLS_FOR_CONVENTION = 5;
+    private static final int CHECKED_SHARE_DIVISOR = 5;
+    private static final Set<String> NULL_AWARE_WRAPPERS = Set.of(
+            "ofNullable", "requireNonNull", "requireNonNullElse", "isNull", "nonNull", "defaultIfNull",
+            "firstNonNull", "checkNotNull", "notNull");
 
     private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
     private static FlowAnalysis cached;
@@ -84,6 +96,8 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
     // Имена методов проекта, помеченных @Nullable либо @NonNull: только их вызовы стоит разрешать ради аннотации
     private final Set<String> annotatedMethods = new HashSet<>();
     private final Map<MethodCallExpr, Optional<FlowSummary>> resolved = new IdentityHashMap<>();
+    // Метод -> результат почти нигде не проверяют на null
+    private final Map<MethodDeclaration, Boolean> usuallyUnchecked = new IdentityHashMap<>();
 
     public static synchronized FlowAnalysis of(List<SourceFile> sources) {
         if (cachedSources.get() != sources) {
@@ -157,6 +171,53 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
         }
         resolved.put(call, summary);
         return summary;
+    }
+
+    @Override
+    public boolean isUsuallyUnchecked(MethodCallExpr call) {
+        List<MethodDeclaration> targets = callGraph.targetsOf(call);
+        return targets.size() == 1 && usuallyUnchecked.computeIfAbsent(targets.get(0), this::computeUsuallyUnchecked);
+    }
+
+    // Вызовов достаточно, чтобы судить о соглашении, и почти ни один не сравнивает результат с null
+    private boolean computeUsuallyUnchecked(MethodDeclaration method) {
+        List<CallGraph.Call> calls = callGraph.callsTo(method);
+        if (calls.size() < MIN_CALLS_FOR_CONVENTION) {
+            return false;
+        }
+        long checked = calls.stream().filter(call -> isCheckedForNull(call.site())).count();
+        return checked * CHECKED_SHARE_DIVISOR < calls.size();
+    }
+
+    // current() != null, Element e = current(); if (e == null) ..., Optional.ofNullable(current())
+    private boolean isCheckedForNull(MethodCallExpr site) {
+        Node parent = site.getParentNode().orElse(null);
+        while (parent instanceof EnclosedExpr || parent instanceof CastExpr) {
+            parent = parent.getParentNode().orElse(null);
+        }
+        if (parent instanceof BinaryExpr comparison && isNullComparison(comparison)) {
+            return true;
+        }
+        if (parent instanceof MethodCallExpr wrapper && NULL_AWARE_WRAPPERS.contains(wrapper.getNameAsString())) {
+            return true;
+        }
+        String variable = parent instanceof VariableDeclarator declarator ? declarator.getNameAsString()
+                : parent instanceof AssignExpr assignment && assignment.getTarget().isNameExpr()
+                ? assignment.getTarget().asNameExpr().getNameAsString() : null;
+        if (variable == null) {
+            return false;
+        }
+        return Nodes.enclosingCallable(site).stream()
+                .flatMap(callable -> callable.findAll(BinaryExpr.class).stream())
+                .filter(this::isNullComparison)
+                .anyMatch(comparison -> comparison.getLeft().toString().equals(variable)
+                        || comparison.getRight().toString().equals(variable));
+    }
+
+    private boolean isNullComparison(BinaryExpr comparison) {
+        return (comparison.getOperator() == BinaryExpr.Operator.EQUALS
+                || comparison.getOperator() == BinaryExpr.Operator.NOT_EQUALS)
+                && (comparison.getLeft().isNullLiteralExpr() || comparison.getRight().isNullLiteralExpr());
     }
 
     /**
@@ -246,6 +307,9 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
 
     private FlowSummary compute(MethodDeclaration method) {
         FlowSummary base = new FlowInterpreter(this, false).run(method, Map.of());
+        if (base.returned().isNullish() && method.getParameters().size() <= MAX_CHECKED_PARAMETERS) {
+            base = base.withNonNullIfArgument(nonNullIfArgument(method));
+        }
         boolean isCheck = BOOLEAN_TYPE.equals(method.getType().asString())
                 && method.getParameters().size() <= MAX_CHECKED_PARAMETERS;
         if (!isCheck) {
@@ -267,5 +331,23 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
             }
         }
         return base.withResultForNullParam(resultForNull);
+    }
+
+    // getString(String key, @CheckForNull String def): с непустым def метод null не возвращает
+    private Set<Integer> nonNullIfArgument(MethodDeclaration method) {
+        Set<Integer> parameters = new HashSet<>();
+        for (int index = 0; index < method.getParameters().size(); index++) {
+            Parameter parameter = method.getParameter(index);
+            if (parameter.getType().isPrimitiveType()) {
+                continue;
+            }
+            FlowValue returned = new FlowInterpreter(this, false)
+                    .run(method, FlowInterpreter.nonNullParameter(index, parameter))
+                    .returned();
+            if (!returned.isNullish()) {
+                parameters.add(index);
+            }
+        }
+        return Set.copyOf(parameters);
     }
 }

@@ -77,6 +77,27 @@ public class Mappings {
     /**
      * @return true, если адрес задан не строкой, а константой или выражением: каков он, по коду не узнать
      */
+    /**
+     * @return адреса для сравнения обработчиков между собой: известный текст, а вместо адреса из константы
+     * (Constants.A2A.ADMIN_PATH, BASE + "/nodes") - само выражение в угловых скобках. Одна и та же константа
+     * дает один и тот же адрес, а разные константы не сливаются в пустой адрес "/"
+     */
+    public List<String> pathKeys(AnnotationExpr annotation) {
+        Optional<Expression> value = annotation.isSingleMemberAnnotationExpr()
+                ? Optional.of(annotation.asSingleMemberAnnotationExpr().getMemberValue())
+                : member(annotation, Set.of(VALUE, PATH));
+        if (value.isEmpty()) {
+            return List.of("");
+        }
+        List<Expression> items = value.get().isArrayInitializerExpr()
+                ? value.get().asArrayInitializerExpr().getValues()
+                : List.of(value.get());
+        List<String> keys = items.stream()
+                .map(item -> StringLiterals.textOf(item).orElse("<" + item + ">"))
+                .toList();
+        return keys.isEmpty() ? List.of("") : keys;
+    }
+
     public boolean hasUnknownPath(AnnotationExpr annotation) {
         Optional<Expression> value = annotation.isSingleMemberAnnotationExpr()
                 ? Optional.of(annotation.asSingleMemberAnnotationExpr().getMemberValue())

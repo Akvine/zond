@@ -440,4 +440,20 @@ public class RuleCodes {
     public final static String LIST_LOADED_FOR_COUNT_RULE_CODE = "jr:434";
     public final static String STREAM_QUERY_WITHOUT_FETCH_SIZE_RULE_CODE = "jr:435";
     public final static String EXPLICIT_GC_RULE_CODE = "jr:436";
+    public final static String REGEX_METACHARACTER_LITERAL_RULE_CODE = "jr:437";
+    public final static String COMPARATOR_CONTRACT_RULE_CODE = "jr:438";
+    public final static String ENTITY_HASH_CODE_ON_GENERATED_ID_RULE_CODE = "jr:439";
+    public final static String USE_AFTER_CLOSE_RULE_CODE = "jr:440";
+    public final static String PERIODIC_TASK_WITHOUT_CATCH_RULE_CODE = "jr:441";
+    public final static String LOCK_ORDER_INVERSION_RULE_CODE = "jr:442";
+    public final static String SUBSCRIBE_WITHOUT_ERROR_HANDLER_RULE_CODE = "jr:443";
+    public final static String BYTE_BUF_LEAK_RULE_CODE = "jr:444";
+    public final static String POLYMORPHIC_DESERIALIZATION_RULE_CODE = "jr:445";
+    public final static String UNBOUNDED_DECOMPRESSION_RULE_CODE = "jr:446";
+    public final static String TRUSTED_FORWARDED_HEADER_RULE_CODE = "jr:447";
+    public final static String CATASTROPHIC_REGEX_RULE_CODE = "jr:448";
+    public final static String TEMPLATE_INJECTION_RULE_CODE = "jr:449";
+    public final static String MOCKITO_MISUSE_RULE_CODE = "jr:450";
+    public final static String HTTP_CLIENT_PER_CALL_RULE_CODE = "jr:451";
+    public final static String TRUST_BOUNDARY_VIOLATION_RULE_CODE = "jr:452";
 }

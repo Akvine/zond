@@ -5,6 +5,7 @@ import com.github.javaparser.ast.body.BodyDeclaration;
 import com.github.javaparser.ast.body.EnumDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.expr.ClassExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -57,6 +58,7 @@ public class UnhandledRequestValueParseRule extends AbstractTaintRule {
     private static final Set<String> ANY_HANDLERS = Set.of("RuntimeException", "Exception", "Throwable");
     private static final Set<String> TEMPORAL_HANDLERS = Set.of(DATE_TIME_PARSE, "DateTimeException");
     private static final String EXCEPTION_HANDLER = "ExceptionHandler";
+    private static final String EXCEPTION_MAPPER = "ExceptionMapper";
 
     // Значение проверили до разбора: EnumUtils.isValidEnum(...), перебор Status.values()
     private static final String VALUES = "values";
@@ -103,6 +105,11 @@ public class UnhandledRequestValueParseRule extends AbstractTaintRule {
             sourceFile.unit().findAll(AnnotationExpr.class).stream()
                     .filter(annotation -> EXCEPTION_HANDLER.equals(annotation.getName().getIdentifier()))
                     .forEach(annotation -> handled.addAll(handledBy(annotation)));
+            // class DateParseMapper implements ExceptionMapper<DateTimeParseException> - обработчик JAX-RS
+            sourceFile.unit().findAll(ClassOrInterfaceType.class).stream()
+                    .filter(type -> EXCEPTION_MAPPER.equals(type.getNameAsString()))
+                    .flatMap(type -> type.getTypeArguments().stream().flatMap(List::stream))
+                    .forEach(argument -> handled.add(LocalTypes.typeName(argument)));
         }
         enums = declared;
         answered = handled;

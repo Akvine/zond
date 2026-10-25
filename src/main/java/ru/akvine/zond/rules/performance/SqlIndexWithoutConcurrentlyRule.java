@@ -12,12 +12,14 @@ import ru.akvine.zond.rules.AbstractContextRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.files.DbSchema;
 import ru.akvine.zond.rules.files.Liquibase;
+import ru.akvine.zond.rules.files.SqlDialects;
 import ru.akvine.zond.rules.files.SqlStatements;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -50,9 +52,13 @@ public class SqlIndexWithoutConcurrentlyRule extends AbstractContextRule {
             return violations;
         }
         for (TextFile file : DbSchema.migrations(context)) {
-            if (file.type() != TextFileType.SQL) {
+            // activiti.mysql.upgradestep.sql в проекте на нескольких базах: скрипт не для PostgreSQL
+            Optional<String> dialect = SqlDialects.of(file.path());
+            if (file.type() != TextFileType.SQL
+                    || dialect.filter(name -> !SqlDialects.POSTGRES.equals(name)).isPresent()) {
                 continue;
             }
+            boolean forPostgres = postgres || dialect.isPresent();
             // Только что созданная таблица пуста: индекс на ней строится мгновенно. В SQL-файле формата
             // Liquibase миграция - это набор изменений, а не файл целиком
             Set<String> createdHere = new HashSet<>();
@@ -76,7 +82,7 @@ public class SqlIndexWithoutConcurrentlyRule extends AbstractContextRule {
                                 + " CONCURRENTLY: на время построения PostgreSQL блокирует запись в таблицу, и на"
                                 + " большой таблице приложение встанет; создавайте индекс через CREATE INDEX"
                                 + " CONCURRENTLY отдельной миграцией вне транзакции")
-                        .withConfidence(postgres ? Confidence.PROBABLE : Confidence.SUSPICION));
+                        .withConfidence(forPostgres ? Confidence.PROBABLE : Confidence.SUSPICION));
             }
         }
         return violations;

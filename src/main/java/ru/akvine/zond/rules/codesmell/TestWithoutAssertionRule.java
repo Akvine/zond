@@ -5,6 +5,8 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.stmt.IfStmt;
+import com.github.javaparser.ast.stmt.ThrowStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -16,6 +18,7 @@ import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.ProjectClasses;
+import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,6 +48,9 @@ public class TestWithoutAssertionRule extends AbstractRule implements ProjectRul
             Pattern.compile("(?i).*(doesNotThrow|notThrow|noException|withoutException|noError).*");
     // Проверка во вспомогательном методе теста: processTest(config) -> verifyResult(...) -> verify(...)
     private static final int HELPER_DEPTH = 3;
+    private static final int MAX_REPORTED_PER_FILE = 10;
+    private static final int GENERATED_SUITE_SIZE = 200;
+    private static final String OVERRIDE = "Override";
 
     @Override
     public String code() {
@@ -63,7 +69,7 @@ public class TestWithoutAssertionRule extends AbstractRule implements ProjectRul
     }
 
     private List<Violation> check(SourceFile sourceFile, ProjectClasses classes) {
-        return sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        List<MethodDeclaration> tests = sourceFile.unit().findAll(MethodDeclaration.class).stream()
                 .filter(method -> Annotations.hasAny(method, TEST_ANNOTATIONS))
                 // contextLoads() проверяет сам факт запуска контекста Spring - пустое тело там уместно
                 .filter(method -> !CONTEXT_LOADS.equals(method.getNameAsString()))
@@ -71,7 +77,24 @@ public class TestWithoutAssertionRule extends AbstractRule implements ProjectRul
                 // @Ignore / @Disabled: тест не выполняется
                 .filter(method -> !Annotations.hasAny(method, DISABLED_ANNOTATIONS))
                 .filter(method -> !isFixtureOfAnotherTest(method) && !explainsNoAssertion(method))
+                // Пустой @Override - так в подклассе отключают унаследованный тест
+                .filter(method -> !(Annotations.has(method, OVERRIDE)
+                        && method.getBody().filter(body -> body.getStatements().isEmpty()).isPresent()))
                 .filter(method -> method.getBody().isPresent() && !hasAssertion(method, classes, HELPER_DEPTH))
+                .toList();
+        // Набор на сотни тестов в одном файле создан генератором (ClientCompatibilityTest_2_9 в Hazelcast на 985
+        // тестов): его пустые тесты - одна находка на файл. В обычном классе тестов каждая находка своя
+        long allTests = sourceFile.unit().findAll(MethodDeclaration.class).stream()
+                .filter(method -> Annotations.hasAny(method, TEST_ANNOTATIONS))
+                .count();
+        if (tests.size() > MAX_REPORTED_PER_FILE && allTests >= GENERATED_SUITE_SIZE) {
+            MethodDeclaration first = tests.get(0);
+            return List.of(violation(sourceFile, first,
+                    tests.size() + " тестов в этом файле ничего не проверяют, первый - '" + first.getNameAsString()
+                            + "': они пройдут при любом поведении кода, кроме исключения, и создают видимость"
+                            + " покрытия; если файл создан генератором, поправьте шаблон"));
+        }
+        return tests.stream()
                 .map(method -> violation(sourceFile, method,
                         "Тест '" + method.getNameAsString() + "' ничего не проверяет: он пройдет при любом"
                                 + " поведении кода, кроме исключения, и создает видимость покрытия;"
@@ -99,7 +122,8 @@ public class TestWithoutAssertionRule extends AbstractRule implements ProjectRul
         List<MethodCallExpr> calls = method.findAll(MethodCallExpr.class);
         if (calls.stream().map(MethodCallExpr::getNameAsString)
                 .anyMatch(name -> ASSERTION_PREFIXES.stream().anyMatch(name::startsWith))
-                || calls.stream().anyMatch(call -> isOpaqueTestingHelper(method, call, classes))) {
+                || calls.stream().anyMatch(call -> isOpaqueTestingHelper(method, call, classes))
+                || failsOnCondition(method)) {
             return true;
         }
         if (depth <= 0) {
@@ -149,21 +173,45 @@ public class TestWithoutAssertionRule extends AbstractRule implements ProjectRul
                 .isPresent();
     }
 
-    // JacksonSerializationTest.canonicalSerialization(...) и helper.runNoLossSmokeTest(): метод другого класса
-    // проекта - статический либо у поля или переменной, тип которых объявлен
+    // if (result.hasError()) throw result.getError().getException(): тест падает сам, когда условие нарушено
+    private boolean failsOnCondition(MethodDeclaration method) {
+        return method.findAll(ThrowStmt.class).stream()
+                .anyMatch(statement -> statement.findAncestor(IfStmt.class)
+                        .filter(branch -> method.isAncestorOf(branch))
+                        .isPresent());
+    }
+
+    // JacksonSerializationTest.canonicalSerialization(...), helper.runNoLossSmokeTest() и
+    // new SerializationTester(...).runTests(): метод другого класса проекта - статический, у поля или переменной,
+    // тип которых объявлен, либо у объекта, созданного тут же
     private List<MethodDeclaration> objectHelpersOf(MethodCallExpr call, ProjectClasses classes) {
         Optional<String> owner = call.getScope()
-                .filter(Expression::isNameExpr)
+                .filter(scope -> scope.isNameExpr() || scope.isObjectCreationExpr())
                 .flatMap(scope -> {
+                    if (scope.isObjectCreationExpr()) {
+                        return Optional.of(scope.asObjectCreationExpr().getType().getNameAsString());
+                    }
                     String name = scope.asNameExpr().getNameAsString();
                     return Character.isUpperCase(name.charAt(0))
                             ? Optional.of(name)
                             : LocalTypes.findDeclaration(scope).flatMap(LocalTypes::declaredType);
                 });
-        return owner.flatMap(classes::find).stream()
-                .flatMap(type -> type.getMethodsByName(call.getNameAsString()).stream())
+        Optional<ClassOrInterfaceDeclaration> type = owner.flatMap(classes::find);
+        if (type.isEmpty()) {
+            return List.of();
+        }
+        List<MethodDeclaration> declared = type.get().getMethodsByName(call.getNameAsString()).stream()
                 .filter(candidate -> candidate.getParameters().size() == call.getArguments().size()
                         || candidate.getParameters().stream().anyMatch(Parameter::isVarArgs))
+                .toList();
+        // handler.handle(message): handle унаследован от базового класса и вызывает переопределенные
+        // handleMembersViewEvent(...) с assertTrue внутри - проверка в них. Только у тестового двойника:
+        // в рабочем классе checkState(...) в переопределенных методах - проверка входа, а не теста
+        if (!declared.isEmpty() || !TestClasses.isInside(type.get())) {
+            return declared;
+        }
+        return type.get().getMethods().stream()
+                .filter(method -> Annotations.has(method, OVERRIDE))
                 .toList();
     }
 

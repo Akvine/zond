@@ -73,6 +73,12 @@ public class SqlConcatenationRule extends AbstractTaintRule {
         return violations;
     }
 
+    // Данные попадают в запрос к базе: экранирование для другого места их не обезвреживает
+    @Override
+    protected Taint.Sink sink() {
+        return Taint.Sink.SQL;
+    }
+
     @Override
     public ErrorLevel errorLevel() {
         return ErrorLevel.CRITICAL;

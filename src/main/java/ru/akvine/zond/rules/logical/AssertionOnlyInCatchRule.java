@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules.logical;
 
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.CatchClause;
 import com.github.javaparser.ast.stmt.ThrowStmt;
@@ -12,6 +13,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
@@ -22,6 +24,8 @@ import java.util.Set;
 public class AssertionOnlyInCatchRule extends AbstractRule {
     private static final Set<String> TEST_ANNOTATIONS = Set.of("Test", "ParameterizedTest", "RepeatedTest");
     private static final String ASSERT_PREFIX = "assert";
+    private static final String ASSERT_TRUE = "assertTrue";
+    private static final String ASSERT_FALSE = "assertFalse";
     // С этими вызовами тест падает и тогда, когда исключения не было
     private static final Set<String> FAILING = Set.of("fail", "assertThrows", "assertThatThrownBy", "catchThrowable",
             "assertThatExceptionOfType", "expectThrows", "shouldHaveThrown", "failBecauseExceptionWasNotThrown");
@@ -42,7 +46,7 @@ public class AssertionOnlyInCatchRule extends AbstractRule {
         for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
             boolean isTest = TestClasses.annotationNames(method).stream().anyMatch(TEST_ANNOTATIONS::contains);
             boolean failsWithoutException = method.findAll(MethodCallExpr.class).stream()
-                    .anyMatch(call -> FAILING.contains(call.getNameAsString()));
+                    .anyMatch(this::alwaysFails);
             if (!isTest || failsWithoutException) {
                 continue;
             }
@@ -76,7 +80,20 @@ public class AssertionOnlyInCatchRule extends AbstractRule {
 
     private boolean hasAssertion(CatchClause clause) {
         return clause.findAll(MethodCallExpr.class).stream()
-                .anyMatch(call -> call.getNameAsString().startsWith(ASSERT_PREFIX));
+                .anyMatch(call -> call.getNameAsString().startsWith(ASSERT_PREFIX) && !alwaysFails(call));
+    }
+
+    // fail(), assertThrows(...) и их старая запись assertTrue(false) / assertFalse(true): падают всегда
+    private boolean alwaysFails(MethodCallExpr call) {
+        if (FAILING.contains(call.getNameAsString())) {
+            return true;
+        }
+        boolean expectsTrue = ASSERT_TRUE.equals(call.getNameAsString());
+        if (!expectsTrue && !ASSERT_FALSE.equals(call.getNameAsString()) || call.getArguments().isEmpty()) {
+            return false;
+        }
+        Expression condition = Nodes.unwrap(call.getArgument(call.getArguments().size() - 1));
+        return condition.isBooleanLiteralExpr() && condition.asBooleanLiteralExpr().getValue() != expectsTrue;
     }
 
     // Правило проверяет сами тесты

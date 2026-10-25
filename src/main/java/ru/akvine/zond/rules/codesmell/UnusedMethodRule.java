@@ -3,6 +3,7 @@ package ru.akvine.zond.rules.codesmell;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -54,7 +55,9 @@ public class UnusedMethodRule extends AbstractUnusedDeclarationRule {
                     "Метод '" + type.getNameAsString() + "." + method.getNameAsString() + "' " + reason
                             + ": мертвый код приходится читать и сопровождать впустую;"
                             + " удалите его. Если его вызывают извне (другой модуль, рефлексия, шаблон),"
-                            + " скройте находку комментарием zond:ignore"));
+                            + " скройте находку комментарием zond:ignore")
+                    // Открытый метод модуля без точки входа - API, его могут вызывать снаружи проекта
+                    .withConfidence(usages.isModuleApi(method) ? Confidence.SUSPICION : null));
         }
     }
 

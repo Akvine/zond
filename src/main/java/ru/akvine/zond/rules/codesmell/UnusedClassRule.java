@@ -2,6 +2,7 @@ package ru.akvine.zond.rules.codesmell;
 
 import com.github.javaparser.ast.body.TypeDeclaration;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -42,7 +43,9 @@ public class UnusedClassRule extends AbstractUnusedDeclarationRule {
         violations.add(violation(sourceFile, type,
                 "Класс '" + type.getNameAsString() + "' " + reason + ": мертвый код"
                         + " приходится читать и сопровождать впустую; удалите его. Если им пользуются извне"
-                        + " (другой модуль, рефлексия, файл настроек), скройте находку комментарием zond:ignore"));
+                        + " (другой модуль, рефлексия, файл настроек), скройте находку комментарием zond:ignore")
+                // Открытый класс модуля без точки входа - API, которым могут пользоваться снаружи проекта
+                .withConfidence(usages.isModuleApi(type) ? Confidence.SUSPICION : null));
     }
 
     @Override

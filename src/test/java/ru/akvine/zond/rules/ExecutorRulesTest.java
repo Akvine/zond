@@ -1,11 +1,14 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.codesmell.ExecutorWithoutMdcRule;
 import ru.akvine.zond.rules.concurrency.FutureGetInLoopRule;
 import ru.akvine.zond.rules.resources.ExecutorNotShutdownRule;
 import ru.akvine.zond.rules.resources.ThreadLocalNotRemovedRule;
 import ru.akvine.zond.rules.resources.UnboundedExecutorRule;
+
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -97,12 +100,25 @@ class ExecutorRulesTest {
 
     @Test
     void executorWithoutMdc() {
-        assertThat(RuleTests.lines(new ExecutorWithoutMdcRule(), """
+        String pools = """
                 class Sample {
                     ExecutorService a = Executors.newFixedThreadPool(2);
                     ExecutorService b = new ThreadPoolExecutor(1, 1, 0, TimeUnit.SECONDS, new ArrayBlockingQueue<>(1));
                 }
-                """)).containsExactly(2, 3);
+                """;
+        String filter = """
+                class TraceFilter {
+                    void doFilter(HttpServletRequest request) {
+                        MDC.put("traceId", request.getHeader("X-Trace-Id"));
+                    }
+                }
+                """;
+        assertThat(RuleTests.checkProject(new ExecutorWithoutMdcRule(),
+                Map.of("Sample.java", pools, "TraceFilter.java", filter)))
+                .extracting(Violation::line)
+                .containsExactly(2, 3);
+        // Проект сам ничего не кладет в MDC - передавать в потоки нечего
+        assertThat(RuleTests.checkProject(new ExecutorWithoutMdcRule(), Map.of("Sample.java", pools))).isEmpty();
 
         assertThat(RuleTests.lines(new ExecutorWithoutMdcRule(), """
                 class Sample {

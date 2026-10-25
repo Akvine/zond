@@ -15,6 +15,7 @@ import java.util.regex.Pattern;
 @UtilityClass
 public class SqlStatements {
     private static final String LINE_COMMENT = "--";
+    private static final String HASH_COMMENT = "#";
     private static final String BLOCK_COMMENT_START = "/*";
     private static final String BLOCK_COMMENT_END = "*/";
     private static final String DOLLAR_QUOTE = "$$";
@@ -52,6 +53,11 @@ public class SqlStatements {
             // В формате Liquibase каждый changeset - отдельный пакет: команда перед ним могла остаться без ';'
             if (!inBlockComment && !inString && !inDollarQuote && BATCH_SEPARATOR.matcher(line).matches()) {
                 add(statements, current, startLine);
+                continue;
+            }
+            // # DEPLOY_TIME_ in ACT_RE_DEPLOYMENT - строчный комментарий MySQL. Только в начале строки: в
+            // PostgreSQL # внутри выражения - оператор
+            if (!inBlockComment && !inString && !inDollarQuote && line.stripLeading().startsWith(HASH_COMMENT)) {
                 continue;
             }
             for (int index = 0; index < line.length(); index++) {

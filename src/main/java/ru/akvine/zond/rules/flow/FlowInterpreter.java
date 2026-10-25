@@ -135,6 +135,14 @@ public final class FlowInterpreter {
      */
     public interface Host {
         Optional<FlowSummary> summaryOf(MethodCallExpr call);
+
+        /**
+         * @return true, если результат метода в проекте почти никогда не проверяют на null: так принято,
+         * и непроверенный вызов - не отклонение от правил проекта
+         */
+        default boolean isUsuallyUnchecked(MethodCallExpr call) {
+            return false;
+        }
     }
 
     /**
@@ -169,6 +177,7 @@ public final class FlowInterpreter {
     private final List<String> parameterNames = new ArrayList<>();
     // Переменные, объявленные с примитивным типом: Integer, в отличие от int, может стать null
     private final Set<String> primitives = new HashSet<>();
+    private final Set<String> booleans = new HashSet<>();
     private FlowValue returned;
     private FlowState exitState;
 
@@ -235,7 +244,8 @@ public final class FlowInterpreter {
                 nonNullAfterCall,
                 exitState == null && hasStatements,
                 mutatesFields,
-                Map.of());
+                Map.of(),
+                Set.of());
     }
 
     // Поля объявившего метод класса. Поля volatile не отслеживаются: их меняют другие потоки
@@ -340,7 +350,18 @@ public final class FlowInterpreter {
         }
         if (statement instanceof ExpressionStmt expression) {
             evaluate(expression.getExpression(), state);
-            return terminated ? null : state;
+            if (terminated) {
+                return null;
+            }
+            // Preconditions.checkState(sourceName != null): дальше выполнение идет, только если условие истинно
+            Optional<Expression> asserted = assertedCondition(expression.getExpression());
+            if (asserted.isPresent()) {
+                quietConditions++;
+                Branches branches = branch(asserted.get(), state);
+                quietConditions--;
+                return branches.whenTrue() == null ? state : branches.whenTrue();
+            }
+            return state;
         }
         if (statement instanceof IfStmt ifStatement) {
             return executeIf(ifStatement, state);
@@ -407,6 +428,20 @@ public final class FlowInterpreter {
         }
         // Объявление локального класса, пустой оператор и все незнакомое состояние не меняет
         return state;
+    }
+
+    // checkState(x != null), Assert.isTrue(!items.isEmpty(), "..."): первый аргумент - условие, а не значение
+    // (verify(mock) у Mockito под это не подходит)
+    private Optional<Expression> assertedCondition(Expression expression) {
+        if (!(expression instanceof MethodCallExpr call) || !FlowLibrary.assertsTrue(call.getNameAsString())
+                || call.getArguments().isEmpty()) {
+            return Optional.empty();
+        }
+        Expression condition = unwrap(call.getArgument(0));
+        boolean isCondition = condition.isBinaryExpr() || condition.isInstanceOfExpr()
+                || condition.isUnaryExpr()
+                && condition.asUnaryExpr().getOperator() == UnaryExpr.Operator.LOGICAL_COMPLEMENT;
+        return isCondition ? Optional.of(condition) : Optional.empty();
     }
 
     private FlowState executeAll(List<Statement> statements, FlowState state) {
@@ -941,14 +976,24 @@ public final class FlowInterpreter {
     // identity = fetches.isEmpty() ? null : new HashMap<>(): проверка fetches.isEmpty() ниже скажет, null ли identity
     private void correlateConditional(String name, Expression initializer, FlowState state) {
         Expression value = unwrap(initializer);
-        if (!(value instanceof ConditionalExpr conditional)
-                || !(unwrap(conditional.getCondition()) instanceof MethodCallExpr condition)) {
+        if (!(value instanceof ConditionalExpr conditional)) {
             return;
         }
         boolean thenNull = unwrap(conditional.getThenExpr()).isNullLiteralExpr();
         boolean elseNull = unwrap(conditional.getElseExpr()).isNullLiteralExpr();
         FlowValue current = state.get(name);
         if (thenNull == elseNull || current == null) {
+            return;
+        }
+        // Node params = isFnLiteral ? fn.getFirstChild() : null; ниже isFnLiteral ? params.getNext() : null
+        Expression flag = unwrap(conditional.getCondition());
+        if (flag instanceof NameExpr && !flag.toString().equals(name)) {
+            state.correlate(new FlowState.Correlation(name, flag.toString(), !thenNull,
+                    current.withNullness(FlowValue.Nullness.NOT_NULL, "значение выбрано по условию '" + flag + "'",
+                            conditional), Set.of(flag.toString())));
+            return;
+        }
+        if (!(flag instanceof MethodCallExpr condition)) {
             return;
         }
         String text = condition.toString();
@@ -1009,6 +1054,11 @@ public final class FlowInterpreter {
         } else {
             primitives.remove(name);
         }
+        if (BOOLEAN_TYPE.equals(typeName)) {
+            booleans.add(name);
+        } else {
+            booleans.remove(name);
+        }
     }
 
     // Значение, о котором известен только тип: у чисел это полный диапазон, у boolean - false либо true
@@ -1048,7 +1098,7 @@ public final class FlowInterpreter {
         FlowValue value = evaluate(assignment.getValue(), state);
         FlowValue result;
         if (assignment.getOperator() == AssignExpr.Operator.ASSIGN) {
-            result = assigned(value, primitives.contains(name) ? numberLike(current) : FlowValue.unknown(), assignment);
+            result = assigned(value, primitives.contains(name) ? typedUnknown(name) : FlowValue.unknown(), assignment);
         } else {
             BinaryExpr.Operator operator = assignment.getOperator().toBinaryOperator().orElse(null);
             result = operator == null ? FlowValue.unknown() : arithmetic(operator, current, value, assignment);
@@ -1063,8 +1113,10 @@ public final class FlowInterpreter {
         return result;
     }
 
-    private FlowValue numberLike(FlowValue value) {
-        return value.min() >= 0 && value.max() <= 1 ? FlowValue.bool() : FlowValue.anyNumber();
+    // О новом значении известен только тип переменной. По прежнему значению тип не угадать: int version = 0
+    // лежит в тех же 0..1, что и boolean, а потом version = buf.readUnsignedByte() дает что угодно
+    private FlowValue typedUnknown(String name) {
+        return booleans.contains(name) ? FlowValue.bool() : FlowValue.anyNumber();
     }
 
     private FlowValue evaluateUnary(UnaryExpr unary, FlowState state) {
@@ -1541,9 +1593,19 @@ public final class FlowInterpreter {
         if (returned.isNullish() && (isAfterHasCheck(call) || isIndexWithinSize(call))) {
             return FlowValue.unknown();
         }
+        // getString(KEY, DEFAULT_VALUE): метод возвращает null, только если null передали в запасное значение
+        boolean defaultGiven = summary.nonNullIfArgument().stream()
+                .anyMatch(index -> index < arguments.size() && arguments.get(index).isNotNull());
+        if (returned.isNullish() && defaultGiven) {
+            return FlowValue.unknown();
+        }
         if (returned.isNullish()) {
             if (returned.origin() instanceof MethodDeclaration) {
                 return FlowValue.maybeNull("метод '" + method + "' помечен @Nullable", call);
+            }
+            // tb.currentElement() в Jsoup: null возможен лишь в краевом случае, и десятки вызовов его не проверяют
+            if (host.isUsuallyUnchecked(call)) {
+                return FlowValue.unknown();
             }
             int line = returned.line();
             return FlowValue.maybeNull(
@@ -2195,6 +2257,12 @@ public final class FlowInterpreter {
     public static Map<Integer, FlowValue> nullParameter(int index, Parameter parameter) {
         Map<Integer, FlowValue> overrides = new HashMap<>();
         overrides.put(index, FlowValue.nullValue("параметр равен null", parameter));
+        return overrides;
+    }
+
+    public static Map<Integer, FlowValue> nonNullParameter(int index, Parameter parameter) {
+        Map<Integer, FlowValue> overrides = new HashMap<>();
+        overrides.put(index, FlowValue.parameter(index).withNullness(FlowValue.Nullness.NOT_NULL, "параметр не null", parameter));
         return overrides;
     }
 }

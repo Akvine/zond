@@ -15,6 +15,8 @@ import java.util.Set;
  *                            после вызова о полях ничего не известно
  * @param resultForNullParam  для методов-проверок: что вернет метод, если параметр равен null.
  *                            isBlank(null) == true означает, что после !isBlank(x) значение x не null
+ * @param nonNullIfArgument   номера параметров, при непустом значении которых метод null не вернет:
+ *                            getString(key, def) возвращает null, только если null передали в def
  */
 public record FlowSummary(
         FlowValue returned,
@@ -22,20 +24,28 @@ public record FlowSummary(
         Set<Integer> nonNullAfterCall,
         boolean neverReturns,
         boolean mutatesFields,
-        Map<Integer, Boolean> resultForNullParam) {
+        Map<Integer, Boolean> resultForNullParam,
+        Set<Integer> nonNullIfArgument) {
 
     /**
      * Сводка метода, о котором ничего не известно: рекурсивного либо без тела
      */
     public static FlowSummary unknown() {
-        return new FlowSummary(FlowValue.unknown(), Set.of(), Set.of(), false, true, Map.of());
+        return new FlowSummary(FlowValue.unknown(), Set.of(), Set.of(), false, true, Map.of(), Set.of());
     }
 
     public FlowSummary withReturned(FlowValue value) {
-        return new FlowSummary(value, dereferencedParams, nonNullAfterCall, neverReturns, mutatesFields, resultForNullParam);
+        return new FlowSummary(value, dereferencedParams, nonNullAfterCall, neverReturns, mutatesFields,
+                resultForNullParam, nonNullIfArgument);
     }
 
     public FlowSummary withResultForNullParam(Map<Integer, Boolean> results) {
-        return new FlowSummary(returned, dereferencedParams, nonNullAfterCall, neverReturns, mutatesFields, results);
+        return new FlowSummary(returned, dereferencedParams, nonNullAfterCall, neverReturns, mutatesFields, results,
+                nonNullIfArgument);
+    }
+
+    public FlowSummary withNonNullIfArgument(Set<Integer> parameters) {
+        return new FlowSummary(returned, dereferencedParams, nonNullAfterCall, neverReturns, mutatesFields,
+                resultForNullParam, parameters);
     }
 }

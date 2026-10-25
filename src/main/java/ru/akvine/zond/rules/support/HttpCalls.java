@@ -25,8 +25,10 @@ public class HttpCalls {
     private static final Set<String> URL_TYPES = Set.of("URL", "URLConnection");
 
     // Имя, которое говорит об HTTP само
+    // Имя кончается на клиента: httpClient, paymentRestTemplate. httpClientDefinition, httpClientConfig - его
+    // описание или настройки, а не сам клиент
     private static final Pattern HTTP_CLIENT = Pattern.compile(
-            ".*(resttemplate|webclient|restclient|httpclient|feign).*", Pattern.CASE_INSENSITIVE);
+            ".*(resttemplate|webclient|restclient|httpclient|feign|feignclient)$", Pattern.CASE_INSENSITIVE);
 
     // Имя, которое может означать и HTTP-клиент (paymentClient), и клиента-покупателя (client, ownerClient):
     // одного его мало, смотрим еще на то, что с объектом делают
@@ -99,9 +101,12 @@ public class HttpCalls {
         // restTemplate.getMessageConverters().remove(converter): работа с настройками клиента, а не запрос
         Expression value = Nodes.unwrap(scope);
         boolean onAccessorResult = value.isMethodCallExpr() && isAccessor(value.asMethodCallExpr());
+        // HttpClientDefinition.lookup(...): статический метод класса, а не запрос через объект-клиент
+        boolean onType = value.isNameExpr() && Character.isUpperCase(receiver.charAt(0));
         return HTTP_METHODS.contains(method)
-                || HTTP_CLIENT.matcher(receiver).matches() && !onAccessorResult
-                || guessByClientName && MAYBE_CLIENT.matcher(receiver).matches() && !isDataAccess(call, scope);
+                || HTTP_CLIENT.matcher(receiver).matches() && !onAccessorResult && !onType
+                || guessByClientName && MAYBE_CLIENT.matcher(receiver).matches() && !isDataAccess(call, scope)
+                && !onType;
     }
 
     // Интерфейс без реализации в коде: аннотации на нем или на его методах описывают HTTP-запросы

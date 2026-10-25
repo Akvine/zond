@@ -116,6 +116,41 @@ public class CodeContexts {
             "supplyAsync", "invokeLater", "start");
     private static final String THREAD = "Thread";
     private static final String FUNCTIONAL_INTERFACE = "FunctionalInterface";
+    // throws Exception: метод заявляет, что может упасть с чем угодно
+    private static final Set<String> BROAD_EXCEPTIONS = Set.of("Exception", "Throwable");
+    private static final int MAX_CALLER_DEPTH = 3;
+
+    /**
+     * @return true, если метод с узлом объявлен как "может упасть с чем угодно" (throws Exception) либо его
+     * внутри класса вызывают только такие методы: decodePosition(...) из decode(...) throws Exception в декодере
+     * протокола. Ошибка разбора неверного ввода здесь - часть объявленного поведения: ее получит вызывающий
+     */
+    public boolean isDeclaredToFail(Node node) {
+        return node.findAncestor(MethodDeclaration.class)
+                .filter(method -> isDeclaredToFail(method, MAX_CALLER_DEPTH, new HashSet<>()))
+                .isPresent();
+    }
+
+    private boolean isDeclaredToFail(MethodDeclaration method, int depth, Set<MethodDeclaration> visited) {
+        if (method.getThrownExceptions().stream().map(LocalTypes::typeName).anyMatch(BROAD_EXCEPTIONS::contains)) {
+            return true;
+        }
+        if (depth <= 0 || method.isPublic() || !visited.add(method)) {
+            return false;
+        }
+        Optional<TypeDeclaration<?>> owner = method.findAncestor(TypeDeclaration.class)
+                .map(type -> (TypeDeclaration<?>) type);
+        if (owner.isEmpty()) {
+            return false;
+        }
+        List<MethodDeclaration> callers = owner.get().findAll(MethodCallExpr.class).stream()
+                .filter(call -> call.getNameAsString().equals(method.getNameAsString()))
+                .filter(call -> call.getScope().filter(scope -> !scope.isThisExpr()).isEmpty())
+                .map(call -> call.findAncestor(MethodDeclaration.class).orElse(null))
+                .toList();
+        return !callers.isEmpty() && callers.stream()
+                .allMatch(caller -> caller != null && caller != method && isDeclaredToFail(caller, depth - 1, visited));
+    }
 
     /**
      * @return true, если узел выполняется один раз при запуске приложения или загрузке класса: статическая

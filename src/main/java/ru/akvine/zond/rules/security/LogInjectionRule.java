@@ -31,6 +31,10 @@ public class LogInjectionRule extends AbstractTaintRule {
 
     // Значение уже очищено: value.replaceAll("[\r\n]", "_"), sanitize(value), encode(value)
     private static final Pattern CLEANED = Pattern.compile(".*(replace|strip|sanitize|encode|escape|clean).*");
+    // getQueryString() и getRequestURI() не раскодированы - перевод строки в них бывает только как %0A; сырой CR/LF
+    // в заголовке не пропустит разбор HTTP. getParameter и getPathInfo раскодированы и проверяются
+    private static final Pattern LINE_FREE_REQUEST_PARTS = Pattern.compile(
+            "\\.(getQueryString|getRequestURI|getRequestURL|getHeader|getHeaders)\\(");
 
     @Override
     public String code() {
@@ -87,6 +91,7 @@ public class LogInjectionRule extends AbstractTaintRule {
             boolean text = type.filter(name -> !TEXT_TYPES.contains(name)).isEmpty();
             Optional<Input> source = taint.findSource(argument)
                     .filter(Taint.Source::isDirectInput)
+                    .filter(found -> !LINE_FREE_REQUEST_PARTS.matcher(found.text()).find())
                     .map(found -> new Input(found.toString(), text));
             if (source.isPresent()) {
                 return source;

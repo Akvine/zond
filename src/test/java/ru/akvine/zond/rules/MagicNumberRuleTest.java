@@ -19,7 +19,7 @@ class MagicNumberRuleTest {
                     int run(int value) {
                         int timeout = 5000;
                         if (value > 42) {
-                            return value * 3600;
+                            return value * 37;
                         }
                         wait(1500L);
                         double rate = value * 0.15;
@@ -30,6 +30,24 @@ class MagicNumberRuleTest {
                     }
                 }
                 """)).containsExactly(8, 9, 11, 12);
+    }
+
+    @Test
+    void ignoresAnnotationDefaultsRadixAndShiftDistance() {
+        assertThat(RuleTests.lines(rule, """
+                @interface RateLimiter {
+                    int time() default 60;
+                }
+                class Codec {
+                    int decode(String hex, long bits, byte b3, BigInteger big) {
+                        int value = Integer.parseInt(hex, 16) + Character.digit(hex.charAt(0), 16);
+                        String text = big.toString(36) + new BigInteger(hex, 2);
+                        long high = bits >> 16;
+                        byte low = (byte) (b3 >>> 6 ^ 0xfc);
+                        return Integer.valueOf(16) + value;
+                    }
+                }
+                """)).containsExactly(10);
     }
 
     @Test

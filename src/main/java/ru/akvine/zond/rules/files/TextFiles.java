@@ -24,6 +24,8 @@ public class TextFiles {
     // multi-tenant-demo-backups, old-schema-files, sample_data, db-dumps: копии базы и устаревшие схемы
     private static final Pattern COPY_DIRECTORY = Pattern.compile("(?i).*(backup|dump|sample|archive).*|old[-_].*|.*[-_]old");
     private static final int SAMPLE_DEPTH = 3;
+    private static final Set<String> DROP_DIRECTORIES = Set.of("drop");
+    private static final Pattern DROP_SCRIPT = Pattern.compile("(?i)(.*\\.)?drop([-._].*)?\\.sql");
     private static final Pattern DEMO_DIRECTORY =
             Pattern.compile("(?i)examples?|demos?|.*[-_]demo|demo[-_].*|quickstart");
     private static final Set<String> BUILD_IMAGE_DIRECTORIES =
@@ -44,7 +46,14 @@ public class TextFiles {
         boolean migrationType = file.type() == TextFileType.SQL
                 || file.type() == TextFileType.LIQUIBASE_XML
                 || file.type() == TextFileType.LIQUIBASE_YAML;
-        return migrationType && !isSampleData(file.path());
+        return migrationType && !isSampleData(file.path()) && !isDropScript(file.path());
+    }
+
+    // db/drop/activiti.mysql.drop.engine.sql - удаление схемы при деинсталляции, а не шаг миграции: его DROP TABLE
+    // не применяется к рабочей базе по порядку. V3__drop_column.sql у Flyway - обычная миграция
+    private boolean isDropScript(Path path) {
+        String name = path.getFileName() == null ? "" : path.getFileName().toString();
+        return isNearestDirectory(path, DROP_DIRECTORIES) || DROP_SCRIPT.matcher(name).matches();
     }
 
     // samples/schemas/changelog.xml - входные данные или пример, а не миграция проекта; demo-backups/bk_tenant.sql -
