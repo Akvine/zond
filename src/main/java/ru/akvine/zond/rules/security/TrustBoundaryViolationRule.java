@@ -64,6 +64,12 @@ public class TrustBoundaryViolationRule extends AbstractTaintRule {
         return violations;
     }
 
+    // Экранирование для HTML или SQL меняет запись значения, но не делает его установленным сервером
+    @Override
+    protected Taint.Sink sink() {
+        return Taint.Sink.SESSION;
+    }
+
     @Override
     public ErrorLevel errorLevel() {
         return ErrorLevel.MAJOR;

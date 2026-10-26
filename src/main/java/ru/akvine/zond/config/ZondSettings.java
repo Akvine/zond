@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.models.TimingThresholds;
 import ru.akvine.zond.rules.flow.FlowLibrary;
+import ru.akvine.zond.rules.support.TaintLibrary;
 
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -33,6 +34,7 @@ public class ZondSettings {
     private static final String STATISTIC_YELLOW = "zond.report.statistic.yellow-percent";
     private static final String STATISTIC_GREEN = "zond.report.statistic.green-percent";
     private static final String FLOW_LIBRARY = "zond.flow.library";
+    private static final String TAINT_LIBRARY = "zond.taint.library";
     private static final String AUTO_CLASSPATH = "zond.scan.auto-classpath";
     private static final String MAVEN_REPOSITORY = "zond.scan.maven-repository";
     private static final String REPORT_CONFIDENCE = "zond.report.confidence";
@@ -68,6 +70,11 @@ public class ZondSettings {
         String library = environment.getProperty(FLOW_LIBRARY, "").trim();
         if (!library.isEmpty()) {
             FlowLibrary.extend(Path.of(library));
+        }
+        // Так же - справочник источников данных извне и их очистки
+        String taintLibrary = environment.getProperty(TAINT_LIBRARY, "").trim();
+        if (!taintLibrary.isEmpty()) {
+            TaintLibrary.extend(Path.of(taintLibrary));
         }
     }
 

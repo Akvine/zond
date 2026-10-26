@@ -19,7 +19,7 @@ import java.util.Set;
 
 @Component
 public class ResponseWriteWithoutEscapingRule extends AbstractTaintRule {
-    private static final Set<String> WRITE_METHODS = Set.of("write", "print", "println", "append", "printf");
+    private static final Set<String> WRITE_METHODS = Set.of("write", "print", "println", "append", "printf", "format");
     private static final String GET_WRITER = "getWriter()";
     private static final String GET_OUTPUT_STREAM = "getOutputStream()";
 

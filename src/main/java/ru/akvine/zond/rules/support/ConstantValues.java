@@ -94,11 +94,19 @@ public class ConstantValues {
         return entry.getStatements().stream().anyMatch(statement -> statement == child);
     }
 
-    // switch (selector) с известным значением: case, с которого начнется выполнение, и те, куда оно провалится
     private boolean isSkipped(SwitchStmt choice, SwitchEntry entry) {
+        return liveEntries(choice).filter(reached -> reached.stream().noneMatch(found -> found == entry)).isPresent();
+    }
+
+    /**
+     * switch (selector) с известным значением: case, с которого начнется выполнение, и те, куда оно провалится.
+     *
+     * @return пусто, если значение или метки неизвестны (case RED у enum) и выполниться может любая ветка
+     */
+    public Optional<List<SwitchEntry>> liveEntries(SwitchStmt choice) {
         Optional<Object> selector = evaluate(choice.getSelector());
         if (selector.isEmpty()) {
-            return false;
+            return Optional.empty();
         }
         List<SwitchEntry> entries = choice.getEntries();
         int start = -1;
@@ -106,8 +114,7 @@ public class ConstantValues {
             for (Expression label : entries.get(index).getLabels()) {
                 Optional<Object> value = evaluate(label);
                 if (value.isEmpty()) {
-                    // case RED: у enum и прочих меток значение неизвестно - выводов не делаем
-                    return false;
+                    return Optional.empty();
                 }
                 if (same(value.get(), selector.get())) {
                     start = index;
@@ -117,18 +124,15 @@ public class ConstantValues {
         if (start < 0) {
             start = indexOfDefault(entries);
         }
-        if (start < 0) {
-            return true;
-        }
         List<SwitchEntry> reached = new ArrayList<>();
-        for (int index = start; index < entries.size(); index++) {
+        for (int index = Math.max(start, 0); start >= 0 && index < entries.size(); index++) {
             SwitchEntry current = entries.get(index);
             reached.add(current);
             if (current.getType() != SwitchEntry.Type.STATEMENT_GROUP || endsWithExit(current)) {
                 break;
             }
         }
-        return reached.stream().noneMatch(found -> found == entry);
+        return Optional.of(reached);
     }
 
     private int indexOfDefault(List<SwitchEntry> entries) {

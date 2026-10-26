@@ -12,7 +12,7 @@ import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
-import ru.akvine.zond.rules.support.StringLiterals;
+import ru.akvine.zond.rules.support.ResourceProperties;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -49,7 +49,8 @@ public class WeakCipherRule extends AbstractRule {
             if (!MethodCalls.isCallOn(call, CIPHER, GET_INSTANCE) || call.getArguments().isEmpty()) {
                 continue;
             }
-            StringLiterals.textOf(call.getArgument(0))
+            // Cipher.getInstance("DES/ECB/PKCS5Padding"), переменная с таким значением или настройка из файла
+            ResourceProperties.textOf(call.getArgument(0))
                     .flatMap(this::describeProblem)
                     .ifPresent(problem -> violations.add(violation(sourceFile, call,
                             "'" + call + "': " + problem + "; используйте AES/GCM/NoPadding со случайным IV")));

@@ -456,4 +456,7 @@ public class RuleCodes {
     public final static String MOCKITO_MISUSE_RULE_CODE = "jr:450";
     public final static String HTTP_CLIENT_PER_CALL_RULE_CODE = "jr:451";
     public final static String TRUST_BOUNDARY_VIOLATION_RULE_CODE = "jr:452";
+    public final static String READ_LOOP_WITHOUT_EOF_RULE_CODE = "jr:453";
+    public final static String USUALLY_CHECKED_RESULT_IGNORED_RULE_CODE = "jr:454";
+    public final static String PURE_CALL_RESULT_IGNORED_RULE_CODE = "jr:455";
 }

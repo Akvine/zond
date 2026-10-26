@@ -15,6 +15,8 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.MethodCalls;
+import ru.akvine.zond.rules.support.ResourceProperties;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -42,6 +44,8 @@ public class WeakHashRule extends AbstractRule {
 
     private static final Set<String> WEAK_HASH_METHODS = Set.of(
             "md5", "md5Hex", "md5DigestAsHex", "md2Hex", "sha1", "sha1Hex", "sha", "shaHex");
+    private static final String MESSAGE_DIGEST = "MessageDigest";
+    private static final String GET_INSTANCE = "getInstance";
 
     @Override
     public String code() {
@@ -67,6 +71,16 @@ public class WeakHashRule extends AbstractRule {
         for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
             if (call.getScope().isPresent() && WEAK_HASH_METHODS.contains(call.getNameAsString())) {
                 report(sourceFile, call, call.getNameAsString() + "(...)").ifPresent(violations::add);
+            }
+            // MessageDigest.getInstance(algorithm), где algorithm = "MD5" либо props.getProperty("hashAlg") из
+            // файла настроек с hashAlg=MD5. Литерал в аргументе уже проверен выше
+            boolean byVariable = MethodCalls.isCallOn(call, MESSAGE_DIGEST, GET_INSTANCE) && !call.getArguments().isEmpty()
+                    && !call.getArgument(0).isStringLiteralExpr();
+            if (byVariable) {
+                ResourceProperties.textOf(call.getArgument(0))
+                        .filter(algorithm -> WEAK_ALGORITHM.matcher(algorithm).matches())
+                        .flatMap(algorithm -> report(sourceFile, call, algorithm))
+                        .ifPresent(violations::add);
             }
         }
 

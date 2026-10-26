@@ -6,6 +6,7 @@ import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import org.springframework.stereotype.Component;
@@ -34,6 +35,7 @@ public class InsecureRandomRule extends AbstractRule {
     private static final String THREAD_LOCAL_RANDOM = "ThreadLocalRandom";
     private static final String CURRENT = "current";
     private static final String COOKIE = "Cookie";
+    private static final String NEXT_BYTES = "nextBytes";
     // Через сколько присваиваний прослеживается случайное значение внутри метода
     private static final int MAX_FLOW_STEPS = 3;
 
@@ -135,6 +137,12 @@ public class InsecureRandomRule extends AbstractRule {
                 }
             }
             Set<String> reached = new HashSet<>();
+            // random.nextBytes(bytes): случайные байты попадают в массив-аргумент
+            for (MethodCallExpr fill : callable.get().findAll(MethodCallExpr.class)) {
+                if (NEXT_BYTES.equals(fill.getNameAsString()) && fill.getScope().filter(scope -> mentions(scope, carriers)).isPresent()) {
+                    filledArray(fill).ifPresent(reached::add);
+                }
+            }
             for (VariableDeclarator variable : callable.get().findAll(VariableDeclarator.class)) {
                 if (variable.getInitializer().filter(value -> mentions(value, carriers)).isPresent()) {
                     if (SECRET_CONTEXT.matcher(variable.getNameAsString()).matches()) {
@@ -150,8 +158,16 @@ public class InsecureRandomRule extends AbstractRule {
         return Optional.empty();
     }
 
-    // Переменная, которой присваивают случайное значение: float rand = new Random().nextFloat()
+    // Переменная, которой присваивают случайное значение: float rand = new Random().nextFloat(), а у
+    // new Random().nextBytes(bytes) - заполняемый массив
     private Optional<String> holderName(Expression random) {
+        Optional<String> filled = random.getParentNode()
+                .filter(parent -> parent instanceof MethodCallExpr fill && NEXT_BYTES.equals(fill.getNameAsString())
+                        && fill.getScope().filter(scope -> scope == random).isPresent())
+                .flatMap(parent -> filledArray((MethodCallExpr) parent));
+        if (filled.isPresent()) {
+            return filled;
+        }
         Node current = random.getParentNode().orElse(null);
         while (current instanceof Expression && !(current instanceof AssignExpr)) {
             current = current.getParentNode().orElse(null);
@@ -161,6 +177,12 @@ public class InsecureRandomRule extends AbstractRule {
         }
         return current instanceof AssignExpr assignment && assignment.getTarget().isNameExpr()
                 ? Optional.of(assignment.getTarget().asNameExpr().getNameAsString())
+                : Optional.empty();
+    }
+
+    private Optional<String> filledArray(MethodCallExpr fill) {
+        return fill.getArguments().size() == 1 && fill.getArgument(0).isNameExpr()
+                ? Optional.of(fill.getArgument(0).asNameExpr().getNameAsString())
                 : Optional.empty();
     }
 

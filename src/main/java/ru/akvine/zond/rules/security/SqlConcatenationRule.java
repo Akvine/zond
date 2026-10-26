@@ -23,9 +23,11 @@ import java.util.regex.Pattern;
 public class SqlConcatenationRule extends AbstractTaintRule {
     private static final String PLACEHOLDER = "?";
 
-    // Строка должна именно начинаться как запрос, иначе под правило попадут сообщения логов со словами select / from
+    // Строка должна именно начинаться как запрос, иначе под правило попадут сообщения логов со словами select / from.
+    // {call proc(?)} и {? = call proc(?)} - вызов хранимой процедуры в синтаксисе JDBC
     private static final Pattern SQL = Pattern.compile(
-            "^\\s*(select\\b.+\\bfrom\\b|insert\\s+into\\b|update\\s+\\S+\\s+set\\b|delete\\s+from\\b)",
+            "^\\s*(select\\b.+\\bfrom\\b|insert\\s+into\\b|update\\s+\\S+\\s+set\\b|delete\\s+from\\b"
+                    + "|\\{\\s*(\\?\\s*=\\s*)?call\\b)",
             Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
 
     @Override
@@ -49,7 +51,6 @@ public class SqlConcatenationRule extends AbstractTaintRule {
             flatten(concatenation, operands);
 
             StringBuilder text = new StringBuilder();
-            List<String> clientData = new ArrayList<>();
             for (Expression operand : operands) {
                 if (operand.isStringLiteralExpr()) {
                     text.append(operand.asStringLiteralExpr().asString());
@@ -57,13 +58,21 @@ public class SqlConcatenationRule extends AbstractTaintRule {
                     text.append(operand.asTextBlockLiteralExpr().asString());
                 } else {
                     text.append(PLACEHOLDER);
-                    // Инъекция возможна, только если значением управляет клиент. Имя таблицы из константы,
-                    // значение из настроек или посчитанное в коде нарушителю недоступно
-                    Optional<Taint.Source> source = operand.isLiteralExpr() ? Optional.empty() : taint.findSource(operand);
-                    source.ifPresent(found -> clientData.add(operand + " (" + found.describe() + ")"));
                 }
             }
-            if (!clientData.isEmpty() && SQL.matcher(text).find()) {
+            // Прослеживание дорогое: только для склеек, которые и правда собирают запрос
+            if (!SQL.matcher(text).find()) {
+                continue;
+            }
+            List<String> clientData = new ArrayList<>();
+            for (Expression operand : operands) {
+                boolean literal = operand.isStringLiteralExpr() || operand.isTextBlockLiteralExpr() || operand.isLiteralExpr();
+                // Инъекция возможна, только если значением управляет клиент. Имя таблицы из константы,
+                // значение из настроек или посчитанное в коде нарушителю недоступно
+                Optional<Taint.Source> source = literal ? Optional.empty() : taint.findSource(operand);
+                source.ifPresent(found -> clientData.add(operand + " (" + found.describe() + ")"));
+            }
+            if (!clientData.isEmpty()) {
                 violations.add(violation(sourceFile, concatenation,
                         "В SQL-запрос конкатенацией попадает " + String.join(", ", clientData)
                                 + ": тот, кто управляет этим значением, может дописать к запросу свой SQL; передавайте значения"

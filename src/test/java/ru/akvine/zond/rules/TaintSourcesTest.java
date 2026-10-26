@@ -2,10 +2,13 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.enums.Confidence;
+import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.security.CommandInjectionRule;
+import ru.akvine.zond.rules.security.ResponseWriteWithoutEscapingRule;
 import ru.akvine.zond.rules.security.SqlConcatenationRule;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -93,6 +96,93 @@ class TaintSourcesTest {
             assertThat(violation.message()).contains("comment через Order.comment");
             assertThat(violation.confidence()).isEqualTo(Confidence.PROBABLE);
         });
+    }
+
+    @Test
+    void propertyWrittenInSameMethodIsWhatIsRead() {
+        List<Violation> violations = RuleTests.checkProject(rule, Map.of(
+                "OrderController.java", """
+                        @RestController
+                        class OrderController {
+                            @PostMapping("/orders")
+                            void create(@RequestParam String comment) {
+                                Order order = new Order();
+                                order.setComment(comment);
+                                service.save(order);
+                            }
+                            @PostMapping("/drafts")
+                            void draft(@RequestParam String comment) {
+                                Order draft = new Order();
+                                draft.setComment("черновик");
+                                jdbc.update("insert into drafts values ('" + draft.getComment() + "')");
+                                Order empty = new Order();
+                                jdbc.update("insert into drafts values ('" + empty.getComment() + "')");
+                                Order copy = new Order();
+                                copy.setComment(comment);
+                                jdbc.update("insert into drafts values ('" + copy.getComment() + "')");
+                            }
+                        }
+                        """));
+
+        // В comment заказов пишут данные запроса, но draft и empty - свои объекты метода: в draft записана
+        // константа, в empty ничего. copy - тот же объект, куда записан запрос: находка подтверждена
+        assertThat(violations).singleElement().satisfies(violation -> {
+            assertThat(violation.line()).isEqualTo(18);
+            assertThat(violation.message()).contains("comment через Order.comment");
+            assertThat(violation.confidence()).isEqualTo(Confidence.CONFIRMED);
+        });
+    }
+
+    @Test
+    void parameterSummaryDependsOnSink() {
+        List<SourceFile> sources = List.of(
+                RuleTests.parse(Path.of("Controller.java"), """
+                        @RestController
+                        class Controller {
+                            private final Helper helper = new Helper();
+                            @GetMapping("/a")
+                            void a(@RequestParam String name) {
+                                helper.show(HtmlUtils.htmlEscape(name));
+                            }
+                        }
+                        """),
+                RuleTests.parse(Path.of("Helper.java"), """
+                        class Helper {
+                            void show(String text) throws IOException {
+                                response.getWriter().write(text);
+                                jdbc.query("select * from t where n = '" + text + "'", mapper);
+                            }
+                        }
+                        """));
+
+        // Сводка параметра text для ответа (экранирован) не годится для SQL: правила работают на одних файлах
+        assertThat(new ResponseWriteWithoutEscapingRule().checkProject(sources)).isEmpty();
+        assertThat(rule.checkProject(sources)).extracting(Violation::line).containsExactly(4);
+    }
+
+    @Test
+    void propertyOfJdkObjectDoesNotCarryDataBetweenMethods() {
+        List<Violation> violations = RuleTests.checkProject(rule, Map.of(
+                "WorkerController.java", """
+                        @RestController
+                        class WorkerController {
+                            @PostMapping("/workers")
+                            void start(@RequestParam String name) {
+                                Thread worker = new Thread(task);
+                                worker.setName(name);
+                            }
+                        }
+                        """,
+                "Audit.java", """
+                        class Audit {
+                            void log(Thread thread) {
+                                jdbc.update("insert into audit (thread) values ('" + thread.getName() + "')");
+                            }
+                        }
+                        """));
+
+        // Имя одного потока из запроса ничего не говорит об имени другого потока
+        assertThat(violations).isEmpty();
     }
 
     @Test

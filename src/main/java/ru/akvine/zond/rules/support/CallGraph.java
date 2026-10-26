@@ -185,8 +185,54 @@ public final class CallGraph {
                 .stream()
                 .filter(method -> matches(method, site))
                 .toList();
+        if (candidates.size() > 1) {
+            candidates = visibleFrom(site, candidates);
+        }
         // Несколько подходящих методов - перегрузки или одноименные классы; угадывать не будем
         return candidates.size() == 1 ? candidates : List.of();
+    }
+
+    /**
+     * Одноименные классы разных файлов: new Test().doSomething(...) - метод внутреннего класса Test этого же файла.
+     * Простое имя типа ищется, как у компилятора: сначала свой файл, затем импорты, затем свой пакет
+     */
+    private List<MethodDeclaration> visibleFrom(MethodCallExpr site, List<MethodDeclaration> candidates) {
+        Optional<CompilationUnit> unit = site.findCompilationUnit();
+        if (unit.isEmpty()) {
+            return candidates;
+        }
+        List<MethodDeclaration> sameFile = candidates.stream()
+                .filter(method -> method.findCompilationUnit().filter(found -> found == unit.get()).isPresent())
+                .toList();
+        if (!sameFile.isEmpty()) {
+            return sameFile;
+        }
+        List<MethodDeclaration> imported = candidates.stream().filter(method -> isImported(unit.get(), method)).toList();
+        if (!imported.isEmpty()) {
+            return imported;
+        }
+        String ownPackage = packageOf(unit.get());
+        return candidates.stream()
+                .filter(method -> method.findCompilationUnit().map(this::packageOf).filter(ownPackage::equals).isPresent())
+                .toList();
+    }
+
+    // import org.demo.Helper; либо import org.demo.*;
+    private boolean isImported(CompilationUnit unit, MethodDeclaration method) {
+        Optional<String> type = enclosingType(method).flatMap(TypeDeclaration::getFullyQualifiedName);
+        if (type.isEmpty()) {
+            return false;
+        }
+        String owner = type.get().contains(".") ? type.get().substring(0, type.get().lastIndexOf('.')) : "";
+        return unit.getImports().stream()
+                .filter(declaration -> !declaration.isStatic())
+                .anyMatch(declaration -> declaration.isAsterisk()
+                        ? declaration.getNameAsString().equals(owner)
+                        : declaration.getNameAsString().equals(type.get()));
+    }
+
+    private String packageOf(CompilationUnit unit) {
+        return unit.getPackageDeclaration().map(declaration -> declaration.getNameAsString()).orElse("");
     }
 
     // Имя с большой буквы, которое не объявлено переменной или полем, - имя класса проекта

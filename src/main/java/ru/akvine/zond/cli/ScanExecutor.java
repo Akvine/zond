@@ -141,6 +141,7 @@ public class ScanExecutor {
             return options;
         }
         System.out.println("Библиотеки проекта: найдено " + resolved.jars().size() + " в " + resolved.repository()
+                + resolved.gradleCache().map(cache -> " и " + cache).orElse("")
                 + (resolved.missing().isEmpty() ? "" : "; не найдено " + resolved.missing().size() + ": "
                 + String.join(", ", resolved.missing().subList(0, Math.min(SHOWN_MISSING, resolved.missing().size())))
                 + (resolved.missing().size() > SHOWN_MISSING ? " и другие" : "")));

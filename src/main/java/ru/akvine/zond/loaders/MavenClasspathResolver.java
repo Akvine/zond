@@ -28,8 +28,9 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 /**
- * Находит библиотеки проверяемого проекта без запуска Maven: читает его pom.xml, а jar-файлы и описания
- * зависимостей берет из локального репозитория (~/.m2/repository).
+ * Находит библиотеки проверяемого проекта без запуска Maven и Gradle: читает его pom.xml и build.gradle, а jar-файлы
+ * и описания зависимостей берет из локального репозитория (~/.m2/repository) и кэша Gradle
+ * (~/.gradle/caches/modules-2/files-2.1).
  * <p>
  * Версия зависимости берется оттуда же, откуда ее взял бы Maven: из самой зависимости, из
  * dependencyManagement проекта, его родительских pom.xml и подключенных BOM (так задает версии Spring Boot).
@@ -43,6 +44,8 @@ public class MavenClasspathResolver {
     private static final String DEFAULT_PARENT_PATH = "../pom.xml";
     private static final String SETTINGS_FILE = "settings.xml";
     private static final String LOCAL_REPOSITORY = "localRepository";
+    private static final String GRADLE_USER_HOME = "GRADLE_USER_HOME";
+    private static final Path GRADLE_FILES = Path.of("caches", "modules-2", "files-2.1");
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([^}]+)}");
     private static final Pattern NUMBER = Pattern.compile("\\d+");
 
@@ -67,8 +70,9 @@ public class MavenClasspathResolver {
      * @param missing    зависимости, которых в локальном репозитории нет: проект еще не собирали либо
      *                   библиотека лежит в недоступном репозитории
      * @param repository где искали
+     * @param gradleCache кэш Gradle, если в нем что-то нашлось; иначе пусто
      */
-    public record Resolved(List<Path> jars, List<String> missing, Path repository) {
+    public record Resolved(List<Path> jars, List<String> missing, Path repository, Optional<Path> gradleCache) {
     }
 
     private record Dependency(String group, String artifact, String version, String scope, String type, boolean optional) {
@@ -97,15 +101,22 @@ public class MavenClasspathResolver {
     }
 
     private final Path repository;
+    // Кэш Gradle: <группа>/<артефакт>/<версия>/<хеш>/<артефакт>-<версия>.jar
+    private final Path gradleCache;
     private final Map<Path, Optional<Model>> models = new HashMap<>();
 
     @Autowired
     public MavenClasspathResolver(ZondSettings settings) {
-        this(settings.mavenRepository().orElseGet(MavenClasspathResolver::defaultRepository));
+        this(settings.mavenRepository().orElseGet(MavenClasspathResolver::defaultRepository), defaultGradleCache());
     }
 
     public MavenClasspathResolver(Path repository) {
+        this(repository, defaultGradleCache());
+    }
+
+    public MavenClasspathResolver(Path repository, Path gradleCache) {
         this.repository = repository;
+        this.gradleCache = gradleCache;
     }
 
     /**
@@ -128,6 +139,19 @@ public class MavenClasspathResolver {
             own.add(project.group() + ":" + project.artifact());
             project.dependencies().forEach(dependency -> queue.add(new Pending(dependency, project.managed(), 0, true)));
         }
+        // Проект Gradle: координаты из build.gradle, версии без указания - из подключенных BOM
+        GradleBuildFiles.Declared gradle = GradleBuildFiles.read(root);
+        for (GradleBuildFiles.Coordinate platform : gradle.platforms()) {
+            if (isResolved(platform.version())) {
+                artifactFile(platform.group(), platform.artifact(), platform.version(), POM_TYPE)
+                        .flatMap(bom -> model(bom, 1))
+                        .ifPresent(bom -> bom.managed().forEach(projectManaged::putIfAbsent));
+            }
+        }
+        for (GradleBuildFiles.Coordinate coordinate : gradle.dependencies()) {
+            queue.add(new Pending(new Dependency(coordinate.group(), coordinate.artifact(), coordinate.version(),
+                    "", JAR_TYPE, false), Map.of(), 0, true));
+        }
 
         Set<Path> jars = new LinkedHashSet<>();
         List<String> missing = new ArrayList<>();
@@ -142,25 +166,26 @@ public class MavenClasspathResolver {
             }
 
             Optional<String> version = versionOf(dependency, projectManaged, pending.managed());
-            Path directory = version.map(found -> artifactDirectory(dependency).resolve(found)).orElse(null);
-            if (directory == null || !Files.isDirectory(directory)) {
+            Optional<Path> pom = version.flatMap(found -> artifactFile(dependency.group(), dependency.artifact(), found, POM_TYPE));
+            Optional<Path> jar = version.flatMap(found -> artifactFile(dependency.group(), dependency.artifact(), found, JAR_TYPE));
+            if (pom.isEmpty() && jar.isEmpty()) {
                 // Отсутствие чужой необязательной мелочи не интересно; о своих зависимостях стоит сказать
                 if (pending.direct()) {
                     missing.add(dependency.key() + version.map(found -> ":" + found).orElse(""));
                 }
                 continue;
             }
-            String fileName = dependency.artifact() + "-" + version.get();
-            Path jar = directory.resolve(fileName + ".jar");
-            if (JAR_TYPE.equals(dependency.type()) && Files.isRegularFile(jar)) {
-                jars.add(jar);
+            if (JAR_TYPE.equals(dependency.type())) {
+                jar.ifPresent(jars::add);
             }
             if (pending.depth() < MAX_DEPTH) {
-                model(directory.resolve(fileName + ".pom"), 0).ifPresent(model -> model.dependencies().forEach(
+                pom.flatMap(file -> model(file, 0)).ifPresent(model -> model.dependencies().forEach(
                         next -> queue.add(new Pending(next, model.managed(), pending.depth() + 1, false))));
             }
         }
-        return new Resolved(jars.stream().sorted().toList(), missing, repository);
+        boolean fromGradle = jars.stream().anyMatch(jar -> jar.startsWith(gradleCache));
+        return new Resolved(jars.stream().sorted().toList(), missing, repository,
+                fromGradle ? Optional.of(gradleCache) : Optional.empty());
     }
 
     // ------------------------------------------------------------------------------------------- версии
@@ -189,17 +214,44 @@ public class MavenClasspathResolver {
     }
 
     private Optional<String> latestInstalled(Dependency dependency) {
-        Path directory = artifactDirectory(dependency);
-        if (!Files.isDirectory(directory)) {
+        List<String> installed = new ArrayList<>();
+        for (Path directory : List.of(artifactDirectory(dependency), gradleDirectory(dependency.group(), dependency.artifact()))) {
+            if (!Files.isDirectory(directory)) {
+                continue;
+            }
+            try (Stream<Path> versions = Files.list(directory)) {
+                versions.filter(Files::isDirectory).map(version -> version.getFileName().toString()).forEach(installed::add);
+            } catch (IOException exception) {
+                // Каталог не прочитался - судим по другому
+            }
+        }
+        return installed.stream().max(Comparator.comparing(this::versionKey));
+    }
+
+    /**
+     * @return файл артефакта в репозитории Maven (группа/артефакт/версия/артефакт-версия.jar) либо в кэше Gradle,
+     * где jar и pom лежат в разных подкаталогах по хешу
+     */
+    private Optional<Path> artifactFile(String group, String artifact, String version, String extension) {
+        String fileName = artifact + "-" + version + "." + extension;
+        Path maven = artifactDirectory(new Dependency(group, artifact, version, "", JAR_TYPE, false))
+                .resolve(version).resolve(fileName);
+        if (Files.isRegularFile(maven)) {
+            return Optional.of(maven);
+        }
+        Path versionDirectory = gradleDirectory(group, artifact).resolve(version);
+        if (!Files.isDirectory(versionDirectory)) {
             return Optional.empty();
         }
-        try (Stream<Path> versions = Files.list(directory)) {
-            return versions.filter(Files::isDirectory)
-                    .map(version -> version.getFileName().toString())
-                    .max(Comparator.comparing(this::versionKey));
+        try (Stream<Path> hashes = Files.list(versionDirectory)) {
+            return hashes.map(hash -> hash.resolve(fileName)).filter(Files::isRegularFile).findFirst();
         } catch (IOException exception) {
             return Optional.empty();
         }
+    }
+
+    private Path gradleDirectory(String group, String artifact) {
+        return gradleCache.resolve(group).resolve(artifact);
     }
 
     // 3.10.2 должно быть больше 3.9.9: числа в версии дополняются нулями слева и сравниваются как строки
@@ -285,9 +337,9 @@ public class MavenClasspathResolver {
         }
         for (Dependency bom : imports) {
             if (isResolved(bom.version())) {
-                Path bomFile = artifactDirectory(bom).resolve(bom.version())
-                        .resolve(bom.artifact() + "-" + bom.version() + ".pom");
-                model(bomFile, level + 1).ifPresent(imported -> imported.managed().forEach(managed::putIfAbsent));
+                artifactFile(bom.group(), bom.artifact(), bom.version(), POM_TYPE)
+                        .flatMap(bomFile -> model(bomFile, level + 1))
+                        .ifPresent(imported -> imported.managed().forEach(managed::putIfAbsent));
             }
         }
         parent.ifPresent(inherited -> inherited.managed().forEach(managed::putIfAbsent));
@@ -317,8 +369,7 @@ public class MavenClasspathResolver {
         if (!isResolved(coordinates.version())) {
             return Optional.empty();
         }
-        return Optional.of(artifactDirectory(coordinates).resolve(coordinates.version())
-                .resolve(coordinates.artifact() + "-" + coordinates.version() + ".pom"));
+        return artifactFile(coordinates.group(), coordinates.artifact(), coordinates.version(), POM_TYPE);
     }
 
     /**
@@ -386,6 +437,15 @@ public class MavenClasspathResolver {
         } catch (IOException | RuntimeException exception) {
             return List.of();
         }
+    }
+
+    // ~/.gradle/caches/modules-2/files-2.1 либо тот же каталог внутри GRADLE_USER_HOME
+    private static Path defaultGradleCache() {
+        String userHome = System.getenv(GRADLE_USER_HOME);
+        Path home = userHome == null || userHome.isBlank()
+                ? Path.of(System.getProperty("user.home", "."), ".gradle")
+                : Path.of(userHome);
+        return home.resolve(GRADLE_FILES);
     }
 
     // ~/.m2/repository, если в ~/.m2/settings.xml не указан другой каталог
