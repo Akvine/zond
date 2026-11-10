@@ -5,6 +5,7 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import lombok.experimental.UtilityClass;
 
 import java.util.Optional;
@@ -60,6 +61,18 @@ public class HttpCalls {
      */
     public Optional<String> describeKnownClient(Node node) {
         return describe(node, false);
+    }
+
+    /**
+     * @return описание ссылки (restTemplate::getForObject, priceClient::fetch), если она указывает на метод
+     * HTTP-клиента: известного по типу либо описанного интерфейсом Feign / Spring HTTP Interface
+     */
+    public Optional<String> describeReference(MethodReferenceExpr reference, ProjectClasses classes) {
+        Optional<String> type = MethodReferences.scopeType(reference);
+        boolean known = type.filter(HTTP_CLIENT_TYPES::contains).isPresent()
+                && HTTP_METHODS.contains(reference.getIdentifier());
+        boolean declarative = type.flatMap(classes::find).filter(HttpCalls::isDeclarativeClient).isPresent();
+        return known || declarative ? Optional.of(Nodes.text(reference)) : Optional.empty();
     }
 
     private Optional<String> describe(Node node, boolean guessByClientName) {

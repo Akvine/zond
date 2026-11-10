@@ -4,6 +4,7 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -21,7 +22,9 @@ import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.HttpCalls;
 import ru.akvine.zond.rules.support.Lifecycle;
 import ru.akvine.zond.rules.support.Loops;
+import ru.akvine.zond.rules.support.MethodReferences;
 import ru.akvine.zond.rules.support.Nodes;
+import ru.akvine.zond.rules.support.ProjectClasses;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -62,18 +65,34 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет HTTP-вызовы в цикле и в поэлементных операциях стримов,"
-                + " в том числе спрятанные в методах, которые вызываются из цикла";
+        return "Сканирует код и ищет HTTP-вызовы в цикле и в поэлементных операциях стримов (в лямбдах и по"
+                + " ссылкам на методы), в том числе спрятанные в методах, которые вызываются из цикла";
     }
 
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         CallGraph graph = CallGraph.of(sourceFiles);
         Lifecycle lifecycle = Lifecycle.of(sourceFiles);
+        ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             // webClient.get().uri(...).retrieve() - один запрос, а не три
             Set<Integer> reportedLines = new HashSet<>();
+            // ids.stream().map(priceClient::fetch): вызова в коде нет, но запрос уходит на каждый элемент
+            for (MethodReferenceExpr reference : sourceFile.unit().findAll(MethodReferenceExpr.class)) {
+                Optional<MethodCallExpr> operation = MethodReferences.perElementOperation(reference);
+                if (operation.isEmpty() || CodeContexts.isInCatch(reference) || isConfigurationCode(operation.get())) {
+                    continue;
+                }
+                describe(reference, graph, classes)
+                        .filter(problem -> !lifecycle.isAtStartupOrShutdown(reference))
+                        .filter(problem -> reportedLines.add(reference.getBegin().map(position -> position.line).orElse(0)))
+                        .ifPresent(problem -> violations.add(violation(sourceFile, reference, problem.text()
+                                + ": на каждый элемент уходит отдельный сетевой запрос, и время обработки растет"
+                                + " вместе с числом элементов; передайте все элементы одним запросом, если API это"
+                                + " умеет, либо отправляйте запросы параллельно с ограничением числа одновременных")
+                                .withConfidence(problem.confidence())));
+            }
             for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
                 // Цикл повторных попыток повторяет один запрос, catch выполняется только при сбое, а вызов,
                 // после которого цикл кончается, уходит один раз
@@ -126,6 +145,29 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
                         "Вызов '" + call.getNameAsString() + "(...)' в цикле делает сетевой вызов '"
                                 + found.get().operation() + "' (через вызов " + found.get().chain() + ")",
                         found.get().confidence(graph.isExact(call))));
+            }
+        }
+        return Optional.empty();
+    }
+
+    private Optional<Problem> describe(MethodReferenceExpr reference, CallGraph graph, ProjectClasses classes) {
+        String operation = reference.getParentNode()
+                .filter(parent -> parent instanceof MethodCallExpr)
+                .map(parent -> ((MethodCallExpr) parent).getNameAsString())
+                .orElse("");
+        Optional<String> direct = HttpCalls.describeReference(reference, classes);
+        if (direct.isPresent()) {
+            return Optional.of(new Problem(
+                    "Сетевой вызов по ссылке '" + direct.get() + "' в операции " + operation + "(...)", Confidence.PROBABLE));
+        }
+        for (MethodDeclaration target : MethodReferences.targets(reference, classes)) {
+            Optional<CallChains.Found> found = CallChains.find(
+                    graph, target, value(MAX_CALL_DEPTH), method -> false, HttpCallInLoopRule::describeBlocking);
+            if (found.isPresent()) {
+                return Optional.of(new Problem(
+                        "Ссылка на метод '" + Nodes.text(reference) + "' в операции " + operation + "(...) делает сетевой вызов '"
+                                + found.get().operation() + "' (через вызов " + found.get().chain() + ")",
+                        Confidence.PROBABLE));
             }
         }
         return Optional.empty();

@@ -6,6 +6,7 @@ import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import lombok.experimental.UtilityClass;
 import ru.akvine.zond.loaders.ProjectSubtypes;
 
@@ -67,6 +68,21 @@ public class Repositories {
      */
     public boolean isRepositoryCall(MethodCallExpr call) {
         return call.getScope().filter(Repositories::isRepositoryObject).isPresent();
+    }
+
+    /**
+     * @return true для ссылки вида userRepository::findById
+     */
+    public boolean isRepositoryReference(MethodReferenceExpr reference) {
+        String receiver = MethodReferences.receiverName(reference);
+        if (receiver.isEmpty()) {
+            return false;
+        }
+        // Тип поля говорит точнее, чем его имя: OrderRepository orders
+        return LocalTypes.findDeclaration(reference, receiver)
+                .flatMap(LocalTypes::declaredType)
+                .map(type -> REPOSITORY.matcher(type).matches())
+                .orElseGet(() -> isRepository(receiver));
     }
 
     // По типу: сам он либо его предок - репозиторий (interface Users extends JpaRepository), либо на нем @Repository.

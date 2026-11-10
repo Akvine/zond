@@ -475,4 +475,11 @@ public class RuleCodes {
     public final static String OPTIONAL_OF_COLLECTION_RULE_CODE = "jr:469";
     public final static String AGGREGATES_IN_SEPARATE_PASSES_RULE_CODE = "jr:470";
     public final static String WAIT_NOTIFY_OUTSIDE_SYNCHRONIZED_RULE_CODE = "jr:471";
+    public final static String STRING_INTERN_RULE_CODE = "jr:472";
+    public final static String SOFT_REFERENCE_CACHE_RULE_CODE = "jr:473";
+    public final static String OFFSET_PAGINATION_RULE_CODE = "jr:474";
+    public final static String NULLABLE_COLUMN_IN_QUERY_RULE_CODE = "jr:475";
+    public final static String PEEK_WITH_SHORT_CIRCUIT_RULE_CODE = "jr:476";
+    public final static String NON_ASSOCIATIVE_REDUCE_RULE_CODE = "jr:477";
+    public final static String MUTABLE_KEY_CLASS_RULE_CODE = "jr:478";
 }

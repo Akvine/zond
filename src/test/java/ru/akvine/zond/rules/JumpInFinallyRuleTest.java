@@ -42,4 +42,56 @@ class JumpInFinallyRuleTest {
                 }
                 """)).containsExactly(6, 13);
     }
+
+    @Test
+    void findsBreakAndContinueThatLeaveFinally() {
+        assertThat(RuleTests.lines(rule, """
+                class Sample {
+                    void skip(List<String> items) {
+                        for (String item : items) {
+                            try {
+                                send(item);
+                            } finally {
+                                continue;
+                            }
+                        }
+                    }
+                    void stop(List<String> items) {
+                        outer:
+                        while (true) {
+                            for (String item : items) {
+                                try {
+                                    send(item);
+                                } finally {
+                                    if (item.isEmpty()) {
+                                        break outer;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    void ok(List<String> items) {
+                        try {
+                            send("first");
+                        } finally {
+                            for (String item : items) {
+                                if (item.isEmpty()) {
+                                    continue;
+                                }
+                                if (item.isBlank()) {
+                                    break;
+                                }
+                                close(item);
+                            }
+                            switch (items.size()) {
+                                case 0:
+                                    break;
+                                default:
+                                    close("all");
+                            }
+                        }
+                    }
+                }
+                """)).containsExactly(7, 19);
+    }
 }

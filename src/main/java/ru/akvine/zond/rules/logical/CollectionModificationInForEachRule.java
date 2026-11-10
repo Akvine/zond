@@ -26,6 +26,10 @@ import java.util.regex.Pattern;
 @Component
 public class CollectionModificationInForEachRule extends AbstractRule {
     private static final String FOR_EACH = "forEach";
+    private static final String REMOVE = "remove";
+    // Проверку изменений делает next(), а после удаления предпоследнего элемента hasNext() уже возвращает false
+    private static final String SILENT_SKIP = ", а если удален предпоследний элемент, исключения не будет вовсе -"
+            + " цикл молча закончится, и последний элемент останется необработанным";
     private static final Set<String> MAP_VIEWS = Set.of("keySet", "values", "entrySet");
     private static final Set<String> MODIFYING_METHODS = Set.of(
             "add", "addAll", "addFirst", "addLast", "remove", "removeAll", "removeIf", "retainAll", "clear",
@@ -91,8 +95,9 @@ public class CollectionModificationInForEachRule extends AbstractRule {
             if (modifies && !isFollowedByExit(call) && !isInCallback(call, body)) {
                 violations.add(violation(sourceFile, call,
                         "Коллекция '" + collection + "' изменяется методом " + call.getNameAsString()
-                                + " внутри обхода по ней же: будет ConcurrentModificationException;"
-                                + " используйте Iterator.remove(), removeIf() или копию коллекции"));
+                                + " внутри обхода по ней же: будет ConcurrentModificationException"
+                                + (REMOVE.equals(call.getNameAsString()) && body instanceof Statement ? SILENT_SKIP : "")
+                                + "; используйте Iterator.remove(), removeIf() или копию коллекции"));
             }
         }
     }
