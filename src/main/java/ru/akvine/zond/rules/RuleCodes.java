@@ -466,4 +466,13 @@ public class RuleCodes {
     public final static String PROXY_CALL_IN_INIT_METHOD_RULE_CODE = "jr:460";
     public final static String FINAL_METHOD_IN_PROXIED_BEAN_RULE_CODE = "jr:461";
     public final static String DATABASE_EXCEPTION_TO_CLIENT_RULE_CODE = "jr:462";
+    public final static String MANUAL_ID_ENTITY_SAVE_RULE_CODE = "jr:463";
+    public final static String ENTITY_CHANGE_WITHOUT_SAVE_RULE_CODE = "jr:464";
+    public final static String NULL_IN_IMMUTABLE_COLLECTION_RULE_CODE = "jr:465";
+    public final static String LIST_REMOVE_IN_LOOP_RULE_CODE = "jr:466";
+    public final static String CHECKED_BUSINESS_EXCEPTION_RULE_CODE = "jr:467";
+    public final static String BUSINESS_ERROR_AS_BAD_REQUEST_RULE_CODE = "jr:468";
+    public final static String OPTIONAL_OF_COLLECTION_RULE_CODE = "jr:469";
+    public final static String AGGREGATES_IN_SEPARATE_PASSES_RULE_CODE = "jr:470";
+    public final static String WAIT_NOTIFY_OUTSIDE_SYNCHRONIZED_RULE_CODE = "jr:471";
 }

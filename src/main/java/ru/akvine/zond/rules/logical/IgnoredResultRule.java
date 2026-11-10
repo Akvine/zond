@@ -30,6 +30,9 @@ public class IgnoredResultRule extends AbstractRule {
     // Вызываются ради побочного эффекта или ради проверки с исключением
     private static final Set<String> SIDE_EFFECT_METHODS = Set.of("getChars", "wait", "notify", "notifyAll");
     private static final String EXACT_SUFFIX = "Exact";
+    // Операции, которые результат лямбды не используют: им нужен только побочный эффект
+    private static final Set<String> CONSUMER_METHODS = Set.of(
+            "forEach", "forEachOrdered", "forEachRemaining", "ifPresent", "peek");
 
     @Override
     public String code() {
@@ -45,8 +48,11 @@ public class IgnoredResultRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         for (ExpressionStmt statement : sourceFile.unit().findAll(ExpressionStmt.class)) {
-            // item -> text.equals(item): тело лямбды-выражения тоже хранится как оператор, но его результат нужен
-            boolean isLambdaBody = statement.getParentNode().filter(parent -> parent instanceof LambdaExpr).isPresent();
+            // item -> text.equals(item): тело лямбды-выражения тоже хранится как оператор, но его результат нужен.
+            // Кроме лямбды, результат которой отбрасывают: items.forEach(item -> total.add(item.getPrice()))
+            boolean isLambdaBody = statement.getParentNode()
+                    .filter(parent -> parent instanceof LambdaExpr lambda && !isResultDiscarded(lambda))
+                    .isPresent();
             // case A -> text.trim(); в switch-выражении - это значение ветки, а не отдельный оператор
             boolean isSwitchValue = statement.getParentNode()
                     .filter(parent -> parent instanceof SwitchEntry)
@@ -75,6 +81,16 @@ public class IgnoredResultRule extends AbstractRule {
     @Override
     public ErrorLevel errorLevel() {
         return ErrorLevel.MAJOR;
+    }
+
+    // Лямбда передана в forEach, ifPresent, peek: что она вернет, никто не прочитает
+    private boolean isResultDiscarded(LambdaExpr lambda) {
+        return lambda.getParentNode()
+                .filter(parent -> parent instanceof MethodCallExpr)
+                .map(parent -> (MethodCallExpr) parent)
+                .filter(call -> CONSUMER_METHODS.contains(call.getNameAsString())
+                        && call.getArguments().stream().anyMatch(argument -> argument == lambda))
+                .isPresent();
     }
 
     @Override

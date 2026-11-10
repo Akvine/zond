@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.CastExpr;
 import com.github.javaparser.ast.expr.Expression;
@@ -18,7 +19,10 @@ import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Component
@@ -33,6 +37,8 @@ public class NarrowingCastRule extends AbstractRule {
     private static final Set<String> SMALL_UNITS = Set.of("DAYS", "WEEKS", "MONTHS", "YEARS", "HOURS", "DECADES");
     private static final Set<String> NARROW_TYPES = Set.of("int", "short", "byte");
     private static final Set<String> WIDE_TYPES = Set.of("long", "Long");
+    private static final Set<AssignExpr.Operator> COMPOUND_OPERATORS = Set.of(
+            AssignExpr.Operator.PLUS, AssignExpr.Operator.MINUS, AssignExpr.Operator.MULTIPLY);
 
     // Остаток от деления, маска и сдвиг заведомо укладывают значение в нужный диапазон
     private static final Set<BinaryExpr.Operator> BOUNDING_OPERATORS = Set.of(
@@ -46,11 +52,32 @@ public class NarrowingCastRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет приведение long к int без проверки диапазона";
+        return "Сканирует код и ищет приведение long к int без проверки диапазона, в том числе скрытое"
+                + " в составном присваивании (+=)";
     }
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
+        List<Violation> violations = new ArrayList<>(findExplicit(sourceFile));
+        // count += total, где count - int, а total - long: компилятор сам добавляет приведение (int)
+        for (AssignExpr assignment : sourceFile.unit().findAll(AssignExpr.class)) {
+            if (!COMPOUND_OPERATORS.contains(assignment.getOperator()) || TestClasses.isInside(assignment)) {
+                continue;
+            }
+            Optional<String> target = LocalTypes.typeOf(assignment.getTarget()).filter(NARROW_TYPES::contains);
+            if (target.isPresent() && isUnboundedLong(Nodes.unwrap(assignment.getValue()))) {
+                violations.add(violation(sourceFile, assignment,
+                        "'" + Nodes.text(assignment) + "': long неявно приводится к " + target.get() + " - у составного"
+                                + " присваивания приведение скрыто, и компилятор о нем не предупреждает; значение,"
+                                + " которое не помещается, молча обрежется; объявите переменную как long либо"
+                                + " считайте через Math.addExact / Math.toIntExact"));
+            }
+        }
+        violations.sort(Comparator.comparingInt(Violation::line));
+        return violations;
+    }
+
+    private List<Violation> findExplicit(SourceFile sourceFile) {
         return sourceFile.unit().findAll(CastExpr.class).stream()
                 .filter(cast -> NARROW_TYPES.contains(cast.getType().asString()))
                 .filter(cast -> isUnboundedLong(Nodes.unwrap(cast.getExpression())) && !TestClasses.isInside(cast))
