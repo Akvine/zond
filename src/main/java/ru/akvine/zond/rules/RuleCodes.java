@@ -482,4 +482,21 @@ public class RuleCodes {
     public final static String PEEK_WITH_SHORT_CIRCUIT_RULE_CODE = "jr:476";
     public final static String NON_ASSOCIATIVE_REDUCE_RULE_CODE = "jr:477";
     public final static String MUTABLE_KEY_CLASS_RULE_CODE = "jr:478";
+    public final static String PAGINATION_WITHOUT_SORT_RULE_CODE = "jr:479";
+    public final static String EXECUTOR_QUEUE_SETTINGS_RULE_CODE = "jr:480";
+    public final static String PERSISTENCE_CONTEXT_GROWTH_RULE_CODE = "jr:481";
+    public final static String DELETE_ONE_BY_ONE_RULE_CODE = "jr:482";
+    public final static String AUDITING_NOT_ENABLED_RULE_CODE = "jr:483";
+    public final static String STREAM_WITHOUT_TERMINAL_RULE_CODE = "jr:484";
+    public final static String REDUCER_AS_COMPARATOR_RULE_CODE = "jr:485";
+    public final static String NULL_IN_COLLECTOR_RULE_CODE = "jr:486";
+    public final static String KEY_WITHOUT_EQUALS_RULE_CODE = "jr:487";
+    public final static String COLLECTION_VIEW_RULE_CODE = "jr:488";
+    public final static String RECORD_WITH_ARRAY_RULE_CODE = "jr:489";
+    public final static String SECURITY_CONTEXT_IN_ASYNC_RULE_CODE = "jr:490";
+    public final static String COMPUTE_IF_ABSENT_MISUSE_RULE_CODE = "jr:491";
+    public final static String ATOMIC_REFERENCE_IDENTITY_RULE_CODE = "jr:492";
+    public final static String VIRTUAL_THREAD_PITFALL_RULE_CODE = "jr:493";
+    public final static String UNBOUNDED_IN_CLAUSE_RULE_CODE = "jr:494";
+    public final static String STATIC_INITIALIZER_FAILURE_RULE_CODE = "jr:495";
 }

@@ -1,7 +1,7 @@
 # Zond
 
 Консольный статический анализатор Java-кода. Проверяет исходники, файлы настроек Spring-приложения,
-миграции БД, файлы сборки, Docker, Kubernetes, CI и настройки логирования по набору правил (сейчас их 477) и выводит найденные проблемы в консоль, текстовый файл или Excel.
+миграции БД, файлы сборки, Docker, Kubernetes, CI и настройки логирования по набору правил (сейчас их 494) и выводит найденные проблемы в консоль, текстовый файл или Excel.
 
 Работает без базы данных и внешних сервисов: на входе папка с кодом, на выходе отчет.
 
@@ -18,6 +18,7 @@
 - [Отказ блокировки, прокси и остановка пулов](#отказ-блокировки-прокси-и-остановка-пулов)
 - [Сущности, коллекции и бизнес-исключения](#сущности-коллекции-и-бизнес-исключения)
 - [Память, запросы и стримы](#память-запросы-и-стримы)
+- [Пагинация, потоки и ловушки коллекций](#пагинация-потоки-и-ловушки-коллекций)
 - [Кеш и память](#кеш-и-память)
 - [Файлы в памяти](#файлы-в-памяти)
 - [Квадратичные алгоритмы на коллекциях](#квадратичные-алгоритмы-на-коллекциях)
@@ -1081,6 +1082,145 @@ int rest = 100 - Stream.of(10, 5, 1).parallel().reduce(0, Integer::sum);
 и не-final полю (jr:127), `map.get(3)` у `Map<Long, String>` (jr:280), `add` после `Stream.toList()` (jr:69),
 `@Transactional`, `@Async`, `@Retryable` на методе с `@PostConstruct` (jr:460), ввод-вывод в параллельном
 стриме (jr:50).
+
+## Пагинация, потоки и ловушки коллекций
+
+Правила jr:479 – jr:495 и дополнения к jr:3, jr:9, jr:24 и jr:103.
+
+| Правило | Что находит | Уровень |
+|---|---|---|
+| jr:479 | постраничная выдача без сортировки: `PageRequest.of(page, size)` без `Sort`, `OFFSET` без `ORDER BY`, `Pageable` в обработчике без сортировки по умолчанию | MAJOR, для параметра обработчика MINOR |
+| jr:480 | `maxPoolSize` без `queueCapacity` у `ThreadPoolTaskExecutor` и пул с ограниченной очередью без политики отказа | MAJOR, для политики отказа MINOR |
+| jr:481 | постраничный или потоковый обход таблицы в одной транзакции без `entityManager.clear()` | MAJOR |
+| jr:482 | массовое удаление по одной записи: `deleteAll()`, методы `deleteBy...` без `@Query` | MINOR |
+| jr:483 | `@CreatedDate`, `@LastModifiedDate`, `@CreatedBy`, которые останутся пустыми | MAJOR, для `AuditorAware` MINOR |
+| jr:484 | стрим без завершающей операции | MAJOR |
+| jr:485 | `Integer::max`, `Math::max` на месте компаратора в `max()`, `min()`, `sorted()`, `sort()` | CRITICAL |
+| jr:486 | `null` в коллекторах: значение в `Collectors.toMap`, ключ в `groupingBy` | MAJOR |
+| jr:487 | ключ `HashMap` или элемент `HashSet` без сравнения по содержимому: массив, свой класс без `equals` и `hashCode` | MAJOR |
+| jr:488 | представление коллекции, принятое за копию: `Collections.unmodifiableList` и `subList` | MAJOR для изменения списка при живом `subList`, остальное MINOR |
+| jr:489 | `record` с компонентом-массивом без своего `equals` | MINOR |
+| jr:490 | `SecurityContextHolder` и `RequestContextHolder` в другом потоке | MAJOR |
+| jr:491 | функция в `computeIfAbsent`, `compute`, `merge` меняет ту же карту либо ходит в сеть и в базу | CRITICAL для изменения карты, для долгой работы MINOR |
+| jr:492 | `compareAndSet` у `AtomicReference<Integer>`, `<Long>`, `<String>`: сравниваются ссылки | MAJOR |
+| jr:493 | виртуальные потоки: блокирующий вызов внутри `synchronized`, пул из виртуальных потоков | MAJOR, для пула MINOR |
+| jr:494 | список неограниченной длины в условии `IN` | MINOR |
+| jr:495 | исключение при загрузке класса: `throw` в статическом блоке, разбор переменных окружения в статических полях | MINOR |
+
+```java
+// jr:485: компилируется, но max читает результат Integer::max как знак сравнения - ответ неверен
+int max = values.stream().max(Integer::max).get();
+// правильно
+int max = values.stream().max(Integer::compare).get();
+
+// jr:480: очередь по умолчанию безразмерная, поэтому до 32 потоков пул не вырастет никогда
+executor.setCorePoolSize(4);
+executor.setMaxPoolSize(32);
+```
+
+- **jr:479.** Порядок строк без `ORDER BY` база не гарантирует: страницы нарезаются из разных порядков, и
+  записи между ними дублируются и теряются. Находки: `PageRequest.of(page, size)` без `Sort` либо с
+  `Sort.unsorted()`, `Pageable.ofSize(n).withPage(page)`; текст запроса с `OFFSET` без `ORDER BY`
+  (уверенность «подтверждено»); параметр `Pageable` у метода контроллера без `@SortDefault` и без
+  `@PageableDefault(sort = ...)` — уровень MINOR, уверенность «подозрение», потому что сортировку может
+  передать клиент. Не считаются: первая страница (`PageRequest.of(0, size)` — это «любые N строк»); страница,
+  которую передают только методам с `OrderBy` в имени либо с `ORDER BY` в `@Query`. О самом смещении — jr:474.
+- **jr:480.** Пул создает потоки сверх `corePoolSize`, только когда очередь заполнена, а у
+  `ThreadPoolTaskExecutor` она по умолчанию безразмерная. Находки: `setMaxPoolSize(...)` без
+  `setQueueCapacity(...)` либо с `Integer.MAX_VALUE`; `spring.task.execution.pool.max-size` без `queue-capacity`
+  в настройках. Вторая находка (MINOR) — ограниченная очередь без политики отказа: `setQueueCapacity(n)` без
+  `setRejectedExecutionHandler(...)` и `new ThreadPoolExecutor(...)` с `ArrayBlockingQueue` без обработчика —
+  лишняя задача отклоняется исключением. Не считаются: пул постоянного размера (`core` равен `max`); файл,
+  в котором `RejectedExecutionException` или `TaskRejectedException` ловят сами. О безразмерной очереди
+  у `Executors` и `ThreadPoolExecutor` сообщает jr:77.
+- **jr:481.** Контекст персистентности держит каждую прочитанную сущность до конца транзакции. Находка — в
+  `@Transactional`-методе цикл по страницам с обращением к репозиторию либо потоковое чтение
+  (`repository.stream...()`, `scroll()`, `getResultStream()`), если в методе нет `clear()`, `detach(...)` или
+  `evict(...)`. Одна находка на метод. Цикл по готовому списку сюда не относится — о запросах в нем сообщает
+  jr:63.
+- **jr:482.** `deleteAll()` читает всю таблицу и удаляет записи по одной; так же работают `deleteAll(entities)`
+  и методы `deleteBy...` / `removeBy...`, объявленные в репозитории без `@Query`. Одним запросом удаляют
+  `deleteAllInBatch()`, `deleteAllByIdInBatch(ids)` и `@Modifying @Query("delete ...")`. По одной записи
+  удалять нужно, только когда важны каскады, `orphanRemoval` или `@PreRemove`. `deleteById` не считается.
+- **jr:483.** Поля аудита заполняет `AuditingEntityListener`, и только если аудит включен. Находки: в проекте
+  нет `@EnableJpaAuditing` (или другого `@Enable...Auditing`) — одна находка на проект; аудит включен, но
+  у сущности и ее предков нет `@EntityListeners(AuditingEntityListener.class)`; есть `@CreatedBy` /
+  `@LastModifiedBy`, а бина `AuditorAware` нет (MINOR). Проверка работает, если в проверку попал класс с
+  `@SpringBootApplication` или `@Configuration`. Сущность с предком вне проекта не проверяется.
+- **jr:484.** Промежуточные операции ленивы: цепочка, которая стоит отдельным оператором и кончается на `map`,
+  `filter`, `peek`, `sorted` и подобные, не выполняется вовсе. Стримом цепочку делает ее источник (`stream()`,
+  `Stream.of(...)`, переменная типа `Stream`), поэтому `optional.map(...)` и `query.limit(10)` у построителя
+  запросов не считаются. Проверяется и лямбда в `forEach` / `ifPresent`, результат которой никто не читает.
+- **jr:485.** `Integer::max` подходит под сигнатуру компаратора, но возвращает число, а не знак сравнения.
+  Находки: `Integer::max`, `Integer::min`, `Integer::sum`, `Math::max`, `Math::min`, лямбды
+  `(a, b) -> Math.max(a, b)` и `(a, b) -> a > b ? a : b` последним аргументом `max`, `min`, `sorted`, `sort`,
+  в том числе `Collections.max(list, Integer::max)`. `reduce(Integer::max)` — верный способ и не считается.
+- **jr:486.** `Collectors.toMap` бросает `NullPointerException` на значении `null`, `groupingBy` — на ключе
+  `null`. Находка — функция, которая по коду может вернуть `null`: возвращает `null` сама (в том числе веткой
+  `? :`), кончается на `orElse(null)`, читает `Map.get(...)`, либо это геттер поля или метода с `@Nullable`.
+  Поле без пометок не считается: о нем ничего не известно.
+- **jr:487.** У массива и у класса без своих `equals` и `hashCode` оба метода работают по ссылке. Находки:
+  массив первым параметром типа у `Map` / `Set` (уверенность «подтверждено»); свой класс без `equals` и
+  `hashCode` (и без `@Data`, `@Value`, `@EqualsAndHashCode`), если где-то в проекте ключ создают заново прямо
+  в обращении: `routes.get(new RouteId(...))`, `put(new RouteId(...), ...)`. Находка — на объявлении класса,
+  с указанием обоих мест. Класс, который ищут тем же объектом, не считается: сравнение по ссылке его
+  устраивает. Об изменяемых ключах — jr:478.
+- **jr:488.** `Collections.unmodifiableList(list)` и `list.subList(a, b)` данных не копируют. Находки:
+  `this.items = Collections.unmodifiableList(items)`, где `items` — параметр (вызывающий код держит исходную
+  коллекцию и может ее менять); `subList`, сохраненный в поле; `return field.subList(...)` — наружу уходит окно
+  во внутренний список; изменение размера списка (`add`, `remove`, `clear`), пока его `subList` еще
+  используют, — это `ConcurrentModificationException`, уровень MAJOR. Не считаются: обертка над своим полем
+  в геттере, `subList` локального списка, копия (`new ArrayList<>(list.subList(...))`, `List.copyOf(...)`).
+- **jr:489.** `equals` и `hashCode` записи сравнивают компонент-массив по ссылке, `toString` печатает адрес.
+  Не считается запись со своим `equals`.
+- **jr:490.** Контекст безопасности и атрибуты запроса хранятся в `ThreadLocal` потока запроса. Находки:
+  `SecurityContextHolder.getContext()`, `RequestContextHolder.getRequestAttributes()` и
+  `currentRequestAttributes()` в `@Async`-методе, в лямбде для `submit`, `execute`, `runAsync`,
+  `supplyAsync`, `...Async`, в `new Thread(...)`, в параллельном стриме и в `@Scheduled`-методе — там
+  пользователя нет вовсе. Чтение, спрятанное в вызываемом методе, ищется вверх по вызовам на три шага. Если
+  в проекте настроена передача контекста (`DelegatingSecurityContext...`, `TaskDecorator`,
+  `MODE_INHERITABLETHREADLOCAL`), правило молчит.
+- **jr:491.** Функция выполняется, пока карта держит блокировку. Изменение той же карты в функции (`put`,
+  `remove`, вложенный `computeIfAbsent`) и рекурсия через свой метод (мемоизация `fib`) — CRITICAL:
+  `ConcurrentHashMap` отвечает `IllegalStateException: Recursive update` либо зависает, `HashMap` —
+  `ConcurrentModificationException`. Запрос по сети, обращение к репозиторию и `sleep` в функции
+  `ConcurrentHashMap` — MINOR: потоки с ключами из той же корзины ждут. Долгая работа ищется в лямбде, по
+  ссылке на метод и в вызываемых методах на три шага вглубь; для обычной `HashMap` она не считается.
+- **jr:492.** `compareAndSet(expected, next)` сравнивает `expected` с текущим значением через `==`. Проверяются
+  `AtomicReference`, `AtomicStampedReference` и `AtomicMarkableReference` с `Integer`, `Long`, `String`,
+  `BigDecimal`, `UUID` и подобными значениями. Не считаются: ожидаемое значение, прочитанное из той же ссылки
+  (`current = ref.get()`), `Boolean` (`TRUE` и `FALSE` — всегда одни объекты) и свои классы.
+- **jr:493.** Работает, только если в проекте есть виртуальные потоки: `spring.threads.virtual.enabled=true`,
+  `Executors.newVirtualThreadPerTaskExecutor()`, `Thread.ofVirtual()`, `Thread.startVirtualThread(...)`.
+  Находки: блокирующий вызов (HTTP, репозиторий, `sleep`, JDBC, чтение файла) внутри `synchronized`-блока или
+  метода — до JDK 24 такой поток не отпускает поток-носитель; пул, собранный из виртуальных потоков
+  (`Executors.newFixedThreadPool(n, Thread.ofVirtual().factory())`), — MINOR.
+- **jr:494.** У Oracle в `IN` не больше 1000 значений, у PostgreSQL и SQL Server ограничено число параметров
+  запроса. Проверяются `findAllById(...)`, методы с `In` в имени (`findByIdIn`, `deleteByStatusNotIn`) и методы
+  с `in (:ids)` в `@Query`. Находка — если список собран из результата другого запроса без постраничного
+  предела либо пришел из HTTP-запроса (`@RequestBody List<Long> ids` без `@Size`). Не считается метод,
+  в котором список делят на части (`partition`, `chunk`, `subList`). Уверенность — «подозрение»: насколько
+  список вырастет, по коду не узнать.
+- **jr:495.** Исключение в статическом инициализаторе ломает класс до перезапуска: первый вызов заканчивается
+  `ExceptionInInitializerError`, следующие — `NoClassDefFoundError` без причины. Находки: `throw` в статическом
+  блоке (одна на блок); разбор `System.getenv(...)` и `System.getProperty(name)` в статическом поле или блоке
+  без `try`-`catch` — `Integer.parseInt(System.getenv("LIMIT"))`. Не считаются: `System.getProperty(name,
+  default)`, лямбда в статическом поле, поле объекта.
+
+Дополнения к правилам, которые уже были:
+
+- **jr:3, откат на проверяемых исключениях.** Находит `@SneakyThrows` на `@Transactional`-методе без
+  `rollbackFor`: проверяемое исключение летит без `throws` в сигнатуре, а транзакция на нем не откатывается.
+- **jr:9, непотокобезопасные объекты в статических полях.** Кроме `SimpleDateFormat` и `Calendar`, проверяются
+  `DateFormat`, `DecimalFormat`, `NumberFormat`, `MessageFormat`, `ChoiceFormat`, `MessageDigest`, `Cipher`,
+  `Mac`, `Signature` и `Matcher`. `ThreadLocal<DecimalFormat>`, `DateTimeFormatter` и `Pattern` не считаются.
+- **jr:24, значение без проверки.** Кроме `Optional.get()`, находит `getAsInt()`, `getAsLong()` и
+  `getAsDouble()` сразу после `max()`, `min()`, `average()`, `findFirst()`, `findAny()` и `reduce(операция)`
+  числового стрима. Не считаются: вызов внутри проверки на непустую коллекцию и внутри `try`, который ловит
+  `NoSuchElementException`.
+- **jr:103, асинхронный запуск в транзакции.** Находит параллельный стрим (`parallelStream()`, `parallel()`)
+  внутри `@Transactional`-метода, операции которого обращаются к репозиторию — в лямбде, по ссылке на метод
+  либо в вызываемом методе: в потоках общего пула транзакции нет. Вычисления в параллельном стриме не считаются.
 
 ## Подбор уникального кода
 

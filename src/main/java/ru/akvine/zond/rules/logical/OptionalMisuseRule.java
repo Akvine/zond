@@ -30,7 +30,10 @@ public class OptionalMisuseRule extends AbstractRule {
 
     // Методы, которые возвращают Optional: вызов get() сразу после них ничем не защищен
     private static final Set<String> OPTIONAL_SOURCES = Set.of("findFirst", "findAny", "findById", "ofNullable");
-    private static final Set<String> NON_EMPTY_TERMINALS = Set.of("min", "max", "findFirst", "findAny");
+    private static final Set<String> NON_EMPTY_TERMINALS = Set.of("min", "max", "findFirst", "findAny", "average");
+    // OptionalInt, OptionalLong, OptionalDouble: итоги числовых стримов
+    private static final Set<String> PRIMITIVE_GETS = Set.of("getAsInt", "getAsLong", "getAsDouble");
+    private static final Set<String> PRIMITIVE_SOURCES = Set.of("max", "min", "average", "findFirst", "findAny", "reduce");
     private static final Set<String> SIZE_PRESERVING = Set.of(
             "map", "mapToInt", "mapToLong", "mapToDouble", "mapToObj", "boxed", "sorted", "distinct", "peek", "parallel",
             "sequential", "unordered");
@@ -68,6 +71,13 @@ public class OptionalMisuseRule extends AbstractRule {
         }
 
         for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            if (isUncheckedPrimitiveGet(call)) {
+                violations.add(violation(sourceFile, call.getName(),
+                        "'" + call.getNameAsString() + "()' без проверки сразу после '"
+                                + call.getScope().map(scope -> Nodes.unwrap(scope).asMethodCallExpr().getNameAsString()).orElse("")
+                                + "()': у пустого стрима итога нет, и вызов закончится NoSuchElementException;"
+                                + " используйте orElse(...), orElseThrow(...) либо ifPresent(...)"));
+            }
             if (!GET.equals(call.getNameAsString()) || !call.getArguments().isEmpty() || call.getScope().isEmpty()) {
                 continue;
             }
@@ -92,6 +102,18 @@ public class OptionalMisuseRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.LOGICAL;
+    }
+
+    // values.stream().mapToInt(...).max().getAsInt(): пустой ли стрим, перед вызовом никто не проверил
+    private boolean isUncheckedPrimitiveGet(MethodCallExpr call) {
+        if (!PRIMITIVE_GETS.contains(call.getNameAsString()) || !call.getArguments().isEmpty() || call.getScope().isEmpty()) {
+            return false;
+        }
+        Expression scope = Nodes.unwrap(call.getScope().get());
+        // reduce(начальное значение, операция) возвращает само значение, а не OptionalInt
+        boolean source = scope.isMethodCallExpr() && PRIMITIVE_SOURCES.contains(scope.asMethodCallExpr().getNameAsString())
+                && scope.asMethodCallExpr().getArguments().size() <= 1;
+        return source && !isCaught(call) && !isOverNonEmptyCollection(scope, call);
     }
 
     private boolean isCaught(Node node) {

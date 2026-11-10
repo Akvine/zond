@@ -10,6 +10,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.Rule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.TransactionalAnnotations;
 import ru.akvine.zond.rules.support.Types;
 
@@ -20,6 +21,7 @@ import java.util.stream.Collectors;
 
 @Component
 public class TransactionalRollbackForCheckedExceptionRule implements Rule {
+    private static final String SNEAKY_THROWS = "SneakyThrows";
     // Unchecked-исключение - наследник RuntimeException или Error. Если иерархию разрешить не удалось,
     // узнаем его по имени; все остальное из throws считаем checked
     private static final Set<String> UNCHECKED_ROOTS = Set.of("RuntimeException", "Error");
@@ -55,7 +57,8 @@ public class TransactionalRollbackForCheckedExceptionRule implements Rule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет @Transactional без rollbackFor над методами, которые бросают checked-исключения";
+        return "Сканирует код и ищет @Transactional без rollbackFor над методами, которые бросают checked-исключения,"
+                + " в том числе скрытые за @SneakyThrows";
     }
 
     @Override
@@ -73,6 +76,24 @@ public class TransactionalRollbackForCheckedExceptionRule implements Rule {
             }
 
             List<String> checkedExceptions = findCheckedExceptions(method);
+            // Lombok пробрасывает проверяемое исключение мимо компилятора: в сигнатуре его нет, но оно летит
+            boolean sneaky = Annotations.has(method, SNEAKY_THROWS);
+            if (checkedExceptions.isEmpty() && sneaky) {
+                TransactionalAnnotations.findEffective(method)
+                        .filter(annotation -> !TransactionalAnnotations.hasRollbackRule(annotation))
+                        .ifPresent(annotation -> violations.add(new Violation(
+                                errorLevel(),
+                                errorType(),
+                                code(),
+                                name(),
+                                sourceFile.path(),
+                                method.getBegin().map(position -> position.line).orElse(0),
+                                "@SneakyThrows на @Transactional-методе '" + method.getNameAsString()
+                                        + "': Lombok пробрасывает проверяемое исключение без throws в сигнатуре,"
+                                        + " а на проверяемых исключениях Spring транзакцию не откатывает - она будет"
+                                        + " зафиксирована с частично выполненной работой; задайте"
+                                        + " rollbackFor = Exception.class либо оборачивайте исключение в непроверяемое")));
+            }
             if (checkedExceptions.isEmpty()) {
                 continue;
             }
