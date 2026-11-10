@@ -459,4 +459,11 @@ public class RuleCodes {
     public final static String READ_LOOP_WITHOUT_EOF_RULE_CODE = "jr:453";
     public final static String USUALLY_CHECKED_RESULT_IGNORED_RULE_CODE = "jr:454";
     public final static String PURE_CALL_RESULT_IGNORED_RULE_CODE = "jr:455";
+    public final static String PESSIMISTIC_LOCK_WITHOUT_HANDLING_RULE_CODE = "jr:456";
+    public final static String STRICT_ISOLATION_WITHOUT_RETRY_RULE_CODE = "jr:457";
+    public final static String OPTIMISTIC_LOCK_WITHOUT_RETRY_RULE_CODE = "jr:458";
+    public final static String EXECUTOR_GRACEFUL_SHUTDOWN_RULE_CODE = "jr:459";
+    public final static String PROXY_CALL_IN_INIT_METHOD_RULE_CODE = "jr:460";
+    public final static String FINAL_METHOD_IN_PROXIED_BEAN_RULE_CODE = "jr:461";
+    public final static String DATABASE_EXCEPTION_TO_CLIENT_RULE_CODE = "jr:462";
 }
