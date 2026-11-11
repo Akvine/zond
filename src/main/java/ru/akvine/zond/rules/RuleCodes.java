@@ -513,4 +513,16 @@ public class RuleCodes {
     public final static String SEQUENCE_ALLOCATION_SIZE_ONE_RULE_CODE = "jr:507";
     public final static String INTERMEDIATE_COLLECTION_RULE_CODE = "jr:508";
     public final static String LAZY_RELATION_IN_MAPPING_RULE_CODE = "jr:509";
+    public final static String UNBUFFERED_FILE_STREAM_RULE_CODE = "jr:510";
+    public final static String SINGLE_BYTE_IO_RULE_CODE = "jr:511";
+    public final static String REPEATED_QUERY_IN_METHOD_RULE_CODE = "jr:512";
+    public final static String PAGE_COUNT_WITH_JOINS_RULE_CODE = "jr:513";
+    public final static String ENTITIES_LOADED_FOR_IDS_RULE_CODE = "jr:514";
+    public final static String ASYNC_AWAITED_IMMEDIATELY_RULE_CODE = "jr:515";
+    public final static String IN_MEMORY_LIMIT_AFTER_QUERY_RULE_CODE = "jr:516";
+    public final static String TRANSACTIONAL_BLOCKING_WAIT_RULE_CODE = "jr:517";
+    public final static String HIDDEN_REGEX_IN_HOT_METHOD_RULE_CODE = "jr:518";
+    public final static String CALENDAR_FOR_CURRENT_TIME_RULE_CODE = "jr:519";
+    public final static String COPY_ON_WRITE_IN_LOOP_RULE_CODE = "jr:520";
+    public final static String EXCEPTION_AS_BRANCH_IN_LOOP_RULE_CODE = "jr:521";
 }
