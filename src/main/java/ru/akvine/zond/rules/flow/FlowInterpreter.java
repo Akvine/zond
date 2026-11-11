@@ -61,6 +61,7 @@ import com.github.javaparser.ast.stmt.YieldStmt;
 import com.github.javaparser.ast.type.Type;
 import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.StreamChains;
 import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
@@ -109,6 +110,10 @@ public final class FlowInterpreter {
     private static final Set<String> INDEX_CONSUMERS = Set.of("charAt", "substring");
     private static final List<String> SEARCH_GUARDS = List.of(".contains(", ".startsWith(", ".endsWith(", ".matches(");
     private static final String OR_ELSE = "orElse";
+    private static final String FILTER = "filter";
+    private static final Set<BinaryExpr.Operator> LOGICAL = Set.of(BinaryExpr.Operator.AND, BinaryExpr.Operator.OR);
+    // orderBy >= 0, index > -1, position != -1
+    private static final Pattern INDEX_COMPARISON = Pattern.compile("\\w+\\s*(>=\\s*0|>\\s*-1|!=\\s*-1)");
     private static final String INDEX_SEARCH_REASON = "результат поиска";
     private static final String GROUP = "group";
     private static final String IS_EMPTY = "isEmpty";
@@ -1333,18 +1338,67 @@ public final class FlowInterpreter {
         }
         Node current = place.getParentNode().orElse(null);
         while (current != null && !(current instanceof CallableDeclaration)) {
-            String condition = "";
-            if (current instanceof IfStmt statement) {
-                condition = statement.getCondition().toString();
-            } else if (current instanceof ConditionalExpr conditional) {
-                condition = conditional.getCondition().toString();
-            }
-            String checked = condition;
+            // boolean sorted = orderBy >= 0; ... sorted ? text.substring(0, orderBy) : text - проверка спрятана в флаге
+            String checked = conditionAround(current, place) + flagConditions(current);
             if (SEARCH_GUARDS.stream().anyMatch(checked::contains)
                     || searched.filter(text -> INDEX_SEARCH.stream().anyMatch(method -> checked.contains(text + "." + method + "("))).isPresent()) {
                 return true;
             }
             current = current.getParentNode().orElse(null);
+        }
+        return searched.filter(text -> isFilteredEarlier(place, text)).isPresent();
+    }
+
+    // Условие, под которым выполняется место: if, ?: либо левая часть && и ||
+    private String conditionAround(Node current, Node place) {
+        if (current instanceof IfStmt statement) {
+            return statement.getCondition().toString();
+        }
+        if (current instanceof ConditionalExpr conditional) {
+            return conditional.getCondition().toString();
+        }
+        // text.contains(":") && text.substring(text.indexOf(':')).isBlank(): правая часть идет после левой
+        boolean afterLeft = current instanceof BinaryExpr binary && LOGICAL.contains(binary.getOperator())
+                && !binary.getLeft().isAncestorOf(place) && binary.getLeft() != place;
+        return afterLeft ? ((BinaryExpr) current).getLeft().toString() : "";
+    }
+
+    // Условия, которыми заданы логические переменные из условия if или ?:
+    private String flagConditions(Node branching) {
+        Expression condition = null;
+        if (branching instanceof IfStmt statement) {
+            condition = statement.getCondition();
+        } else if (branching instanceof ConditionalExpr conditional) {
+            condition = conditional.getCondition();
+        }
+        if (condition == null) {
+            return "";
+        }
+        StringBuilder flags = new StringBuilder();
+        for (NameExpr flag : condition.findAll(NameExpr.class)) {
+            LocalTypes.findInitializer(flag)
+                    .filter(value -> value.isBinaryExpr() || value.isUnaryExpr() || value.isMethodCallExpr())
+                    .ifPresent(value -> flags.append(' ').append(value));
+        }
+        // Сравнение самого индекса с нулем или с -1 - такая же проверка, как contains
+        return INDEX_COMPARISON.matcher(flags).find() ? flags + SEARCH_GUARDS.get(0) : flags.toString();
+    }
+
+    // lines.filter(line -> line.contains("=")).forEach(line -> line.substring(0, line.indexOf('='))): наличие проверил filter
+    private boolean isFilteredEarlier(Node place, String searched) {
+        Optional<MethodCallExpr> operation = place.findAncestor(LambdaExpr.class)
+                .flatMap(Node::getParentNode)
+                .filter(parent -> parent instanceof MethodCallExpr)
+                .map(parent -> (MethodCallExpr) parent);
+        if (operation.isEmpty()) {
+            return false;
+        }
+        for (MethodCallExpr step : StreamChains.callsBefore(operation.get())) {
+            String arguments = step.getArguments().toString();
+            if (FILTER.equals(step.getNameAsString())
+                    && SEARCH_GUARDS.stream().anyMatch(guard -> arguments.contains(searched + guard))) {
+                return true;
+            }
         }
         return false;
     }

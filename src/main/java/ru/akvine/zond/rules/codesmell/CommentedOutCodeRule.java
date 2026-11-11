@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.codesmell;
 
+import com.github.javaparser.ast.body.CallableDeclaration;
 import com.github.javaparser.ast.comments.Comment;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -16,6 +17,8 @@ import java.util.regex.Pattern;
 
 @Component
 public class CommentedOutCodeRule extends AbstractRule {
+    // Объявление члена класса: начинается с модификатора доступа
+    private static final Pattern MEMBER_DECLARATION = Pattern.compile("^\\s*(private|public|protected)\\s+\\S.*$");
     // Оператор целиком: начинается как код и заканчивается точкой с запятой
     private static final Pattern STATEMENT = Pattern.compile(
             "^(return\\b|throw\\s+new\\b|(private|public|protected|final|static)\\s"
@@ -45,6 +48,7 @@ public class CommentedOutCodeRule extends AbstractRule {
         List<Comment> comments = sourceFile.unit().getAllComments().stream()
                 .filter(comment -> !comment.isJavadocComment())
                 .filter(this::looksLikeCode)
+                .filter(comment -> !isIllustration(comment))
                 .sorted(Comparator.comparingInt(this::line))
                 .toList();
 
@@ -71,6 +75,17 @@ public class CommentedOutCodeRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.CODE_SMELL;
+    }
+
+    /**
+     * // private static final int THREADS = 100; внутри метода: объявление поля там стоять не могло, значит,
+     * это не забытый код, а пример того, что метод разбирает
+     */
+    private boolean isIllustration(Comment comment) {
+        boolean insideBody = comment.getCommentedNode().or(comment::getParentNode)
+                .flatMap(anchor -> anchor.findAncestor(CallableDeclaration.class))
+                .isPresent();
+        return insideBody && comment.getContent().lines().allMatch(line -> MEMBER_DECLARATION.matcher(line).matches());
     }
 
     // Хотя бы одна строка комментария похожа на код

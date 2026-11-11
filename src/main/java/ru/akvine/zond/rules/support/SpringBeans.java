@@ -21,6 +21,7 @@ import java.util.Set;
 public class SpringBeans {
     private final static String LAZY = "Lazy";
     private final static String VALUE = "Value";
+    private final static String BEAN_EXPRESSION = "#{";
     private final static Set<String> STEREOTYPES =
             Set.of("Component", "Service", "Repository", "Controller", "RestController", "Configuration");
     private final static Set<String> INJECTION_ANNOTATIONS = Set.of("Autowired", "Inject", "Resource");
@@ -58,7 +59,7 @@ public class SpringBeans {
                 .or(() -> bean.getConstructors().stream()
                         .max(Comparator.comparingInt(candidate -> candidate.getParameters().size())));
         constructor.ifPresent(found -> found.getParameters()
-                .forEach(parameter -> dependencies.add(toDependency(parameter.getType(), parameter))));
+                .forEach(parameter -> addDependency(dependencies, parameter.getType(), parameter)));
 
         boolean allFields = Annotations.has(bean, ALL_ARGS_CONSTRUCTOR);
         boolean finalFields = Annotations.has(bean, REQUIRED_ARGS_CONSTRUCTOR);
@@ -69,18 +70,28 @@ public class SpringBeans {
             boolean viaLombok = constructor.isEmpty()
                     && (allFields || (finalFields && field.isFinal() && !hasInitializer(field)));
             if (viaLombok || Annotations.hasAny(field, INJECTION_ANNOTATIONS)) {
-                field.getVariables().forEach(variable -> dependencies.add(toDependency(variable.getType(), field)));
+                field.getVariables().forEach(variable -> addDependency(dependencies, variable.getType(), field));
             }
         }
 
         for (MethodDeclaration method : bean.getMethods()) {
             if (Annotations.hasAny(method, INJECTION_ANNOTATIONS)) {
                 for (Parameter parameter : method.getParameters()) {
-                    dependencies.add(toDependency(parameter.getType(), parameter));
+                    addDependency(dependencies, parameter.getType(), parameter);
                 }
             }
         }
         return dependencies;
+    }
+
+    // @Value("${report.path:}") String path - настройка, а не другой бин. @Value("#{mailSender}") - уже бин
+    private void addDependency(List<Dependency> dependencies, Type type, NodeWithAnnotations<?> annotated) {
+        boolean property = Annotations.find(annotated, VALUE)
+                .filter(value -> !value.toString().contains(BEAN_EXPRESSION))
+                .isPresent();
+        if (!property) {
+            dependencies.add(toDependency(type, annotated));
+        }
     }
 
     /**

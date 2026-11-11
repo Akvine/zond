@@ -57,6 +57,7 @@ public class UsuallyCheckedResultIgnoredRule extends AbstractRule implements Pro
     // Соглашение видно, когда вызовов хотя бы столько и результат проверяют в такой доле из них
     private static final int MIN_CALLS = 5;
     private static final double CHECKED_SHARE = 0.8;
+    private static final int MAX_OUTLIERS = 3;
     // Результат этих методов - побочная информация: что было в карте, добавилось ли в множество, сколько строк
     // изменено, что лежало в счетчике до изменения
     private static final Set<String> ACTION_METHODS = Set.of(
@@ -91,6 +92,15 @@ public class UsuallyCheckedResultIgnoredRule extends AbstractRule implements Pro
         private int total;
         private int used;
         private int chained;
+
+        // Результат берут почти везде, и мест без него - единицы
+        private boolean isChecked() {
+            // Семь мест из сорока пяти, где результат не нужен, - уже не недосмотр, а второй способ вызова
+            boolean convention = total >= MIN_CALLS && used >= CHECKED_SHARE * total && total - used <= MAX_OUTLIERS;
+            // query.active().list(): результат берут, чтобы продолжить цепочку - это построитель, а не проверка
+            boolean fluent = chained * 2 >= used;
+            return convention && !fluent;
+        }
     }
 
     @Override
@@ -138,10 +148,7 @@ public class UsuallyCheckedResultIgnoredRule extends AbstractRule implements Pro
         List<Usage> usages = new ArrayList<>(ownUsages.values());
         usages.addAll(libraryUsages.values());
         for (Usage usage : usages) {
-            boolean convention = usage.total >= MIN_CALLS && usage.used >= CHECKED_SHARE * usage.total;
-            // query.active().list(): результат берут, чтобы продолжить цепочку - это построитель, а не проверка
-            boolean fluent = usage.chained * 2 >= usage.used;
-            if (!convention || fluent) {
+            if (!usage.isChecked()) {
                 continue;
             }
             for (MethodCallExpr call : usage.ignored) {

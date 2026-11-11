@@ -16,6 +16,7 @@ import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.MethodCalls;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -26,6 +27,9 @@ public class ConsoleOutputRule extends AbstractRule {
     private static final String SYSTEM = "System";
     private static final Set<String> CONSOLE_STREAMS = Set.of("out", "err");
     private static final String MAIN = "main";
+    private static final Set<String> CONSOLE_PACKAGES = Set.of("cli", "console", "shell", "terminal", "commandline", "tui");
+    // Слово целиком: ConsoleMenu и ReportCli подходят, Client и Inclined - нет
+    private static final Pattern CONSOLE_TYPE = Pattern.compile("(^|[a-z0-9])(Console|Cli|CLI|Terminal)([A-Z]|$)");
     // @Command из picocli и Spring Shell: класс - команда консольной программы
     private static final Set<String> COMMAND_ANNOTATIONS = Set.of("Command", "ShellComponent");
     private static final Set<String> CLI_PACKAGES = Set.of(
@@ -47,7 +51,7 @@ public class ConsoleOutputRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         // Пример или команда консольной программы (picocli, Spring Shell): ее вывод и есть консоль
-        if (TestPaths.isSample(sourceFile.path()) || isConsoleCommand(sourceFile)) {
+        if (TestPaths.isSample(sourceFile.path()) || isConsoleCommand(sourceFile) || isConsoleInterface(sourceFile)) {
             return violations;
         }
         for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
@@ -79,6 +83,20 @@ public class ConsoleOutputRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.CODE_SMELL;
+    }
+
+    /**
+     * Класс консольного интерфейса: лежит в пакете cli, console, shell или terminal либо так назван (ConsoleMenu,
+     * CliRunner, TerminalPrinter). Печать в консоль - его прямая работа, логгер тут не замена
+     */
+    private boolean isConsoleInterface(SourceFile sourceFile) {
+        boolean consolePackage = sourceFile.unit().getPackageDeclaration()
+                .map(declaration -> declaration.getNameAsString().split("\\."))
+                .stream()
+                .flatMap(Arrays::stream)
+                .anyMatch(CONSOLE_PACKAGES::contains);
+        return consolePackage || sourceFile.unit().getTypes().stream()
+                .anyMatch(type -> CONSOLE_TYPE.matcher(type.getNameAsString()).find());
     }
 
     // Команда picocli или Spring Shell либо интерактивная консоль (ConsoleApp в Hazelcast): main и чтение ввода

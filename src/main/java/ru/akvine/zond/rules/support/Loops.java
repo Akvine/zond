@@ -2,6 +2,8 @@ package ru.akvine.zond.rules.support;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.BodyDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -9,6 +11,7 @@ import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.DoStmt;
 import com.github.javaparser.ast.stmt.ForEachStmt;
 import com.github.javaparser.ast.stmt.ForStmt;
+import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import lombok.experimental.UtilityClass;
@@ -35,6 +38,9 @@ public class Loops {
     private final static Set<String> OPTIONAL_METHODS = Set.of("map", "flatMap", "filter");
     private final static Set<String> OPTIONAL_SOURCES =
             Set.of("findById", "findFirst", "findAny", "findOne", "ofNullable", "max", "min");
+    // Методы, которые есть у Optional и которых нет у стрима
+    private final static Set<String> OPTIONAL_ENDINGS = Set.of(
+            "orElse", "orElseGet", "orElseThrow", "isPresent", "ifPresent", "ifPresentOrElse", "isEmpty", "or", "get");
     private final static String OPTIONAL = "Optional";
     private final static Set<String> OPTIONAL_TYPES = Set.of("Optional", "OptionalInt", "OptionalLong", "OptionalDouble");
     private final static Pattern OPTIONAL_NAME = Pattern.compile("(?i).*optional$|^(optional|maybe).*|.*Opt$");
@@ -105,7 +111,31 @@ public class Loops {
 
     // optional.map(value -> ...) выполняет лямбду не больше одного раза - это не перебор
     private boolean isOnOptional(MethodCallExpr call) {
-        return OPTIONAL_METHODS.contains(call.getNameAsString()) && call.getScope().filter(Loops::isOptional).isPresent();
+        return OPTIONAL_METHODS.contains(call.getNameAsString())
+                && (call.getScope().filter(Loops::isOptional).isPresent() || endsAsOptional(call));
+    }
+
+    /**
+     * Чем цепочка кончается: found.flatMap(...).map(...).orElse(...), ...isPresent(), return ...map(...) из метода
+     * с результатом Optional. У стрима таких продолжений нет, поэтому источник цепочки можно и не знать
+     */
+    private boolean endsAsOptional(MethodCallExpr call) {
+        MethodCallExpr last = call;
+        for (MethodCallExpr next : StreamChains.callsAfter(call)) {
+            if (!OPTIONAL_METHODS.contains(next.getNameAsString())) {
+                return OPTIONAL_ENDINGS.contains(next.getNameAsString());
+            }
+            last = next;
+        }
+        Node holder = last.getParentNode().orElse(null);
+        if (holder instanceof ReturnStmt) {
+            return Nodes.enclosingCallable(last)
+                    .filter(callable -> callable instanceof MethodDeclaration)
+                    .map(callable -> LocalTypes.typeName(((MethodDeclaration) callable).getType()))
+                    .filter(OPTIONAL_TYPES::contains)
+                    .isPresent();
+        }
+        return holder instanceof VariableDeclarator variable && OPTIONAL_TYPES.contains(LocalTypes.typeName(variable.getType()));
     }
 
     private boolean isOptional(Expression expression) {

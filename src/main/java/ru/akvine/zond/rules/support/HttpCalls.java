@@ -44,6 +44,11 @@ public class HttpCalls {
             "FeignClient", "HttpExchange", "GetExchange", "PostExchange", "PutExchange", "DeleteExchange",
             "PatchExchange", "RequestLine", "GET", "POST", "PUT", "DELETE", "PATCH");
 
+    // Методы Optional, стрима и любого объекта: по ним видно, что получатель - не HTTP-клиент
+    private static final Set<String> CONTAINER_METHODS = Set.of(
+            "map", "flatMap", "filter", "orElse", "orElseGet", "orElseThrow", "isPresent", "isEmpty", "ifPresent",
+            "ifPresentOrElse", "stream", "equals", "hashCode", "toString");
+
     private static final Set<String> HTTP_METHODS = Set.of(
             "getForObject", "getForEntity", "postForObject", "postForEntity", "postForLocation", "patchForObject",
             "exchange", "retrieve", "openConnection", "openStream");
@@ -111,15 +116,28 @@ public class HttpCalls {
             return isDeclarativeClient(projectType.get());
         }
 
-        // restTemplate.getMessageConverters().remove(converter): работа с настройками клиента, а не запрос
+        return HTTP_METHODS.contains(method) || isClientByName(call, scope, receiver, guessByClientName);
+    }
+
+    // Тип неизвестен: судим по имени получателя - apiClient, paymentGateway
+    private boolean isClientByName(MethodCallExpr call, Expression scope, String receiver, boolean guessByClientName) {
         Expression value = Nodes.unwrap(scope);
-        boolean onAccessorResult = value.isMethodCallExpr() && isAccessor(value.asMethodCallExpr());
         // HttpClientDefinition.lookup(...): статический метод класса, а не запрос через объект-клиент
         boolean onType = value.isNameExpr() && Character.isUpperCase(receiver.charAt(0));
-        return HTTP_METHODS.contains(method)
-                || HTTP_CLIENT.matcher(receiver).matches() && !onAccessorResult && !onType
-                || guessByClientName && MAYBE_CLIENT.matcher(receiver).matches() && !isDataAccess(call, scope)
-                && !onType;
+        if (onType || isContainerCall(call, value)) {
+            return false;
+        }
+        // restTemplate.getMessageConverters().remove(converter): работа с настройками клиента, а не запрос
+        boolean onAccessorResult = value.isMethodCallExpr() && isAccessor(value.asMethodCallExpr());
+        return HTTP_CLIENT.matcher(receiver).matches() && !onAccessorResult
+                || guessByClientName && MAYBE_CLIENT.matcher(receiver).matches() && !isDataAccess(call, scope);
+    }
+
+    // describeClient(expression).map(...): получатель - результат вызова с аргументами, то есть то, что метод
+    // вернул, а не объект-клиент; map, filter, orElse - методы Optional и стрима, у клиента их нет
+    private boolean isContainerCall(MethodCallExpr call, Expression receiver) {
+        return receiver.isMethodCallExpr() && !receiver.asMethodCallExpr().getArguments().isEmpty()
+                || CONTAINER_METHODS.contains(call.getNameAsString());
     }
 
     // Интерфейс без реализации в коде: аннотации на нем или на его методах описывают HTTP-запросы

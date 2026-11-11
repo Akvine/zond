@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.streams;
 
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -8,11 +9,14 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.MethodCalls;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.StreamChains;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
@@ -21,6 +25,7 @@ public class CollectUnboundedStreamRule extends AbstractRule {
     private static final String COLLECT = "collect";
     private static final String FILES = "Files";
     private static final String LINES = "lines";
+    private static final String READER = "Reader";
     private static final String FIND_ALL = "findAll";
 
     // Завершающие операции, которые складывают в память весь стрим целиком
@@ -94,6 +99,21 @@ public class CollectUnboundedStreamRule extends AbstractRule {
     /**
      * @return описание источника, размер которого заранее неизвестен или не ограничен
      */
+    // Читатель узнается по типу, по созданию (new BufferedReader(...), Files.newBufferedReader(...)) либо по имени
+    private boolean isReader(Expression scope) {
+        Expression value = Nodes.unwrap(scope);
+        if (LocalTypes.typeOf(value).isPresent()) {
+            return LocalTypes.typeOf(value).filter(type -> type.endsWith(READER)).isPresent();
+        }
+        String text = value.toString();
+        if (value.isObjectCreationExpr()) {
+            text = value.asObjectCreationExpr().getType().getNameAsString();
+        } else if (value.isMethodCallExpr()) {
+            text = value.asMethodCallExpr().getNameAsString();
+        }
+        return text.toLowerCase(Locale.ROOT).endsWith(READER.toLowerCase(Locale.ROOT));
+    }
+
     private Optional<String> describeSource(MethodCallExpr call) {
         String name = call.getNameAsString();
         if (StreamChains.isInfiniteSource(call)) {
@@ -102,8 +122,8 @@ public class CollectUnboundedStreamRule extends AbstractRule {
         if (FILES_STREAM_METHODS.contains(name) && MethodCalls.isCallOn(call, FILES, name)) {
             return Optional.of("Files." + name + "(...)");
         }
-        // reader.lines()
-        if (LINES.equals(name) && call.getArguments().isEmpty() && call.getScope().isPresent()) {
+        // reader.lines(); text.lines() у строки не считается - она уже целиком в памяти
+        if (LINES.equals(name) && call.getArguments().isEmpty() && call.getScope().filter(this::isReader).isPresent()) {
             return Optional.of(call.getScope().get() + ".lines()");
         }
         // repository.findAll().stream(): вся таблица целиком

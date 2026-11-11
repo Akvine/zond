@@ -1,10 +1,12 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.CastExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.stmt.AssertStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -17,6 +19,7 @@ import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
+import ru.akvine.zond.rules.support.StreamChains;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
@@ -24,6 +27,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class NarrowingCastRule extends AbstractRule {
@@ -32,6 +36,10 @@ public class NarrowingCastRule extends AbstractRule {
     private static final String MAX_VALUE = "MAX_VALUE";
     private static final String MIN_VALUE = "MIN_VALUE";
     private static final String BETWEEN = "between";
+    private static final String COUNT = "count";
+    private static final String STREAM = "stream";
+    private static final Pattern EXPANDING = Pattern.compile("flatMap\\w*|mapMulti\\w*");
+    private static final Set<BinaryExpr.Operator> SUMS = Set.of(BinaryExpr.Operator.PLUS, BinaryExpr.Operator.MINUS);
     private static final Set<String> SMALL_UNIT_METHODS = Set.of(
             "toDays", "toHours", "toDaysPart", "toHoursPart", "toMinutesPart", "toSecondsPart", "toMillisPart");
     private static final Set<String> SMALL_UNITS = Set.of("DAYS", "WEEKS", "MONTHS", "YEARS", "HOURS", "DECADES");
@@ -83,7 +91,8 @@ public class NarrowingCastRule extends AbstractRule {
                 .filter(cast -> isUnboundedLong(Nodes.unwrap(cast.getExpression())) && !TestClasses.isInside(cast))
                 // (int) Math.min(size, limit): значение перед приведением обрезано до предела
                 .filter(cast -> !isClamped(Nodes.unwrap(cast.getExpression())) && !isRangeChecked(cast)
-                        && !isSmallUnit(Nodes.unwrap(cast.getExpression())))
+                        && !isSmallUnit(Nodes.unwrap(cast.getExpression()))
+                        && !isCollectionCount(cast.getExpression(), cast))
                 .map(cast -> violation(sourceFile, cast,
                         "'" + Nodes.text(cast) + "': long приводится к " + cast.getType() + " без проверки - значение,"
                                 + " которое не помещается, молча обрежется и станет другим числом, возможно"
@@ -112,6 +121,45 @@ public class NarrowingCastRule extends AbstractRule {
                 || BETWEEN.equals(call.getNameAsString()) && call.getScope()
                 .filter(scope -> SMALL_UNITS.stream().anyMatch(unit -> scope.toString().endsWith(unit)))
                 .isPresent();
+    }
+
+    /**
+     * long found = items.stream().filter(...).count(); return (int) found: в коллекции не больше Integer.MAX_VALUE
+     * элементов, и отобранных из нее - тоже. Сумма таких счетчиков и поправка на константу - то же число элементов.
+     * flatMap разворачивает каждый элемент в несколько - там предела уже нет
+     */
+    private boolean isCollectionCount(Expression expression, Node usage) {
+        Expression value = Nodes.unwrap(expression);
+        if (value.isBinaryExpr() && SUMS.contains(value.asBinaryExpr().getOperator())) {
+            return isCollectionCount(value.asBinaryExpr().getLeft(), usage)
+                    && isCollectionCount(value.asBinaryExpr().getRight(), usage);
+        }
+        if (value.isIntegerLiteralExpr()) {
+            return true;
+        }
+        if (value.isNameExpr()) {
+            return !isReassigned(value.asNameExpr(), usage)
+                    && LocalTypes.findInitializer(value).filter(initializer -> isStreamCount(initializer)).isPresent();
+        }
+        return isStreamCount(value);
+    }
+
+    private boolean isStreamCount(Expression expression) {
+        Expression value = Nodes.unwrap(expression);
+        if (!value.isMethodCallExpr() || !COUNT.equals(value.asMethodCallExpr().getNameAsString())
+                || !value.asMethodCallExpr().getArguments().isEmpty()) {
+            return false;
+        }
+        List<MethodCallExpr> steps = StreamChains.callsBefore(value.asMethodCallExpr());
+        return steps.stream().anyMatch(step -> STREAM.equals(step.getNameAsString()) && step.getArguments().isEmpty())
+                && steps.stream().noneMatch(step -> EXPANDING.matcher(step.getNameAsString()).matches());
+    }
+
+    private boolean isReassigned(NameExpr variable, Node usage) {
+        String name = variable.getNameAsString();
+        return Nodes.enclosingCallable(usage).stream()
+                .flatMap(callable -> callable.findAll(AssignExpr.class).stream())
+                .anyMatch(assignment -> assignment.getTarget().toString().equals(name));
     }
 
     private boolean isClamped(Expression expression) {

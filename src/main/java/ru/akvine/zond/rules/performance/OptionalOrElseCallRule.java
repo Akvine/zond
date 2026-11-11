@@ -19,6 +19,13 @@ import java.util.regex.Pattern;
 @Component
 public class OptionalOrElseCallRule extends AbstractRule {
     private static final String OR_ELSE = "orElse";
+    private static final String ELEMENT_READ = "get";
+    // Имя начинается с глагола - метод что-то ищет, создает или считает
+    private static final Pattern ACTION = Pattern.compile(
+            "^(get|find|load|fetch|read|query|search|select|create|build|make|new|generate|compute|calculate|calc|resolve"
+                    + "|parse|request|call|send|execute|run|count|sum|collect|convert|transform|copy|clone|sort|list"
+                    + "|scan|open|connect|download|upload|save|delete|update|insert|next|random|now|current|default"
+                    + "|empty|of|from|to|as|with)([A-Z_].*)?$");
 
     // getName(), isActive(), toString()
     private static final Pattern GETTER = Pattern.compile("^(get|is)[A-Z].*|^toString$");
@@ -59,6 +66,28 @@ public class OptionalOrElseCallRule extends AbstractRule {
         return ErrorType.PERFORMANCE;
     }
 
+    /**
+     * Чтение готового значения: элемент по номеру или ключу (items.get(0), DEFAULTS.get(key)), свойство записи или
+     * перечисления (stage.line(), flag.name()) и их цепочка. Метод с глаголом в имени (findDefault(), create())
+     * и вызов своего метода без получателя остаются вычислением
+     */
+    private boolean isCheapRead(MethodCallExpr call) {
+        Expression scope = call.getScope().map(Nodes::unwrap).orElse(null);
+        if (scope == null) {
+            return false;
+        }
+        boolean cheapScope = scope.isNameExpr() || scope.isFieldAccessExpr() || scope.isThisExpr()
+                || scope.isMethodCallExpr() && isCheapRead(scope.asMethodCallExpr());
+        boolean property = call.getArguments().isEmpty() && !ACTION.matcher(call.getNameAsString()).matches();
+        return cheapScope && (property || isElementRead(call));
+    }
+
+    // items.get(0), DEFAULTS.get(key)
+    private boolean isElementRead(MethodCallExpr call) {
+        return ELEMENT_READ.equals(call.getNameAsString()) && call.getArguments().size() == 1
+                && (call.getArgument(0).isLiteralExpr() || call.getArgument(0).isNameExpr());
+    }
+
     // Вызов метода или создание объекта, кроме заведомо дешевых фабрик
     private boolean isComputed(Expression argument) {
         Expression value = Nodes.unwrap(argument);
@@ -71,7 +100,7 @@ public class OptionalOrElseCallRule extends AbstractRule {
 
         // Геттер без аргументов просто читает поле - вычислением его считать незачем
         MethodCallExpr call = value.asMethodCallExpr();
-        if (call.getArguments().isEmpty() && GETTER.matcher(call.getNameAsString()).matches()) {
+        if (call.getArguments().isEmpty() && GETTER.matcher(call.getNameAsString()).matches() || isCheapRead(call)) {
             return false;
         }
         return call.getScope()

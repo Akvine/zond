@@ -2,7 +2,9 @@ package ru.akvine.zond.rules.exceptions;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.BodyDeclaration;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.type.Type;
 import org.springframework.stereotype.Component;
@@ -13,8 +15,10 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.CodeContexts;
+import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.MethodCalls;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
@@ -33,6 +37,11 @@ public class UnhandledNumberFormatRule extends AbstractRule {
             "parseShort", "Short",
             "parseByte", "Byte");
 
+    // matcher.group(n) и literal.asIntegerLiteralExpr(): текст, формат которого уже проверен
+    // Проверки, после которых в строке остаются только цифры
+    private static final Set<String> VALIDATIONS = Set.of(
+            "matches", "isNumeric", "isDigits", "isParsable", "isCreatable", "isNumber");
+    private static final Set<String> MATCHED_TEXT = Set.of("group", "asIntegerLiteralExpr", "asLongLiteralExpr");
     private static final Set<String> HANDLING_EXCEPTIONS = Set.of(
             "NumberFormatException", "IllegalArgumentException", "RuntimeException", "Exception", "Throwable");
 
@@ -55,11 +64,10 @@ public class UnhandledNumberFormatRule extends AbstractRule {
                 continue;
             }
 
-            // Литерал ("42") разобрать нельзя неправильно; тесты не трогаем
-            boolean parsesLiteral = !call.getArguments().isEmpty() && call.getArgument(0).isStringLiteralExpr();
             // Число из настроек при запуске: неверное значение - ошибка конфигурации, и упасть сразу правильно.
-            // В методе с throws Exception (декодер протокола) неверный ввод и так уходит вызывающему
-            if (!parsesLiteral && !isHandled(call) && !TestClasses.isInside(call) && !CodeContexts.isStartup(call)
+            // В методе с throws Exception (декодер протокола) неверный ввод и так уходит вызывающему; тесты не трогаем
+            if (!parsesCheckedText(call) && !isHandled(call) && !TestClasses.isInside(call)
+                    && !CodeContexts.isStartup(call)
                     && !CodeContexts.isDeclaredToFail(call)) {
                 violations.add(violation(sourceFile, call,
                         "'" + call + "' без обработки NumberFormatException: на нечисловой строке метод упадет"
@@ -78,6 +86,37 @@ public class UnhandledNumberFormatRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.EXCEPTION;
+    }
+
+    /**
+     * Литерал ("42") разобрать нельзя неправильно. Integer.parseInt(matcher.group(1)): строку вырезал шаблон,
+     * и цифры в ней он уже проверил. То же - значение целочисленного литерала из дерева разбора
+     */
+    private boolean parsesCheckedText(MethodCallExpr call) {
+        if (call.getArguments().isEmpty()) {
+            return false;
+        }
+        Expression argument = Nodes.unwrap(call.getArgument(0));
+        if (argument.isStringLiteralExpr() || isValidated(call, argument)) {
+            return true;
+        }
+        Expression source = argument.isNameExpr()
+                ? LocalTypes.findInitializer(argument).map(Nodes::unwrap).orElse(argument)
+                : argument;
+        return source.findAll(MethodCallExpr.class).stream()
+                .anyMatch(inner -> MATCHED_TEXT.contains(inner.getNameAsString()) && inner.getScope().isPresent());
+    }
+
+    // if (!NUMBER.matcher(value).matches()) { continue; } ... Integer.parseInt(value): цифры уже проверены.
+    // То же - value.matches("\\d+") и StringUtils.isNumeric(value)
+    private boolean isValidated(MethodCallExpr call, Expression argument) {
+        if (!argument.isNameExpr()) {
+            return false;
+        }
+        String text = argument.asNameExpr().getNameAsString();
+        return Guards.isGuarded(call, check -> check.isMethodCallExpr()
+                && VALIDATIONS.contains(check.asMethodCallExpr().getNameAsString())
+                && check.findAll(NameExpr.class).stream().anyMatch(name -> name.getNameAsString().equals(text)));
     }
 
     // Вызов стоит в блоке try, у которого есть catch для NumberFormatException или его родителей

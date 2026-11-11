@@ -10,6 +10,7 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.ArrayInitializerExpr;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.ConditionalExpr;
 import com.github.javaparser.ast.expr.DoubleLiteralExpr;
 import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.Expression;
@@ -20,6 +21,7 @@ import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithArguments;
+import com.github.javaparser.ast.stmt.SwitchEntry;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -27,10 +29,12 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
+import java.util.IntSummaryStatistics;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -40,6 +44,11 @@ import java.util.regex.Pattern;
 public class MagicNumberRule extends AbstractRule {
     private static final String HASH_CODE = "hashCode";
     private static final int MIN_TABLE_SIZE = 3;
+    private static final int MIN_VARIANTS = 3;
+    private static final Pattern SMALL_NUMBER = Pattern.compile("\\d{1,4}");
+    private static final String GROUP = "group";
+    private static final Set<String> GROUP_BOUNDS = Set.of("start", "end");
+    private static final Set<String> MATCH_TYPES = Set.of("Matcher", "MatchResult");
 
     private static final Pattern UNIT_CONSTANT = Pattern.compile("(TimeUnit|ChronoUnit|DataUnit)\\.[A-Z_]+");
     private static final Pattern UNIT_FACTORY = Pattern.compile("^(Duration|Period|DataSize)\\.of[A-Z]\\w*\\(");
@@ -142,8 +151,55 @@ public class MagicNumberRule extends AbstractRule {
             }
             current = current.getParentNode().orElse(null);
         }
-        return TestClasses.isInside(literal) || hasUnit(literal) || isBitPosition(literal) || isFieldLayout(literal)
-                || isUnitFactor(literal) || isRadix(literal) || isShiftDistance(literal);
+        return TestClasses.isInside(literal) || hasUnit(literal) || isUnitFactor(literal) || isPosition(literal);
+    }
+
+    // Число называет место, а не величину: номер бита, смещение поля, основание, сдвиг, группа шаблона, вариант
+    private boolean isPosition(Node literal) {
+        return isBitPosition(literal) || isFieldLayout(literal) || isRadix(literal) || isShiftDistance(literal)
+                || isGroupNumber(literal) || isVariantNumber(literal);
+    }
+
+    // matcher.group(3), matcher.start(2): номер группы задает сам шаблон - это место в нем, а не величина
+    private boolean isGroupNumber(Node literal) {
+        Node parent = literal.getParentNode().orElse(null);
+        // negative.group(reversed ? 3 : 2)
+        while (parent instanceof EnclosedExpr || parent instanceof ConditionalExpr) {
+            parent = parent.getParentNode().orElse(null);
+        }
+        if (!(parent instanceof MethodCallExpr call) || call.getArguments().size() != 1 || call.getScope().isEmpty()) {
+            return false;
+        }
+        return GROUP.equals(call.getNameAsString())
+                || GROUP_BOUNDS.contains(call.getNameAsString())
+                && LocalTypes.typeOf(call.getScope().get()).filter(MATCH_TYPES::contains).isPresent();
+    }
+
+    /**
+     * switch (choice) { case 1 -> scan(); case 2 -> report(); case 3 -> settings(); }: метки идут подряд от нуля
+     * или единицы - это номера вариантов (пункты меню, шаги), и что значит каждый, сказано в его ветке
+     */
+    private boolean isVariantNumber(Node literal) {
+        if (!(literal.getParentNode().orElse(null) instanceof SwitchEntry entry)) {
+            return false;
+        }
+        List<Expression> labels = entry.getParentNode().stream()
+                .flatMap(owner -> owner.getChildNodes().stream())
+                .filter(child -> child instanceof SwitchEntry)
+                .flatMap(child -> ((SwitchEntry) child).getLabels().stream())
+                .toList();
+        if (labels.size() < MIN_VARIANTS || !labels.stream().allMatch(this::isSmallNumber)) {
+            return false;
+        }
+        // Метки в одном switch не повторяются: подряд - значит, от первой до последней нет пропусков
+        IntSummaryStatistics range = labels.stream()
+                .mapToInt(label -> Integer.parseInt(label.asIntegerLiteralExpr().getValue()))
+                .summaryStatistics();
+        return range.getMin() <= 1 && range.getMax() - range.getMin() == labels.size() - 1;
+    }
+
+    private boolean isSmallNumber(Expression label) {
+        return label.isIntegerLiteralExpr() && SMALL_NUMBER.matcher(label.asIntegerLiteralExpr().getValue()).matches();
     }
 
     // Integer.parseInt(hex, 16), Character.digit(c, 16), new BigInteger(text, 2): основание системы счисления

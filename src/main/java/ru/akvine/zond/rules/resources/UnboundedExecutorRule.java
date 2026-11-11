@@ -4,8 +4,11 @@ import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.stmt.TryStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -43,6 +46,7 @@ public class UnboundedExecutorRule extends AbstractRule {
     private static final Set<String> ONE_SHOT = Set.of("schedule", "submit", "execute", "invokeAll", "invokeAny");
 
     private static final Set<String> UNBOUNDED_QUEUES = Set.of("LinkedBlockingQueue", "LinkedBlockingDeque");
+    private static final Set<String> SHUTDOWN_METHODS = Set.of("shutdown", "shutdownNow", "close");
 
     @Override
     public String code() {
@@ -68,7 +72,7 @@ public class UnboundedExecutorRule extends AbstractRule {
                         "Executors." + name + "(): число потоков не ограничено, под нагрузкой пул создаст их"
                                 + " столько, сколько придет задач; используйте ThreadPoolExecutor с явными пределами"));
             }
-            if (UNBOUNDED_QUEUE_FACTORIES.contains(name) && !(SCHEDULED_FACTORIES.contains(name) && isOnlyPeriodic(call))) {
+            if (UNBOUNDED_QUEUE_FACTORIES.contains(name) && isQueueGrowing(call, name)) {
                 violations.add(violation(sourceFile, call,
                         "Executors." + name + "(...): очередь задач не ограничена, при медленной обработке задачи"
                                 + " копятся до OutOfMemoryError; используйте ThreadPoolExecutor с ограниченной"
@@ -118,6 +122,33 @@ public class UnboundedExecutorRule extends AbstractRule {
                 .map(MethodCallExpr::getNameAsString)
                 .toList();
         return used.stream().anyMatch(PERIODIC::contains) && used.stream().noneMatch(ONE_SHOT::contains);
+    }
+
+    private boolean isQueueGrowing(MethodCallExpr creation, String factory) {
+        return !(SCHEDULED_FACTORIES.contains(factory) && isOnlyPeriodic(creation)) && !isBatchPool(creation);
+    }
+
+    /**
+     * ExecutorService executor = Executors.newFixedThreadPool(threads); try { ... } finally { executor.shutdown(); }
+     * Пул создан и остановлен в одном методе: в его очереди только задачи этого вызова, и их столько, сколько
+     * элементов в уже загруженной коллекции. Под нагрузкой копится очередь пула, который живет в поле
+     */
+    private boolean isBatchPool(MethodCallExpr creation) {
+        Optional<VariableDeclarator> variable = creation.getParentNode()
+                .filter(parent -> parent instanceof VariableDeclarator)
+                .map(parent -> (VariableDeclarator) parent);
+        Optional<Node> declaration = variable.flatMap(Node::getParentNode);
+        Optional<Node> callable = Nodes.enclosingCallable(creation);
+        boolean field = declaration.filter(node -> node instanceof FieldDeclaration).isPresent();
+        if (variable.isEmpty() || callable.isEmpty() || field) {
+            return false;
+        }
+        // try (ExecutorService executor = Executors.newFixedThreadPool(4)) { ... }
+        boolean resource = declaration.flatMap(Node::getParentNode).filter(owner -> owner instanceof TryStmt).isPresent();
+        String name = variable.get().getNameAsString();
+        return resource || callable.get().findAll(MethodCallExpr.class).stream()
+                .anyMatch(call -> SHUTDOWN_METHODS.contains(call.getNameAsString())
+                        && call.getScope().filter(scope -> scope.toString().equals(name)).isPresent());
     }
 
     // new LinkedBlockingQueue<>() без емкости либо Integer.MAX_VALUE

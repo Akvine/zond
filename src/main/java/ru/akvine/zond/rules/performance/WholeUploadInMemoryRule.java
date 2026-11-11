@@ -21,6 +21,8 @@ public class WholeUploadInMemoryRule extends AbstractRule {
     private static final String GET_BYTES = "getBytes";
     private static final String READ_ALL_BYTES = "readAllBytes";
     private static final Set<String> UPLOAD_TYPES = Set.of("MultipartFile", "Part");
+    private static final Set<String> OTHER_SOURCES = Set.of("Process", "Socket", "ZipFile", "JarFile", "Blob", "Clob");
+    private static final Set<String> OTHER_SOURCE_NAMES = Set.of("process", "socket");
 
     // request.getInputStream().readAllBytes(), file.getInputStream().readAllBytes()
     private static final Set<String> STREAM_SOURCES = Set.of("getInputStream", "getBody");
@@ -64,6 +66,16 @@ public class WholeUploadInMemoryRule extends AbstractRule {
         }
         return READ_ALL_BYTES.equals(call.getNameAsString())
                 && scope.isMethodCallExpr()
-                && STREAM_SOURCES.contains(scope.asMethodCallExpr().getNameAsString());
+                && STREAM_SOURCES.contains(scope.asMethodCallExpr().getNameAsString())
+                && !isOtherSource(scope.asMethodCallExpr());
+    }
+
+    // process.getInputStream() - вывод запущенной программы, socket.getInputStream() - соединение: это не загрузка
+    private boolean isOtherSource(MethodCallExpr stream) {
+        return stream.getScope()
+                .map(Nodes::unwrap)
+                .filter(owner -> LocalTypes.typeOf(owner).filter(OTHER_SOURCES::contains).isPresent()
+                        || OTHER_SOURCE_NAMES.contains(owner.toString()))
+                .isPresent();
     }
 }

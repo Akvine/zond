@@ -24,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Component
@@ -32,6 +33,7 @@ public class NullInsteadOfEmptyCollectionRule extends AbstractRule {
             "List", "Set", "Map", "Collection", "Iterable", "Queue", "Deque", "SortedSet", "SortedMap", "Stream");
     private static final String ARRAY_SUFFIX = "[]";
     private static final String NULLABLE = "Nullable";
+    private static final Pattern RETURNS_NULL = Pattern.compile("@return\\b[^@]*\\bnull\\b");
 
     @Override
     public String code() {
@@ -49,7 +51,7 @@ public class NullInsteadOfEmptyCollectionRule extends AbstractRule {
         for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
             String type = LocalTypes.typeName(method.getType());
             boolean returnsCollection = COLLECTION_TYPES.contains(type) || type.endsWith(ARRAY_SUFFIX);
-            if (!returnsCollection || Annotations.has(method, NULLABLE) || TestClasses.isInside(method)) {
+            if (!returnsCollection || documentsNull(method) || TestClasses.isInside(method)) {
                 continue;
             }
             for (ReturnStmt returned : method.findAll(ReturnStmt.class)) {
@@ -63,6 +65,15 @@ public class NullInsteadOfEmptyCollectionRule extends AbstractRule {
             }
         }
         return violations;
+    }
+
+    // @Nullable либо "@return границы диапазона; null, если сравнение истинным быть не может": null - часть
+    // описанного договора, у него свой смысл, и пустой массив его не заменит
+    private boolean documentsNull(MethodDeclaration method) {
+        return Annotations.has(method, NULLABLE) || method.getJavadocComment()
+                .map(comment -> comment.getContent())
+                .filter(text -> RETURNS_NULL.matcher(text).find())
+                .isPresent();
     }
 
     // if (source == null) return null: на пустой ввод - пустой результат. Кто передал объект, null не получит

@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules.exceptions;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
@@ -17,6 +18,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.CodeContexts;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
@@ -42,6 +44,9 @@ public class LostExceptionCauseRule extends AbstractRule {
     private static final String ILLEGAL_ARGUMENT = "IllegalArgumentException";
     private static final Set<String> PARSE_METHODS = Set.of("valueOf", "fromString");
     private static final String PARSE_PREFIX = "parse";
+    // e.getCause(), e.getTargetException(), ExceptionUtils.getRootCause(e)
+    private static final Set<String> UNWRAPPING_METHODS = Set.of(
+            "getCause", "getTargetException", "getUndeclaredThrowable", "getRootCause");
 
     @Override
     public String code() {
@@ -99,7 +104,28 @@ public class LostExceptionCauseRule extends AbstractRule {
     private boolean passesCause(ObjectCreationExpr created, String caught) {
         return created.getArguments().stream()
                 .map(Nodes::unwrap)
-                .anyMatch(argument -> argument.isNameExpr() && argument.asNameExpr().getNameAsString().equals(caught));
+                .anyMatch(argument -> isName(argument, caught) || isCauseOf(argument, caught)
+                        || argument.isNameExpr() && LocalTypes.findInitializer(argument)
+                        .map(Nodes::unwrap)
+                        .filter(value -> isCauseOf(value, caught))
+                        .isPresent());
+    }
+
+    private boolean isName(Expression expression, String name) {
+        return expression.isNameExpr() && expression.asNameExpr().getNameAsString().equals(name);
+    }
+
+    /**
+     * catch (ExecutionException e) { throw new IllegalStateException("...", e.getCause()); } - с ошибки сняли
+     * обертку пула потоков или рефлексии, а настоящая причина со своим стеком уходит дальше
+     */
+    private boolean isCauseOf(Expression value, String caught) {
+        if (!value.isMethodCallExpr() || !UNWRAPPING_METHODS.contains(value.asMethodCallExpr().getNameAsString())) {
+            return false;
+        }
+        MethodCallExpr unwrapping = value.asMethodCallExpr();
+        return unwrapping.getScope().map(Nodes::unwrap).filter(scope -> isName(scope, caught)).isPresent()
+                || unwrapping.getArguments().stream().map(Nodes::unwrap).anyMatch(argument -> isName(argument, caught));
     }
 
     private boolean attachesCauseManually(CatchClause clause, String caught) {

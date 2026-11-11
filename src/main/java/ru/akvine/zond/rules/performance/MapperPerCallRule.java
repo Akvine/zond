@@ -23,7 +23,8 @@ import java.util.Set;
 
 @Component
 public class MapperPerCallRule extends AbstractRule {
-    private static final Set<String> HEAVY_TYPES = Set.of("ObjectMapper", "JsonMapper", "XmlMapper", "Gson", "Yaml");
+    // Yaml из SnakeYAML сюда не входит: он не потокобезопасен, и общий экземпляр в поле бина - уже ошибка
+    private static final Set<String> HEAVY_TYPES = Set.of("ObjectMapper", "JsonMapper", "XmlMapper", "Gson");
     // JAXBContext.newInstance(Order.class) разбирает классы и строит модель привязки - сотни миллисекунд;
     // фабрики XML ищут реализацию по classpath через ServiceLoader
     private static final Set<String> JAXB_CONTEXT = Set.of("JAXBContext");

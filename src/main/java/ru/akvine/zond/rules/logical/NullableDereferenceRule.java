@@ -40,6 +40,7 @@ public class NullableDereferenceRule extends AbstractRule {
     private static final Set<String> NULLABLE_SOURCES =
             Set.of("getParameter", "getHeader", "getAttribute", "getProperty", "getenv");
     // System.getProperty("os.name"): стандартные свойства JVM заданы всегда
+    private static final Set<String> INDEX_TYPES = Set.of("int", "Integer", "long", "Long", "short");
     private static final String GET_PROPERTY = "getProperty";
     private static final Set<String> STANDARD_PROPERTIES = Set.of(
             "java.version", "java.vendor", "java.home", "java.vm.name", "java.vm.version", "java.vm.vendor",
@@ -108,7 +109,17 @@ public class NullableDereferenceRule extends AbstractRule {
                 && STANDARD_PROPERTIES.contains(call.getArgument(0).asStringLiteralExpr().getValue())) {
             return Optional.empty();
         }
-        return NULLABLE_SOURCES.contains(method) && arguments == 1 ? Optional.of(method + "(...)") : Optional.empty();
+        return isReadByName(call) ? Optional.of(method + "(...)") : Optional.empty();
+    }
+
+    // request.getParameter("id") может вернуть null. method.getParameter(0), node.getAttribute(index) - элемент
+    // по номеру, а не значение запроса по имени: его нет - будет исключение, а не null
+    private boolean isReadByName(MethodCallExpr call) {
+        if (!NULLABLE_SOURCES.contains(call.getNameAsString()) || call.getArguments().size() != 1) {
+            return false;
+        }
+        Expression key = call.getArgument(0);
+        return !key.isIntegerLiteralExpr() && LocalTypes.typeOf(key).filter(INDEX_TYPES::contains).isEmpty();
     }
 
     // if (map.containsKey(key)) { value = map.get(key); ... } либо обход ключей: for (K key : map.keySet())

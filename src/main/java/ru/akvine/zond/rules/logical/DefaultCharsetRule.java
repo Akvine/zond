@@ -23,6 +23,7 @@ public class DefaultCharsetRule extends AbstractRule {
     private static final String GET_BYTES = "getBytes";
     private static final String STRING = "String";
     private static final String BYTE_ARRAY = "byte[]";
+    private static final Set<String> CONSOLE_STREAMS = Set.of("System.in", "System.out", "System.err");
 
     // Классы, которые без явной кодировки берут кодировку операционной системы
     private static final Set<String> CHARSET_DEPENDENT_TYPES =
@@ -54,13 +55,7 @@ public class DefaultCharsetRule extends AbstractRule {
         }
 
         for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
-            String type = creation.getType().getNameAsString();
-            boolean oneArgument = creation.getArguments().size() == 1;
-
-            // new String(bytes), new FileReader(file), new InputStreamReader(stream)
-            boolean dependsOnDefault = (STRING.equals(type) && oneArgument && isBytes(creation.getArgument(0)))
-                    || (CHARSET_DEPENDENT_TYPES.contains(type) && oneArgument);
-            if (dependsOnDefault) {
+            if (dependsOnDefault(creation)) {
                 violations.add(report(sourceFile, creation));
             }
         }
@@ -84,6 +79,25 @@ public class DefaultCharsetRule extends AbstractRule {
                 "'" + expression + "' без кодировки: используется кодировка той машины, где запущен код, на"
                         + " сервере и на компьютере разработчика она может отличаться - кириллица превратится"
                         + " в вопросительные знаки; укажите StandardCharsets.UTF_8");
+    }
+
+    // new String(bytes), new FileReader(file), new InputStreamReader(stream)
+    private boolean dependsOnDefault(ObjectCreationExpr creation) {
+        if (creation.getArguments().size() != 1) {
+            return false;
+        }
+        String type = creation.getType().getNameAsString();
+        Expression argument = creation.getArgument(0);
+        return STRING.equals(type) && isBytes(argument)
+                || CHARSET_DEPENDENT_TYPES.contains(type) && !isConsoleStream(argument);
+    }
+
+    /**
+     * new InputStreamReader(System.in): у консоли кодировка своя, и это как раз кодировка машины, где запущен
+     * код. UTF-8 здесь сломает ввод кириллицы в консоли Windows
+     */
+    private boolean isConsoleStream(Expression argument) {
+        return CONSOLE_STREAMS.contains(Nodes.unwrap(argument).toString());
     }
 
     // Переменная типа byte[] либо вызов, который возвращает байты

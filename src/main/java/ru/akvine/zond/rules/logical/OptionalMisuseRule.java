@@ -3,7 +3,9 @@ package ru.akvine.zond.rules.logical;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.CallableDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.TryStmt;
@@ -19,7 +21,9 @@ import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Component
@@ -30,6 +34,9 @@ public class OptionalMisuseRule extends AbstractRule {
 
     // Методы, которые возвращают Optional: вызов get() сразу после них ничем не защищен
     private static final Set<String> OPTIONAL_SOURCES = Set.of("findFirst", "findAny", "findById", "ofNullable");
+    // Операции Optional, после которых значение есть, только если оно было и до них
+    private static final Set<String> PRESERVING = Set.of("map", "flatMap", "filter");
+    private static final int DERIVATION_DEPTH = 3;
     private static final Set<String> NON_EMPTY_TERMINALS = Set.of("min", "max", "findFirst", "findAny", "average");
     // OptionalInt, OptionalLong, OptionalDouble: итоги числовых стримов
     private static final Set<String> PRIMITIVE_GETS = Set.of("getAsInt", "getAsLong", "getAsDouble");
@@ -74,7 +81,9 @@ public class OptionalMisuseRule extends AbstractRule {
             if (isUncheckedPrimitiveGet(call)) {
                 violations.add(violation(sourceFile, call.getName(),
                         "'" + call.getNameAsString() + "()' без проверки сразу после '"
-                                + call.getScope().map(scope -> Nodes.unwrap(scope).asMethodCallExpr().getNameAsString()).orElse("")
+                                + call.getScope()
+                                .map(scope -> Nodes.unwrap(scope).asMethodCallExpr().getNameAsString())
+                                .orElse("")
                                 + "()': у пустого стрима итога нет, и вызов закончится NoSuchElementException;"
                                 + " используйте orElse(...), orElseThrow(...) либо ifPresent(...)"));
             }
@@ -186,7 +195,77 @@ public class OptionalMisuseRule extends AbstractRule {
             return false;
         }
         String variable = scope.toString();
-        return !Guards.isGuarded(call, check -> isPresenceCheck(check, variable));
+        // Проверка производного значения - это и проверка исходного: column = table.flatMap(...) не пуст,
+        // только когда не пуст table
+        Set<String> names = withDerived(variable, call);
+        if (isInsideOwnChain(call, names)) {
+            return false;
+        }
+        return !Guards.isGuarded(call, check -> isPresenceCheckOfAny(check, names));
+    }
+
+    private boolean isPresenceCheckOfAny(Expression check, Set<String> names) {
+        for (String name : names) {
+            if (isPresenceCheck(check, name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return сама переменная и все, что получено из нее через map, flatMap и filter - напрямую либо по цепочке:
+     * format = index.flatMap(...), expected = format.map(...)
+     */
+    private Set<String> withDerived(String variable, Node usage) {
+        Set<String> names = new LinkedHashSet<>();
+        names.add(variable);
+        List<VariableDeclarator> declarators = Nodes.enclosingCallable(usage)
+                .map(callable -> callable.findAll(VariableDeclarator.class))
+                .orElse(List.of());
+        // Производные от производных: каждый проход добавляет следующее звено цепочки
+        for (int pass = 0; pass < DERIVATION_DEPTH; pass++) {
+            for (VariableDeclarator declarator : declarators) {
+                boolean derived = declarator.getInitializer()
+                        .flatMap(this::optionalRoot)
+                        .filter(names::contains)
+                        .isPresent();
+                if (derived) {
+                    names.add(declarator.getNameAsString());
+                }
+            }
+        }
+        return names;
+    }
+
+    // table.flatMap(...).filter(...).map(...) -> table; пусто, если выражение - не такая цепочка
+    private Optional<String> optionalRoot(Expression expression) {
+        Expression current = Nodes.unwrap(expression);
+        boolean chained = false;
+        while (current.isMethodCallExpr() && PRESERVING.contains(current.asMethodCallExpr().getNameAsString())
+                && current.asMethodCallExpr().getScope().isPresent()) {
+            current = Nodes.unwrap(current.asMethodCallExpr().getScope().get());
+            chained = true;
+        }
+        return chained && current.isNameExpr() ? Optional.of(current.asNameExpr().getNameAsString()) : Optional.empty();
+    }
+
+    // block.flatMap(...).filter(parent -> block.get()...): лямбда вызывается, только когда значение есть
+    private boolean isInsideOwnChain(Node usage, Set<String> names) {
+        Optional<LambdaExpr> lambda = usage.findAncestor(LambdaExpr.class);
+        while (lambda.isPresent()) {
+            boolean ownChain = lambda.get().getParentNode()
+                    .filter(parent -> parent instanceof MethodCallExpr)
+                    .map(parent -> (Expression) parent)
+                    .flatMap(this::optionalRoot)
+                    .filter(names::contains)
+                    .isPresent();
+            if (ownChain) {
+                return true;
+            }
+            lambda = lambda.get().findAncestor(LambdaExpr.class);
+        }
+        return false;
     }
 
     private boolean isPresenceCheck(Expression expression, String variable) {

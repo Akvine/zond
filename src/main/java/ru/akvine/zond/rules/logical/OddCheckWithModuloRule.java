@@ -1,7 +1,10 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.stmt.ForStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -10,14 +13,18 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 @Component
 public class OddCheckWithModuloRule extends AbstractRule {
+    private static final Set<UnaryExpr.Operator> DECREMENTS = Set.of(
+            UnaryExpr.Operator.PREFIX_DECREMENT, UnaryExpr.Operator.POSTFIX_DECREMENT);
     private static final String TWO = "2";
     private static final String ONE = "1";
     private static final String LENGTH = "length";
@@ -97,7 +104,26 @@ public class OddCheckWithModuloRule extends AbstractRule {
             return false;
         }
         String name = value.asNameExpr().getNameAsString();
-        return value.findAncestor(ForStmt.class, loop -> isUpwardCounter(loop, name)).isPresent();
+        return value.findAncestor(ForStmt.class, loop -> isUpwardCounter(loop, name)).isPresent() || isCounter(value);
+    }
+
+    // int slashes = 0; ... slashes++: счетчик начинается с неотрицательного числа и только растет
+    private boolean isCounter(Expression value) {
+        String name = value.asNameExpr().getNameAsString();
+        boolean startsNonNegative = LocalTypes.findInitializer(value)
+                .map(Nodes::unwrap)
+                .filter(Expression::isIntegerLiteralExpr)
+                .isPresent();
+        Optional<Node> callable = Nodes.enclosingCallable(value);
+        if (!startsNonNegative || callable.isEmpty()) {
+            return false;
+        }
+        boolean decreases = callable.get().findAll(UnaryExpr.class).stream()
+                .anyMatch(unary -> unary.getExpression().toString().equals(name) && DECREMENTS.contains(unary.getOperator()));
+        boolean reassigned = callable.get().findAll(AssignExpr.class).stream()
+                .anyMatch(assignment -> assignment.getTarget().toString().equals(name)
+                        && assignment.getOperator() != AssignExpr.Operator.PLUS);
+        return !decreases && !reassigned;
     }
 
     // for (int i = 0; ...; i++)

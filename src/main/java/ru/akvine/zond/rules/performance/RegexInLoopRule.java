@@ -8,8 +8,10 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Loops;
 import ru.akvine.zond.rules.support.MethodCalls;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.List;
@@ -20,6 +22,8 @@ public class RegexInLoopRule extends AbstractRule {
     private static final String PATTERN = "Pattern";
     private static final String COMPILE = "compile";
     private static final String MATCHES = "matches";
+    private static final String MATCHER = "matcher";
+    private static final String MATCHER_TYPE = "Matcher";
 
     // split(",") в список не входит: для разделителя из одного символа шаблон не компилируется
     private static final Set<String> STRING_REGEX_METHODS = Set.of("replaceAll", "replaceFirst");
@@ -62,8 +66,17 @@ public class RegexInLoopRule extends AbstractRule {
             return false;
         }
         String method = call.getNameAsString();
-        return MethodCalls.isCallOn(call, PATTERN, COMPILE)
+        return !isOnMatcher(call) && (MethodCalls.isCallOn(call, PATTERN, COMPILE)
                 || call.getScope().isPresent() && STRING_REGEX_METHODS.contains(method)
-                || call.getScope().isPresent() && MATCHES.equals(method) && call.getArguments().size() == 1;
+                || call.getScope().isPresent() && MATCHES.equals(method) && call.getArguments().size() == 1);
+    }
+
+    // SPACES.matcher(text).replaceAll(" "): шаблон уже скомпилирован, а строка в аргументе - замена
+    private boolean isOnMatcher(MethodCallExpr call) {
+        return call.getScope()
+                .map(Nodes::unwrap)
+                .filter(scope -> scope.isMethodCallExpr() && MATCHER.equals(scope.asMethodCallExpr().getNameAsString())
+                        || LocalTypes.typeOf(scope).filter(MATCHER_TYPE::equals).isPresent())
+                .isPresent();
     }
 }

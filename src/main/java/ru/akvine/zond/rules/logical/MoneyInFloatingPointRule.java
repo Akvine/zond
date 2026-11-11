@@ -55,7 +55,8 @@ public class MoneyInFloatingPointRule extends AbstractRule implements ProjectRul
     private static final Pattern WORD_BOUNDARY = Pattern.compile("_|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])");
     // Коэффициент, а не сумма: indexBalanceFactor, RERANK_COST_WEIGHT, discountRatio
     private static final Pattern COEFFICIENT = Pattern.compile(
-            ".*(factor|weight|ratio|coef|multiplier|threshold|percent|score|penalty|boost).*",
+            ".*(factor|weight|ratio|coef|multiplier|threshold|percent|score|penalty|boost|share$|portion|fraction"
+                    + "|proportion|probability).*",
             Pattern.CASE_INSENSITIVE);
 
     @Override

@@ -2337,6 +2337,33 @@ MyBatis Generator часто настраивают без комментари�
 | jr:36, вывод в консоль | Файл разбирает аргументы командной строки через Commons CLI, JCommander, jopt-simple или args4j: команда консольной программы (`TopicListSubCommand` в `mqadmin` RocketMQ) |
 | jr:452 и другие правила о данных извне | Поиск по ключу клиента у объекта: `externalLoginKeys.get(key)`, `cache.get(id)` возвращают серверный объект, а не данные клиента. `getOrDefault(key, fallback)` несет только `fallback`; `Paths.get(dir, name)` у класса собирает значение из аргументов |
 | jr:208 и другие правила о данных извне | Свой метод с именем, как у чтения запроса: `getHeader(mediaType)` в `RestUtil` JeecgBoot собирает `HttpHeaders`. Вызов без получателя читает запрос, только если класс — обертка над запросом (`extends HttpServletRequestWrapper`) |
+| jr:19, секрет в коде | Константа, которая секрет описывает, а не хранит: имя кончается словом `CODE`, `MESSAGE`, `HEADER`, `PATTERN`, `ERROR` и подобным — `SECRET_IN_TO_STRING_RULE_CODE = "jr:372"`, `TOKEN_HEADER = "X-Auth-Token"` |
+| jr:24, `Optional.get()` без проверки | Проверено производное значение: `address = user.map(...)`, `if (address.isPresent()) user.get()`. `get()` в лямбде собственной цепочки: `user.filter(found -> user.get().isActive())` |
+| jr:36, вывод в консоль | Класс консольного интерфейса: пакет `cli`, `console`, `shell`, `terminal` либо имя со словом `Console`, `Cli`, `Terminal` (`MainMenu` в `app.cli`, `ConsolePrinter`) |
+| jr:40, магическое число | Номер группы шаблона: `matcher.group(3)`. Метки `switch`, идущие подряд от нуля или единицы, — номера вариантов (пункты меню); `case 200`, `case 404` остаются находкой |
+| jr:52, стрим собран в память | `text.lines()` у строки: она уже в памяти. Находкой остается `lines()` у `Reader` и `Files.lines(...)` |
+| jr:63, jr:427 и другие правила «в цикле» | Цепочка, которая кончается методом `Optional` (`find(id).map(...).orElse(...)`), возвращается из метода с типом `Optional` или присваивается такой переменной — это не обход коллекции |
+| jr:427, HTTP-вызов в цикле | Получатель — результат вызова с аргументами (`describeClient(call).map(...)`), а метод — `map`, `filter`, `orElse`: это `Optional` или стрим, а не объект-клиент |
+| jr:72, `count()` вместо `anyMatch` | `count() == 1` и `count() > 1`: «ровно один» и «больше одного» первым совпадением не проверить |
+| jr:75, стрим в цикле | Обход константы до 20 значений: `static final Set<String> PREFIXES = Set.of("get", "is", "has")` — с ростом данных она не растет |
+| jr:77, очередь пула без предела | Пул создан и остановлен в одном методе (`shutdown()` / `shutdownNow()` либо try-with-resources): в очереди только задачи этого вызова. Пул в поле и `newCachedThreadPool` остаются находкой |
+| jr:105, потерянная причина | С исключения сняли обертку: `new IllegalStateException("...", exception.getCause())`, `getTargetException()`, `getRootCause(exception)` — настоящая причина уходит дальше |
+| jr:114, разбор числа без обработки | Строка проверена шаблоном или вырезана им: `if (!NUMBER.matcher(value).matches()) return`, `value.matches("\\d+")`, `StringUtils.isNumeric(value)`, `Integer.parseInt(matcher.group(1))` |
+| jr:131, вычисление в `orElse` | Чтение готового значения: `names.get(0)`, `DEFAULTS.get(key)`, свойство без глагола в имени (`stage.label()`). `loadDefault()`, `repository.findDefault()` остаются находкой |
+| jr:145, слишком много зависимостей | Параметр с `@Value("${...}")` — настройка, а не другой бин. `@Value("#{bean}")` считается зависимостью. То же во всех правилах о зависимостях бинов |
+| jr:169, деньги в `double` | Имя кончается на `share` либо содержит `portion`, `fraction`, `proportion`, `probability`: доля, а не сумма. `sharePrice` остается находкой |
+| jr:177, кодировка по умолчанию | `new InputStreamReader(System.in)`, `System.out`, `System.err`: у консоли кодировка машины, и UTF-8 сломал бы ввод кириллицы в Windows |
+| jr:194, закомментированный код | Объявление члена класса (`// private static final int THREADS = 100;`) внутри метода: стоять там оно не могло — это пример того, что метод разбирает |
+| jr:220, возможный `null` | `getParameter(0)`, `getAttribute(index)` с числом: элемент по номеру, а не значение запроса по имени |
+| jr:223, `charAt` и `substring` без проверки длины | `name.charAt(0) + name.substring(1)` — одна находка на строку в операторе, а не две. `text.substring(0, matcher.start())`: граница — место совпадения в этой же строке |
+| jr:239, шаблон в цикле | `SPACES.matcher(line).replaceAll(" ")`: шаблон уже скомпилирован, строка в аргументе — замена |
+| jr:240, тяжелый объект на каждый вызов | `new Yaml()` из SnakeYAML: он не потокобезопасен, и совет хранить его в поле бина был ошибкой |
+| jr:242, файл целиком в памяти | `process.getInputStream().readAllBytes()`, поток сокета, `ZipFile`, `Blob`: это не загруженный клиентом файл |
+| jr:257, `null` вместо пустой коллекции | В Javadoc после `@return` сказано про `null` («null, если сравнение истинным быть не может»): это описанный договор, как и `@Nullable` |
+| jr:286, `long` приводится к `int` | Число элементов коллекции: `long found = items.stream().filter(...).count()`, сумма таких счетчиков. После `flatMap` и после изменения переменной находка остается |
+| jr:329, индекс после `indexOf` | Проверка сохранена во флаг (`boolean sorted = orderBy >= 0`), стоит в `filter` выше по цепочке (`filter(line -> line.contains("="))`) либо в левой части `&&` |
+| jr:349, нечетность через `% 2 == 1` | Счетчик, который начинается с неотрицательного числа и только растет (`index++`, `+=`): отрицательным он не станет |
+| jr:454, результат обычно проверяют | Мест без результата больше трех: семь вызовов из сорока пяти — уже второй способ вызова, а не недосмотр |
 
 ### Знания о проекте
 

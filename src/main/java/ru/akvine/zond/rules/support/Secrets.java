@@ -37,6 +37,13 @@ public class Secrets {
     // botPathWithSecret - это путь, а не секрет: слово после with лишь уточняет
     private final static Set<String> PREPOSITIONS = Set.of("for", "of", "from", "to", "in", "with", "by");
 
+    // Слова, которыми кончается имя не самого секрета, а чего-то о нем: кода ошибки, правила, события, заголовка
+    private final static Set<String> DESCRIPTOR_WORDS = Set.of(
+            "code", "rule", "error", "message", "exception", "event", "name", "header", "param", "parameter", "field",
+            "property", "prefix", "suffix", "pattern", "format", "type", "kind", "label", "title", "description",
+            "handler", "validator", "filter", "length", "size", "count", "ttl", "timeout", "expiration", "mode", "flag",
+            "enabled", "test", "check");
+
     // encryptedPassword, passwordHash, maskedToken: значение уже зашифровано, захешировано или скрыто.
     // В логе или в toString() оно секрет не раскрывает
     private final static Set<String> PROTECTED_WORDS = Set.of(
@@ -153,7 +160,10 @@ public class Secrets {
             }
         }
 
-        for (int index = 1; index < words.size(); index++) {
+        // SECRET_IN_CONFIG_RULE_CODE - это код правила о секретах, а не секрет: имя называет то, чем оно
+        // заканчивается. Поэтому хвост после предлога отбрасывается, только если он не кончается таким словом
+        boolean describesSomethingElse = DESCRIPTOR_WORDS.contains(words.isEmpty() ? "" : words.get(words.size() - 1));
+        for (int index = 1; index < words.size() && !describesSomethingElse; index++) {
             if (PREPOSITIONS.contains(words.get(index))) {
                 words = new ArrayList<>(words.subList(0, index));
                 break;
