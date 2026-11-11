@@ -34,6 +34,8 @@ public class ScheduledWithoutLockRule extends AbstractRule {
 
     // ShedLock: блокировка, общая для всех экземпляров приложения
     private static final String SCHEDULER_LOCK = "SchedulerLock";
+    // @SingleInstance, @DistributedLock, @LeaderOnly: своя аннотация проекта, за которой стоит общая блокировка
+    private static final Pattern LOCK_ANNOTATION = Pattern.compile("(?i)lock|singleinstance|leader|exclusive|mutex");
 
     // Защита от повторного входа, написанная вручную
     private static final Set<String> GUARD_METHODS = Set.of("tryLock", "compareAndSet", "tryAcquire");
@@ -77,7 +79,7 @@ public class ScheduledWithoutLockRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         return sourceFile.unit().findAll(MethodDeclaration.class).stream()
                 .filter(method -> Annotations.hasAny(method, SCHEDULED_ANNOTATIONS))
-                .filter(method -> !Annotations.has(method, SCHEDULER_LOCK))
+                .filter(method -> !Annotations.has(method, SCHEDULER_LOCK) && !hasLockAnnotation(method))
                 .filter(method -> !method.isSynchronized() && !hasManualGuard(method))
                 .filter(method -> !isSafeOnEveryInstance(method))
                 .map(method -> violation(sourceFile, method,
@@ -86,6 +88,11 @@ public class ScheduledWithoutLockRule extends AbstractRule {
                                 + " а вместе с @Async - еще и параллельно сама с собой; добавьте распределенную"
                                 + " блокировку (например, @SchedulerLock из ShedLock)"))
                 .toList();
+    }
+
+    private boolean hasLockAnnotation(MethodDeclaration method) {
+        return method.getAnnotations().stream()
+                .anyMatch(annotation -> LOCK_ANNOTATION.matcher(annotation.getName().getIdentifier()).find());
     }
 
     @Override

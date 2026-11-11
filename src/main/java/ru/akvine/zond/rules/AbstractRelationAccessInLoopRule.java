@@ -25,6 +25,11 @@ public abstract class AbstractRelationAccessInLoopRule extends AbstractRule {
     private static final Pattern GETTER = Pattern.compile("^get[A-Z].*");
     // entry.getValue().size() - значение записи Map, а не связь сущности
     private static final Set<String> ENTRY_ACCESSORS = Set.of("getKey", "getValue");
+    // getItems(), getOrderList(), getChildren() - но не getStatus(), getAddress(), getUsername()
+    private static final Pattern COLLECTION_GETTER =
+            Pattern.compile("get\\w*(?<!s|u|i)s|get\\w*(List|Set|Collection|Children|Map|Data)");
+    private static final Pattern TRANSPORT_OBJECT =
+            Pattern.compile("(?i)(dto|request|response|payload|model|vo|form|message|event)$");
 
     /**
      * @return метод коллекции, вызов которого проверяется: size либо contains
@@ -75,10 +80,21 @@ public abstract class AbstractRelationAccessInLoopRule extends AbstractRule {
             return false;
         }
 
+        // user.getUsername().contains(text) - это String.contains: у связи имя во множественном числе
+        if (!COLLECTION_GETTER.matcher(value.asMethodCallExpr().getNameAsString()).matches()) {
+            return false;
+        }
         return value.asMethodCallExpr().getScope()
                 .filter(Expression::isNameExpr)
+                .filter(element -> !isTransportObject(element))
                 .flatMap(LocalTypes::findDeclaration)
                 .filter(declaration -> !Loops.isDeclaredOutside(iteration, declaration))
                 .isPresent();
+    }
+
+    // cardDto.getSizes(), request.getItems(): у объекта для передачи данных связей с базой нет
+    private boolean isTransportObject(Expression element) {
+        return TRANSPORT_OBJECT.matcher(element.toString()).find()
+                || LocalTypes.typeOf(element).filter(type -> TRANSPORT_OBJECT.matcher(type).find()).isPresent();
     }
 }

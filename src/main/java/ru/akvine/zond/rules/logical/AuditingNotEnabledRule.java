@@ -33,6 +33,7 @@ public class AuditingNotEnabledRule extends AbstractRule implements ProjectRule 
     private static final Pattern ENABLE_AUDITING = Pattern.compile("^Enable\\w*Auditing$");
     private static final Set<String> JPA_CLASSES = Set.of("Entity", "MappedSuperclass");
     private static final String ENTITY_LISTENERS = "EntityListeners";
+    private static final String JMIX_ENTITY = "JmixEntity";
     private static final String AUDITING_LISTENER = "AuditingEntityListener";
     private static final String AUDITOR_AWARE = "AuditorAware";
     // Настройка приложения попала в проверку - значит, отсутствие @Enable... не случайность выборки файлов
@@ -71,7 +72,9 @@ public class AuditingNotEnabledRule extends AbstractRule implements ProjectRule 
         boolean auditorReported = false;
         for (SourceFile sourceFile : sourceFiles) {
             for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
-                Optional<FieldDeclaration> audited = firstField(type, AUDIT_FIELDS);
+                // @JmixEntity: Jmix заполняет @CreatedDate и @CreatedBy сам, аудит Spring Data ему не нужен
+                Optional<FieldDeclaration> audited = firstField(type, AUDIT_FIELDS)
+                        .filter(field -> !Annotations.has(type, JMIX_ENTITY));
                 if (audited.isEmpty()) {
                     continue;
                 }

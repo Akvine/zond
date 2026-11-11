@@ -499,4 +499,17 @@ public class RuleCodes {
     public final static String VIRTUAL_THREAD_PITFALL_RULE_CODE = "jr:493";
     public final static String UNBOUNDED_IN_CLAUSE_RULE_CODE = "jr:494";
     public final static String STATIC_INITIALIZER_FAILURE_RULE_CODE = "jr:495";
+    public final static String INTEGER_DIVISION_BEFORE_MULTIPLY_RULE_CODE = "jr:496";
+    public final static String FORMAT_PLACEHOLDER_IN_CONCATENATION_RULE_CODE = "jr:497";
+    public final static String FLOATING_SCALE_TRUNCATION_RULE_CODE = "jr:498";
+    public final static String UNPADDED_FRACTION_RULE_CODE = "jr:499";
+    public final static String INSTANCE_CONSTANT_RULE_CODE = "jr:500";
+    public final static String DUMP_FILE_IN_PROJECT_RULE_CODE = "jr:501";
+    public final static String REPEATED_COMPUTATION_RULE_CODE = "jr:502";
+    public final static String CONSTANT_HELPER_PER_CALL_RULE_CODE = "jr:503";
+    public final static String REPOSITORY_COUNT_FOR_EXISTENCE_RULE_CODE = "jr:504";
+    public final static String PAGE_WITHOUT_TOTAL_RULE_CODE = "jr:505";
+    public final static String SORT_BEFORE_UNORDERED_TERMINAL_RULE_CODE = "jr:506";
+    public final static String SEQUENCE_ALLOCATION_SIZE_ONE_RULE_CODE = "jr:507";
+    public final static String INTERMEDIATE_COLLECTION_RULE_CODE = "jr:508";
 }

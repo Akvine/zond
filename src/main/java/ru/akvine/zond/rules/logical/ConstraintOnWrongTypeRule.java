@@ -65,7 +65,10 @@ public class ConstraintOnWrongTypeRule extends AbstractRule {
             report(sourceFile, field, field.getVariable(0).getType(), field.getVariable(0).getNameAsString(), violations);
         }
         for (Parameter parameter : sourceFile.unit().findAll(Parameter.class)) {
-            report(sourceFile, parameter, parameter.getType(), parameter.getNameAsString(), violations);
+            // @NotNull boolean... flags - это массив boolean[], и он может прийти как null
+            if (!parameter.isVarArgs()) {
+                report(sourceFile, parameter, parameter.getType(), parameter.getNameAsString(), violations);
+            }
         }
         violations.sort(Comparator.comparingInt(Violation::line));
         return violations;

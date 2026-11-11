@@ -21,11 +21,14 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class UnusedLocalVariableRule extends AbstractRule {
     // Имена, которыми переменную намеренно помечают как ненужную
     private static final Set<String> IGNORED_NAMES = Set.of("_", "ignored", "ignore", "unused");
+    // handlerIgnored, resultUnused: автор сам назвал переменную ненужной
+    private static final Pattern IGNORED_SUFFIX = Pattern.compile("\\w+(Ignored|Unused)");
 
     @Override
     public String code() {
@@ -43,7 +46,8 @@ public class UnusedLocalVariableRule extends AbstractRule {
         for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
             Optional<Node> callable = Nodes.enclosingCallable(variable);
             String name = variable.getNameAsString();
-            if (callable.isEmpty() || !Resources.isLocalVariable(variable) || IGNORED_NAMES.contains(name)) {
+            boolean ignored = IGNORED_NAMES.contains(name) || IGNORED_SUFFIX.matcher(name).matches();
+            if (callable.isEmpty() || !Resources.isLocalVariable(variable) || ignored) {
                 continue;
             }
 

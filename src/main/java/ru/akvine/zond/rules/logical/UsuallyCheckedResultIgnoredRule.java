@@ -13,6 +13,7 @@ import com.github.javaparser.ast.nodeTypes.NodeWithTypeParameters;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
 import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.SwitchEntry;
+import com.github.javaparser.ast.stmt.ThrowStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -58,6 +59,7 @@ public class UsuallyCheckedResultIgnoredRule extends AbstractRule implements Pro
     private static final int MIN_CALLS = 5;
     private static final double CHECKED_SHARE = 0.8;
     private static final int MAX_OUTLIERS = 3;
+    private static final String OR_ELSE_THROW = "orElseThrow";
     // Результат этих методов - побочная информация: что было в карте, добавилось ли в множество, сколько строк
     // изменено, что лежало в счетчике до изменения
     private static final Set<String> ACTION_METHODS = Set.of(
@@ -145,8 +147,7 @@ public class UsuallyCheckedResultIgnoredRule extends AbstractRule implements Pro
             }
         }
         List<Violation> violations = new ArrayList<>();
-        List<Usage> usages = new ArrayList<>(ownUsages.values());
-        usages.addAll(libraryUsages.values());
+        List<Usage> usages = reportable(ownUsages, libraryUsages);
         for (Usage usage : usages) {
             if (!usage.isChecked()) {
                 continue;
@@ -162,6 +163,20 @@ public class UsuallyCheckedResultIgnoredRule extends AbstractRule implements Pro
                 ? Integer.compare(left.line(), right.line())
                 : left.file().compareTo(right.file()));
         return violations;
+    }
+
+    // clientService.getByUuid(uuid) без результата у метода с orElseThrow - проверка, что запись есть
+    private List<Usage> reportable(Map<MethodDeclaration, Usage> ownUsages, Map<String, Usage> libraryUsages) {
+        List<Usage> usages = new ArrayList<>(libraryUsages.values());
+        ownUsages.entrySet().stream()
+                .filter(entry -> !failsOnMissing(entry.getKey()))
+                .forEach(entry -> usages.add(entry.getValue()));
+        return usages;
+    }
+
+    private boolean failsOnMissing(MethodDeclaration method) {
+        return !method.findAll(ThrowStmt.class).isEmpty() || method.findAll(MethodCallExpr.class).stream()
+                .anyMatch(call -> OR_ELSE_THROW.equals(call.getNameAsString()));
     }
 
     @Override

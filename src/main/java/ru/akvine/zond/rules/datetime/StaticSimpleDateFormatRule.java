@@ -15,9 +15,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class StaticSimpleDateFormatRule implements Rule {
+    private static final Pattern THREAD_SAFE_WRAPPER = Pattern.compile("^(Sync|Synchronized|ThreadSafe|Concurrent|Safe)[A-Z]");
     private static final Set<String> DATE_TYPES = Set.of("SimpleDateFormat", "DateFormat", "Calendar", "GregorianCalendar");
     private static final Set<String> FORMAT_TYPES = Set.of("DecimalFormat", "NumberFormat", "MessageFormat", "ChoiceFormat");
     // Объекты с состоянием вычисления: дайджест, шифр, подпись, сопоставление по шаблону
@@ -101,6 +103,15 @@ public class StaticSimpleDateFormatRule implements Rule {
                 .map(initializer -> initializer.asObjectCreationExpr().getType().getNameAsString())
                 .filter(this::isNotThreadSafe);
         String declaredType = simpleName(variable.getType());
+        // static final SimpleDateFormat FORMAT = new SyncSimpleDateFormat(...): своя обертка с синхронизацией
+        boolean synchronizedWrapper = variable.getInitializer()
+                .filter(initializer -> initializer.isObjectCreationExpr())
+                .map(initializer -> initializer.asObjectCreationExpr().getType().getNameAsString())
+                .filter(type -> THREAD_SAFE_WRAPPER.matcher(type).find())
+                .isPresent();
+        if (synchronizedWrapper) {
+            return Optional.empty();
+        }
         return created.isPresent() || !isNotThreadSafe(declaredType) ? created : Optional.of(declaredType);
     }
 

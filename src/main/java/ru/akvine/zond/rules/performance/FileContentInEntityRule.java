@@ -45,6 +45,8 @@ public class FileContentInEntityRule extends AbstractRule {
             "(?i)(file|content|document|attachment|image|photo|picture|scan|pdf|report|payload|blob|binary"
                     + "|base64|dump|archive|data$)");
     // Двоичные значения, которые файлом не бывают
+    private static final Pattern FILE_ATTRIBUTE = Pattern.compile(
+            "(?i)(path|name|url|uri|link|location|dir|directory|folder|type|format|extension|size|id)$");
     private static final Pattern SMALL_NAME = Pattern.compile(
             "(?i)(hash|salt|signature|checksum|digest|key|nonce|token|uuid|guid|fingerprint|thumb|icon|avatar)");
 
@@ -100,7 +102,9 @@ public class FileContentInEntityRule extends AbstractRule {
             return CONTENT_NAME.matcher(name).find() ? Optional.of(Confidence.SUSPICION) : Optional.empty();
         }
         // @Lob String - чаще длинный текст (описание, JSON), чем файл
-        boolean textFile = lob && TEXT_TYPES.contains(type) && CONTENT_NAME.matcher(name).find();
+        // @Lob String srcFilePath, documentUrl: длинная строка с адресом файла, а не сам файл
+        boolean textFile = lob && TEXT_TYPES.contains(type) && CONTENT_NAME.matcher(name).find()
+                && !FILE_ATTRIBUTE.matcher(name).find();
         return textFile ? Optional.of(Confidence.SUSPICION) : Optional.empty();
     }
 

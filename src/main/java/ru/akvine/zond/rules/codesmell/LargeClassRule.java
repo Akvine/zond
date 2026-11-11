@@ -47,7 +47,9 @@ public class LargeClassRule extends AbstractRule {
 
             int lines = type.getRange().map(range -> range.end.line - range.begin.line + 1).orElse(0);
             int methods = type.getMethods().size();
-            if (lines > value(MAX_LINES) || methods > value(MAX_METHODS)) {
+            // Класс из одних констант (RuleCodes, ErrorCodes) длинный, но обязанность у него одна - список
+            boolean constantsOnly = methods == 0 && type.getConstructors().isEmpty();
+            if (!constantsOnly && (lines > value(MAX_LINES) || methods > value(MAX_METHODS))) {
                 violations.add(violation(sourceFile, type,
                         "Класс '" + type.getNameAsString() + "' слишком большой (" + lines + " строк, " + methods
                                 + " методов при допустимых " + value(MAX_LINES) + " и "

@@ -16,10 +16,12 @@ import ru.akvine.zond.rules.support.ExecutorCreations;
 
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class ExecutorWithoutMdcRule extends AbstractRule implements ProjectRule {
     private static final String MDC = "MDC";
+    private static final Pattern CONTEXT_AWARE = Pattern.compile("(?i)mdc|contextaware|contextpropagat|tracing|traceable");
 
     // Способы передать контекст в задачи пула: декоратор Spring либо ручная обертка над задачей
     private static final Set<String> CONTEXT_PROPAGATION_METHODS = Set.of("setTaskDecorator");
@@ -61,6 +63,7 @@ public class ExecutorWithoutMdcRule extends AbstractRule implements ProjectRule 
 
         return sourceFile.unit().findAll(Expression.class).stream()
                 .filter(ExecutorCreations::creates)
+                .filter(creation -> !isContextAware(creation))
                 .map(creation -> violation(sourceFile, creation,
                         ExecutorCreations.describe(creation) + " без передачи MDC: в потоках пула контекст"
                                 + " логирования (traceId, пользователь) пуст, записи задач не связать с запросом;"
@@ -76,6 +79,12 @@ public class ExecutorWithoutMdcRule extends AbstractRule implements ProjectRule 
     @Override
     public ErrorType errorType() {
         return ErrorType.CODE_SMELL;
+    }
+
+    // new MdcThreadPoolExecutor(...), new ContextAwareExecutor(...): передача контекста зашита в сам пул
+    private boolean isContextAware(Expression creation) {
+        return creation.isObjectCreationExpr()
+                && CONTEXT_AWARE.matcher(creation.asObjectCreationExpr().getType().getNameAsString()).find();
     }
 
     private boolean propagatesContext(CompilationUnit unit) {

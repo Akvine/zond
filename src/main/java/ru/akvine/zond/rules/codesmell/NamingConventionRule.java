@@ -97,6 +97,13 @@ public class NamingConventionRule extends AbstractRule {
         return ErrorType.CODE_SMELL;
     }
 
+    private boolean isInstanceConstant(FieldDeclaration field, VariableDeclarator variable) {
+        return field.isFinal() && !field.isStatic() && CONSTANT_CASE.matcher(variable.getNameAsString()).matches()
+                && variable.getInitializer()
+                .filter(value -> value.isLiteralExpr() && !value.isNullLiteralExpr())
+                .isPresent();
+    }
+
     private void checkVariable(SourceFile sourceFile, VariableDeclarator variable, List<Violation> violations) {
         String name = variable.getNameAsString();
         Node parent = variable.getParentNode().orElse(null);
@@ -112,6 +119,11 @@ public class NamingConventionRule extends AbstractRule {
         } else if (parent instanceof FieldDeclaration field) {
             // public static int DEFAULT_LIMIT = 100 - константа без final: о пропущенном final сообщает jr:35
             if (field.isPublic() && field.isStatic() && CONSTANT_CASE.matcher(name).matches()) {
+                return;
+            }
+            // private final int MAX_SIZE = 200 - константа без static: имя у нее верное, о пропущенном static
+            // сообщает jr:500
+            if (isInstanceConstant(field, variable)) {
                 return;
             }
             check(sourceFile, variable, name, LOWER_CAMEL_CASE, "Имя поля", "lowerCamelCase", violations);
