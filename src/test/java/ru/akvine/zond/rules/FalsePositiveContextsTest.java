@@ -1,10 +1,13 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.rules.codesmell.CommentedOutCodeRule;
 import ru.akvine.zond.rules.codesmell.ConsoleOutputRule;
 import ru.akvine.zond.rules.codesmell.MagicNumberRule;
 import ru.akvine.zond.rules.codesmell.TooManyDependenciesRule;
+import ru.akvine.zond.rules.codesmell.UnusedClassRule;
 import ru.akvine.zond.rules.exceptions.LostExceptionCauseRule;
 import ru.akvine.zond.rules.logical.DefaultCharsetRule;
 import ru.akvine.zond.rules.logical.NullInsteadOfEmptyCollectionRule;
@@ -12,7 +15,10 @@ import ru.akvine.zond.rules.performance.MapperPerCallRule;
 import ru.akvine.zond.rules.resources.UnboundedExecutorRule;
 import ru.akvine.zond.rules.security.HardcodedCredentialsRule;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,6 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * но место, где она стоит, делает ее уместной
  */
 class FalsePositiveContextsTest {
+    @TempDir
+    Path dir;
 
     @Test
     void constantThatDescribesSecretIsNotSecret() {
@@ -60,10 +68,19 @@ class FalsePositiveContextsTest {
                     }
                 }
                 """;
+        String notifier = """
+                package app.notification.dummy;
+                class SystemOutNotificationService {
+                    void send(String message) {
+                        System.out.println(message);
+                    }
+                }
+                """;
         ConsoleOutputRule rule = new ConsoleOutputRule();
 
         assertThat(RuleTests.check(rule, Path.of("MainMenu.java"), menu)).isEmpty();
         assertThat(RuleTests.check(rule, Path.of("ConsolePrinter.java"), printer)).isEmpty();
+        assertThat(RuleTests.check(rule, Path.of("SystemOutNotificationService.java"), notifier)).isEmpty();
         assertThat(RuleTests.check(rule, Path.of("ClientService.java"), service)).hasSize(1);
     }
 
@@ -109,6 +126,54 @@ class FalsePositiveContextsTest {
                     }
                 }
                 """)).containsExactly(13, 14, 15, 20);
+    }
+
+    @Test
+    void ordinalIsNotMagicNumber() {
+        assertThat(RuleTests.lines(new MagicNumberRule(), """
+                class UserDao {
+                    void save(PreparedStatement statement, ResultSet rs, Row row, User user) throws SQLException {
+                        statement.setString(3, user.name());
+                        statement.setLong(4, user.id());
+                        String city = rs.getString(5);
+                        row.createCell(6).setCellValue(city);
+                        user.setAge(33);
+                        double rounded = Math.round(user.rate() * Math.pow(10, 4)) / Math.pow(10, 4);
+                    }
+                }
+                """)).containsExactly(7, 8, 8);
+    }
+
+    @Test
+    void classNamedInConfigurationIsCreatedByFramework() throws IOException {
+        Files.createDirectories(dir.resolve("app/src/main/resources/db"));
+        Files.writeString(dir.resolve("app/src/main/resources/db/changelog.xml"), """
+                <changeSet id="1" author="app">
+                    <customChange class="ru.app.liquibase.NameLoader"/>
+                </changeSet>
+                """);
+        List<SourceFile> sources = List.of(
+                RuleTests.parse(dir.resolve("app/src/main/java/ru/app/liquibase/NameLoader.java"), """
+                        package ru.app.liquibase;
+                        public class NameLoader {
+                        }
+                        """),
+                RuleTests.parse(dir.resolve("app/src/main/java/ru/app/liquibase/ForgottenLoader.java"), """
+                        package ru.app.liquibase;
+                        public class ForgottenLoader {
+                        }
+                        """),
+                RuleTests.parse(dir.resolve("app/src/main/java/ru/app/App.java"), """
+                        package ru.app;
+                        public class App {
+                            public static void main(String[] args) {
+                            }
+                        }
+                        """));
+
+        assertThat(new UnusedClassRule().checkProject(sources))
+                .extracting(violation -> violation.file().getFileName().toString())
+                .containsExactly("ForgottenLoader.java");
     }
 
     @Test

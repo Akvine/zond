@@ -2,8 +2,10 @@ package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.rules.exceptions.UnhandledNumberFormatRule;
+import ru.akvine.zond.rules.logical.EqualsOnPossibleNullRule;
 import ru.akvine.zond.rules.logical.IndexOutOfBoundsRule;
 import ru.akvine.zond.rules.logical.IndexWithoutLengthCheckRule;
+import ru.akvine.zond.rules.logical.NarrowingCastRule;
 import ru.akvine.zond.rules.logical.NullableDereferenceRule;
 import ru.akvine.zond.rules.logical.OptionalMisuseRule;
 
@@ -111,6 +113,34 @@ class FalsePositiveGuardsTest {
                     }
                 }
                 """)).containsExactly(3, 9, 10);
+    }
+
+    @Test
+    void nameOfMethodIsNeverNull() {
+        assertThat(RuleTests.lines(new EqualsOnPossibleNullRule(), """
+                class Handler {
+                    Object invoke(Method method, Order order) {
+                        if (method.getName().equals("close")) {
+                            return null;
+                        }
+                        return order.getStatus().equals("NEW") ? order : null;
+                    }
+                }
+                """)).containsExactly(6);
+    }
+
+    @Test
+    void valueComparedWithIntBoundFitsInt() {
+        assertThat(RuleTests.lines(new NarrowingCastRule(), """
+                class Sizes {
+                    int length(long length, int maxSize) {
+                        return length > maxSize ? maxSize : (int) length;
+                    }
+                    int positive(long count) {
+                        return count > 0 ? (int) count : 0;
+                    }
+                }
+                """)).containsExactly(6);
     }
 
     @Test

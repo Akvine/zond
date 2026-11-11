@@ -1,6 +1,9 @@
 package ru.akvine.zond.rules.performance;
 
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.stmt.IfStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -12,7 +15,9 @@ import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.Loggers;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @Component
 public class LoggingInLoopRule extends AbstractRule {
@@ -36,12 +41,28 @@ public class LoggingInLoopRule extends AbstractRule {
                 .filter(Loggers::isEnabledLevel)
                 // Итерации цикла повторных попыток - это попытки, а не элементы данных: их считаные единицы
                 .filter(CodeContexts::isRepeatedOverData)
-                .filter(call -> !isErrorReport(call))
+                .filter(call -> !isErrorReport(call) && !isPrintedOnce(call))
                 .map(call -> violation(sourceFile, call,
                         "Логирование " + call.getScope().get() + "." + call.getNameAsString() + "(...) в цикле:"
                                 + " на большом объеме это тысячи записей, которые забивают лог и тормозят обработку;"
                                 + " выведите одну итоговую запись после цикла либо понизьте уровень до debug"))
                 .toList();
+    }
+
+    // if (!headerPrinted) { log.info("Cleaning started"); headerPrinted = true; }: запись одна на весь обход
+    private boolean isPrintedOnce(MethodCallExpr call) {
+        Optional<IfStmt> branch = call.findAncestor(IfStmt.class)
+                .filter(statement -> statement.getThenStmt().isAncestorOf(call));
+        if (branch.isEmpty()) {
+            return false;
+        }
+        Set<String> flags = branch.get().getCondition().findAll(NameExpr.class).stream()
+                .map(NameExpr::getNameAsString)
+                .collect(Collectors.toSet());
+        return branch.get().getThenStmt().findAll(AssignExpr.class).stream()
+                .filter(assignment -> assignment.getValue().isBooleanLiteralExpr())
+                .flatMap(assignment -> assignment.getTarget().findAll(NameExpr.class).stream())
+                .anyMatch(name -> flags.contains(name.getNameAsString()));
     }
 
     // Сообщение об ошибке, а не о ходе работы: запись в catch либо warn / error под условием. Она появляется

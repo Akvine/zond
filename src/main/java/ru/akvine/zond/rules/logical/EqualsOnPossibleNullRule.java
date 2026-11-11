@@ -23,6 +23,9 @@ import java.util.regex.Pattern;
 public class EqualsOnPossibleNullRule extends AbstractRule {
     private static final Set<String> EQUALS_METHODS = Set.of("equals", "equalsIgnoreCase");
     private static final Pattern GETTER = Pattern.compile("^get[A-Z].*");
+    private static final Set<String> NAME_GETTERS = Set.of("getName", "getSimpleName", "getTypeName");
+    private static final Set<String> NAMED_TYPES = Set.of(
+            "Method", "Field", "Class", "Constructor", "Executable", "Member", "Thread", "File", "Package");
 
     @Override
     public String code() {
@@ -64,10 +67,20 @@ public class EqualsOnPossibleNullRule extends AbstractRule {
         Expression value = Nodes.unwrap(scope);
         if (value.isMethodCallExpr()) {
             return GETTER.matcher(value.asMethodCallExpr().getNameAsString()).matches()
-                    && value.asMethodCallExpr().getArguments().isEmpty();
+                    && value.asMethodCallExpr().getArguments().isEmpty()
+                    && !isAlwaysNamed(value.asMethodCallExpr());
         }
         return value.isNameExpr() && LocalTypes.findDeclaration(value)
                 .filter(declaration -> declaration instanceof Parameter)
+                .isPresent();
+    }
+
+    // method.getName(), type.getSimpleName(), file.getName(): имя у метода, класса, потока и файла есть всегда
+    private boolean isAlwaysNamed(MethodCallExpr getter) {
+        return NAME_GETTERS.contains(getter.getNameAsString()) && getter.getScope()
+                .flatMap(LocalTypes::typeOf)
+                .map(type -> type.replaceAll("<.*", ""))
+                .filter(NAMED_TYPES::contains)
                 .isPresent();
     }
 

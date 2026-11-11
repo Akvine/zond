@@ -65,6 +65,12 @@ public final class ProjectUsages {
             "(?i).*\\.(jelly|groovy|jsp|jspx|tag|html|xhtml|ftl|ftlh|vm|peb|mustache|hbs)$");
     // Больше файлов не читаем: имена из шаблонов - лишь запас против ложных находок
     private static final int MAX_VIEW_FILES = 20_000;
+    private static final Pattern CONFIGURATION_FILE = Pattern.compile(
+            ".*\\.(xml|ya?ml|properties|factories|imports|json|conf)", Pattern.CASE_INSENSITIVE);
+    private static final long MAX_CONFIGURATION_FILE_SIZE = 1_000_000;
+    // ru.app.liquibase.DataLoader, com.acme.jobs.CleanupJob$Step: пакет строчными буквами и имя класса
+    private static final Pattern QUALIFIED_CLASS = Pattern.compile(
+            "\\b(?:[a-z_][a-z0-9_]*\\.){2,}(?:[A-Z][A-Za-z0-9_]*\\$)*([A-Z][A-Za-z0-9_]*)");
     // doCheckUrl, doFillGoalTypeItems, doConfigSubmit: веб-методы Stapler (Jenkins) вызываются по адресу запроса
     private static final Pattern STAPLER_WEB_METHOD = Pattern.compile("^do[A-Z]\\w*");
     private static final String STAPLER_PACKAGE = "org.kohsuke.stapler";
@@ -103,7 +109,7 @@ public final class ProjectUsages {
     private final Map<CompilationUnit, String> moduleOf = new IdentityHashMap<>();
     private final Set<String> modulesWithEntry = new HashSet<>();
     private final Set<CompilationUnit> sampleUnits = identitySet();
-    // Классы из META-INF/services: их создает ServiceLoader, а не код проекта
+    // Классы из META-INF/services и из файлов настроек: их создает ServiceLoader или фреймворк, а не код проекта
     private final Set<String> serviceClasses = new HashSet<>();
     // В проекте нет ни main, ни @SpringBootApplication: это библиотека
     private final boolean library;
@@ -172,6 +178,7 @@ public final class ProjectUsages {
             }
         }
         new HashSet<>(moduleOf.values()).forEach(this::readServiceRegistrations);
+        new HashSet<>(moduleOf.values()).forEach(this::readConfiguredClasses);
         new HashSet<>(moduleOf.values()).forEach(this::readViewWords);
         // Приложение из примеров (activiti-examples/DemoApplication) библиотеку приложением не делает
         types.stream()
@@ -459,6 +466,48 @@ public final class ProjectUsages {
             }
         } catch (IOException | UncheckedIOException exception) {
             // Файл не прочитался - о классах из него судим по коду, как раньше
+        }
+    }
+
+    /**
+     * <customChange class="ru.app.liquibase.DataLoader"/> в миграции Liquibase, <bean class="..."> в XML Spring,
+     * аппендер в logback.xml, задание в quartz.properties, spring.factories: класс назван полным именем в файле
+     * настроек - создает его фреймворк, и ссылок из кода на него может не быть вовсе
+     */
+    private void readConfiguredClasses(String module) {
+        if (module.isEmpty()) {
+            return;
+        }
+        Path sourceRoot = Path.of(module).resolve(SOURCE_DIRECTORY);
+        if (!Files.isDirectory(sourceRoot)) {
+            return;
+        }
+        try (Stream<Path> files = Files.walk(sourceRoot)) {
+            files.filter(path -> CONFIGURATION_FILE.matcher(path.getFileName().toString()).matches())
+                    .limit(MAX_VIEW_FILES)
+                    .forEach(this::readClassNames);
+        } catch (IOException | UncheckedIOException exception) {
+            // Настройки не прочитались - о классах судим по коду, как раньше
+        }
+    }
+
+    private void readClassNames(Path file) {
+        try {
+            if (Files.size(file) > MAX_CONFIGURATION_FILE_SIZE) {
+                return;
+            }
+            try (Stream<String> lines = Files.lines(file, StandardCharsets.ISO_8859_1)) {
+                lines.forEach(this::readClassNames);
+            }
+        } catch (IOException | UncheckedIOException exception) {
+            // Один файл не прочитался - остальные все равно пригодятся
+        }
+    }
+
+    private void readClassNames(String line) {
+        Matcher matcher = QUALIFIED_CLASS.matcher(line);
+        while (matcher.find()) {
+            serviceClasses.add(matcher.group(1));
         }
     }
 

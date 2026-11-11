@@ -49,6 +49,17 @@ public class MagicNumberRule extends AbstractRule {
     private static final String GROUP = "group";
     private static final Set<String> GROUP_BOUNDS = Set.of("start", "end");
     private static final Set<String> MATCH_TYPES = Set.of("Matcher", "MatchResult");
+    // Apache POI: row.createCell(3), row.getCell(3)
+    private static final Set<String> CELL_METHODS = Set.of("createCell", "getCell");
+    private static final Set<String> JDBC_TYPES = Set.of(
+            "PreparedStatement", "CallableStatement", "ResultSet", "SqlRowSet", "ResultSetMetaData");
+    // ps, stmt, statement, preparedStatement, rs, resultSet, rowSet, metaData - когда тип переменной не виден
+    private static final Pattern JDBC_NAME = Pattern.compile(
+            "(?i)(ps|pstmt|stmt|cs|rs|rsmd|\\w*statement|\\w*resultset|\\w*rowset|\\w*metadata)");
+    private static final Pattern JDBC_SETTER = Pattern.compile("(set|update|registerOut)[A-Z]\\w*");
+    private static final Pattern JDBC_GETTER = Pattern.compile("(get|is)[A-Z]\\w*");
+    private static final String POW = "pow";
+    private static final Pattern DECIMAL_BASE = Pattern.compile("10(\\.0)?[dDfF]?");
 
     private static final Pattern UNIT_CONSTANT = Pattern.compile("(TimeUnit|ChronoUnit|DataUnit)\\.[A-Z_]+");
     private static final Pattern UNIT_FACTORY = Pattern.compile("^(Duration|Period|DataSize)\\.of[A-Z]\\w*\\(");
@@ -157,7 +168,36 @@ public class MagicNumberRule extends AbstractRule {
     // Число называет место, а не величину: номер бита, смещение поля, основание, сдвиг, группа шаблона, вариант
     private boolean isPosition(Node literal) {
         return isBitPosition(literal) || isFieldLayout(literal) || isRadix(literal) || isShiftDistance(literal)
-                || isGroupNumber(literal) || isVariantNumber(literal);
+                || isGroupNumber(literal) || isVariantNumber(literal) || isOrdinal(literal) || isDecimalBase(literal);
+    }
+
+    /**
+     * statement.setString(3, name), resultSet.getLong(4), row.createCell(5): номер параметра запроса, колонки
+     * выборки или ячейки строки - место в запросе или таблице, которое задано рядом, а не величина
+     */
+    private boolean isOrdinal(Node literal) {
+        if (!(literal.getParentNode().orElse(null) instanceof MethodCallExpr call) || call.getScope().isEmpty()
+                || call.getArguments().isEmpty() || call.getArgument(0) != literal) {
+            return false;
+        }
+        String method = call.getNameAsString();
+        if (CELL_METHODS.contains(method)) {
+            return call.getArguments().size() == 1;
+        }
+        Expression scope = call.getScope().get();
+        boolean jdbc = LocalTypes.typeOf(scope)
+                .map(JDBC_TYPES::contains)
+                .orElseGet(() -> JDBC_NAME.matcher(scope.toString()).matches());
+        boolean parameter = JDBC_SETTER.matcher(method).matches() && call.getArguments().size() >= 2;
+        boolean column = JDBC_GETTER.matcher(method).matches() && call.getArguments().size() == 1;
+        return jdbc && (parameter || column);
+    }
+
+    // Math.pow(10, digits): десять - основание десятичной записи, как основание в Integer.parseInt(text, 16)
+    private boolean isDecimalBase(Node literal) {
+        return literal instanceof LiteralStringValueExpr number && DECIMAL_BASE.matcher(number.getValue()).matches()
+                && literal.getParentNode().orElse(null) instanceof MethodCallExpr call
+                && POW.equals(call.getNameAsString()) && call.getArguments().size() == 2 && call.getArgument(0) == literal;
     }
 
     // matcher.group(3), matcher.start(2): номер группы задает сам шаблон - это место в нем, а не величина

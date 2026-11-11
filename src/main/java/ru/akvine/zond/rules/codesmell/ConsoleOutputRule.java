@@ -29,7 +29,8 @@ public class ConsoleOutputRule extends AbstractRule {
     private static final String MAIN = "main";
     private static final Set<String> CONSOLE_PACKAGES = Set.of("cli", "console", "shell", "terminal", "commandline", "tui");
     // Слово целиком: ConsoleMenu и ReportCli подходят, Client и Inclined - нет
-    private static final Pattern CONSOLE_TYPE = Pattern.compile("(^|[a-z0-9])(Console|Cli|CLI|Terminal)([A-Z]|$)");
+    private static final Pattern CONSOLE_TYPE =
+            Pattern.compile("(^|[a-z0-9])(Console|Cli|CLI|Terminal|SystemOut|Stdout|StdOut)([A-Z]|$)");
     // @Command из picocli и Spring Shell: класс - команда консольной программы
     private static final Set<String> COMMAND_ANNOTATIONS = Set.of("Command", "ShellComponent");
     private static final Set<String> CLI_PACKAGES = Set.of(
@@ -87,7 +88,8 @@ public class ConsoleOutputRule extends AbstractRule {
 
     /**
      * Класс консольного интерфейса: лежит в пакете cli, console, shell или terminal либо так назван (ConsoleMenu,
-     * CliRunner, TerminalPrinter). Печать в консоль - его прямая работа, логгер тут не замена
+     * CliRunner, TerminalPrinter, SystemOutNotificationService). Печать в консоль - его прямая работа,
+     * логгер тут не замена
      */
     private boolean isConsoleInterface(SourceFile sourceFile) {
         boolean consolePackage = sourceFile.unit().getPackageDeclaration()

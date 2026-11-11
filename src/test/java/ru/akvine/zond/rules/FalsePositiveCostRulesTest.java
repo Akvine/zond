@@ -7,6 +7,7 @@ import ru.akvine.zond.rules.logical.NarrowingCastRule;
 import ru.akvine.zond.rules.logical.OddCheckWithModuloRule;
 import ru.akvine.zond.rules.logical.UsuallyCheckedResultIgnoredRule;
 import ru.akvine.zond.rules.performance.HttpCallInLoopRule;
+import ru.akvine.zond.rules.performance.LoggingInLoopRule;
 import ru.akvine.zond.rules.performance.OptionalOrElseCallRule;
 import ru.akvine.zond.rules.performance.RegexInLoopRule;
 import ru.akvine.zond.rules.performance.RepositoryCallInLoopRule;
@@ -97,6 +98,24 @@ class FalsePositiveCostRulesTest {
                     }
                 }
                 """)).containsExactly(7);
+    }
+
+    @Test
+    void recordPrintedOnceIsNotLogInLoop() {
+        assertThat(RuleTests.lines(new LoggingInLoopRule(), """
+                class Cleaner {
+                    void clean(List<Block> blocks) {
+                        boolean printed = false;
+                        for (Block block : blocks) {
+                            if (!printed) {
+                                log.info("Cleaning started");
+                                printed = true;
+                            }
+                            log.info("Block {} removed", block);
+                        }
+                    }
+                }
+                """)).containsExactly(9);
     }
 
     @Test

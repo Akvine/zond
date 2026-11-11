@@ -37,6 +37,10 @@ public class NarrowingCastRule extends AbstractRule {
     private static final String MIN_VALUE = "MIN_VALUE";
     private static final String BETWEEN = "between";
     private static final String COUNT = "count";
+    private static final Set<String> NARROW_BOUNDS = Set.of("int", "Integer", "short", "Short", "byte", "Byte");
+    private static final Set<BinaryExpr.Operator> RELATIONS = Set.of(
+            BinaryExpr.Operator.LESS, BinaryExpr.Operator.LESS_EQUALS,
+            BinaryExpr.Operator.GREATER, BinaryExpr.Operator.GREATER_EQUALS);
     private static final String STREAM = "stream";
     private static final Pattern EXPANDING = Pattern.compile("flatMap\\w*|mapMulti\\w*");
     private static final Set<BinaryExpr.Operator> SUMS = Set.of(BinaryExpr.Operator.PLUS, BinaryExpr.Operator.MINUS);
@@ -107,8 +111,23 @@ public class NarrowingCastRule extends AbstractRule {
         return Guards.isGuarded(cast, check -> {
             String text = check.toString();
             return text.contains(value) && (text.contains(MAX_VALUE) || text.contains(MIN_VALUE)
-                    || check.findAncestor(AssertStmt.class).isPresent());
+                    || check.findAncestor(AssertStmt.class).isPresent()) || isComparedWithInt(check, value);
         });
+    }
+
+    // blob.length() > maxSize ? maxSize : (int) blob.length(): значение уже сравнили с пределом типа int
+    private boolean isComparedWithInt(Expression check, String value) {
+        if (!check.isBinaryExpr() || !RELATIONS.contains(check.asBinaryExpr().getOperator())) {
+            return false;
+        }
+        Expression left = Nodes.unwrap(check.asBinaryExpr().getLeft());
+        Expression right = Nodes.unwrap(check.asBinaryExpr().getRight());
+        return left.toString().equals(value) && isIntBound(right) || right.toString().equals(value) && isIntBound(left);
+    }
+
+    // Литерал пределом не считаем: count > 0 проверяет знак, а не то, что число помещается в int
+    private boolean isIntBound(Expression bound) {
+        return !bound.isLiteralExpr() && LocalTypes.typeOf(bound).filter(NARROW_BOUNDS::contains).isPresent();
     }
 
     // Число дней или часов в int помещается с запасом: Duration.between(...).toDays(), ChronoUnit.DAYS.between(...)

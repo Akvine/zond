@@ -2339,8 +2339,8 @@ MyBatis Generator часто настраивают без комментари�
 | jr:208 и другие правила о данных извне | Свой метод с именем, как у чтения запроса: `getHeader(mediaType)` в `RestUtil` JeecgBoot собирает `HttpHeaders`. Вызов без получателя читает запрос, только если класс — обертка над запросом (`extends HttpServletRequestWrapper`) |
 | jr:19, секрет в коде | Константа, которая секрет описывает, а не хранит: имя кончается словом `CODE`, `MESSAGE`, `HEADER`, `PATTERN`, `ERROR` и подобным — `SECRET_IN_TO_STRING_RULE_CODE = "jr:372"`, `TOKEN_HEADER = "X-Auth-Token"` |
 | jr:24, `Optional.get()` без проверки | Проверено производное значение: `address = user.map(...)`, `if (address.isPresent()) user.get()`. `get()` в лямбде собственной цепочки: `user.filter(found -> user.get().isActive())` |
-| jr:36, вывод в консоль | Класс консольного интерфейса: пакет `cli`, `console`, `shell`, `terminal` либо имя со словом `Console`, `Cli`, `Terminal` (`MainMenu` в `app.cli`, `ConsolePrinter`) |
-| jr:40, магическое число | Номер группы шаблона: `matcher.group(3)`. Метки `switch`, идущие подряд от нуля или единицы, — номера вариантов (пункты меню); `case 200`, `case 404` остаются находкой |
+| jr:36, вывод в консоль | Класс консольного интерфейса: пакет `cli`, `console`, `shell`, `terminal` либо имя со словом `Console`, `Cli`, `Terminal`, `SystemOut`, `Stdout` (`MainMenu` в `app.cli`, `ConsolePrinter`, `SystemOutNotificationService`) |
+| jr:40, магическое число | Номер группы шаблона: `matcher.group(3)`. Метки `switch`, идущие подряд от нуля или единицы, — номера вариантов (пункты меню); `case 200`, `case 404` остаются находкой. Номер параметра запроса, колонки выборки и ячейки: `statement.setString(3, name)`, `resultSet.getLong(4)`, `row.createCell(5)`. Основание степени: `Math.pow(10, digits)` |
 | jr:52, стрим собран в память | `text.lines()` у строки: она уже в памяти. Находкой остается `lines()` у `Reader` и `Files.lines(...)` |
 | jr:63, jr:427 и другие правила «в цикле» | Цепочка, которая кончается методом `Optional` (`find(id).map(...).orElse(...)`), возвращается из метода с типом `Optional` или присваивается такой переменной — это не обход коллекции |
 | jr:427, HTTP-вызов в цикле | Получатель — результат вызова с аргументами (`describeClient(call).map(...)`), а метод — `map`, `filter`, `orElse`: это `Optional` или стрим, а не объект-клиент |
@@ -2360,9 +2360,12 @@ MyBatis Generator часто настраивают без комментари�
 | jr:240, тяжелый объект на каждый вызов | `new Yaml()` из SnakeYAML: он не потокобезопасен, и совет хранить его в поле бина был ошибкой |
 | jr:242, файл целиком в памяти | `process.getInputStream().readAllBytes()`, поток сокета, `ZipFile`, `Blob`: это не загруженный клиентом файл |
 | jr:257, `null` вместо пустой коллекции | В Javadoc после `@return` сказано про `null` («null, если сравнение истинным быть не может»): это описанный договор, как и `@Nullable` |
-| jr:286, `long` приводится к `int` | Число элементов коллекции: `long found = items.stream().filter(...).count()`, сумма таких счетчиков. После `flatMap` и после изменения переменной находка остается |
+| jr:286, `long` приводится к `int` | Число элементов коллекции: `long found = items.stream().filter(...).count()`, сумма таких счетчиков. После `flatMap` и после изменения переменной находка остается. Значение уже сравнили с пределом типа `int`: `blob.length() > maxSize ? maxSize : (int) blob.length()`; сравнение с числом (`count > 0`) пределом не считается |
 | jr:329, индекс после `indexOf` | Проверка сохранена во флаг (`boolean sorted = orderBy >= 0`), стоит в `filter` выше по цепочке (`filter(line -> line.contains("="))`) либо в левой части `&&` |
 | jr:349, нечетность через `% 2 == 1` | Счетчик, который начинается с неотрицательного числа и только растет (`index++`, `+=`): отрицательным он не станет |
+| jr:94, логирование в цикле | Запись под флагом «уже выведено»: `if (!printed) { log.info("Cleaning started"); printed = true; }` — она одна на весь обход |
+| jr:205, jr:206, неиспользуемый метод и класс | Класс назван полным именем в файле настроек модуля (`xml`, `yml`, `properties`, `spring.factories`): `<customChange class="ru.app.liquibase.NameLoader"/>` в миграции Liquibase, `<bean class="...">`, аппендер в `logback.xml` — его создает фреймворк |
+| jr:258, `equals` у возможного `null` | `method.getName().equals("close")`, `type.getSimpleName()`, `file.getName()`: имя у метода, класса, потока и файла есть всегда |
 | jr:454, результат обычно проверяют | Мест без результата больше трех: семь вызовов из сорока пяти — уже второй способ вызова, а не недосмотр |
 
 ### Знания о проекте
