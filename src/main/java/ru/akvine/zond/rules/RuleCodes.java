@@ -512,4 +512,5 @@ public class RuleCodes {
     public final static String SORT_BEFORE_UNORDERED_TERMINAL_RULE_CODE = "jr:506";
     public final static String SEQUENCE_ALLOCATION_SIZE_ONE_RULE_CODE = "jr:507";
     public final static String INTERMEDIATE_COLLECTION_RULE_CODE = "jr:508";
+    public final static String LAZY_RELATION_IN_MAPPING_RULE_CODE = "jr:509";
 }

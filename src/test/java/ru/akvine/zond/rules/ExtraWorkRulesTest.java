@@ -1,9 +1,11 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.performance.ConstantHelperPerCallRule;
+import ru.akvine.zond.rules.performance.LazyRelationInMappingRule;
 import ru.akvine.zond.rules.performance.PageWithoutTotalRule;
 import ru.akvine.zond.rules.performance.RepeatedComputationRule;
 import ru.akvine.zond.rules.performance.RepositoryCountForExistenceRule;
@@ -11,6 +13,7 @@ import ru.akvine.zond.rules.performance.SequenceAllocationSizeOneRule;
 import ru.akvine.zond.rules.streams.IntermediateCollectionRule;
 import ru.akvine.zond.rules.streams.SortBeforeUnorderedTerminalRule;
 
+import java.nio.file.Path;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +24,144 @@ import static org.assertj.core.api.Assertions.assertThat;
  * jr:502 - jr:508: работа, результат которой выбрасывают или которую делают повторно
  */
 class ExtraWorkRulesTest {
+    private static final String ORDER_ENTITY = """
+            @Entity
+            class OrderEntity {
+                @Id
+                private Long id;
+                @ManyToOne(fetch = FetchType.LAZY)
+                private ClientEntity client;
+                @OneToMany(mappedBy = "order")
+                private List<ItemEntity> items;
+                @ManyToOne
+                private ShopEntity shop;
+                @BatchSize(size = 50)
+                @OneToMany(mappedBy = "order")
+                private List<NoteEntity> notes;
+            }
+            """;
+    private static final String ORDER_MODEL = """
+            class OrderModel {
+                private final Long id;
+                private final String clientName;
+                OrderModel(OrderEntity order) {
+                    this.id = order.getId();
+                    this.clientName = order.getClient().getName();
+                }
+            }
+            """;
+
+    @TempDir
+    Path dir;
+
+    @Test
+    void converterReadsLazyRelationOfEveryElement() {
+        ProjectFixture project = new ProjectFixture(dir)
+                .source("OrderEntity.java", ORDER_ENTITY)
+                .source("OrderModel.java", ORDER_MODEL)
+                .source("ShortModel.java", """
+                        class ShortModel {
+                            ShortModel(OrderEntity order) {
+                                this.id = order.getId();
+                                this.clientId = order.getClient().getId();
+                                this.shop = order.getShop().getName();
+                                this.notes = order.getNotes().size();
+                            }
+                        }
+                        """)
+                .source("OrderConverter.java", """
+                        @Component
+                        class OrderConverter {
+                            OrderDto toDto(OrderEntity order) {
+                                OrderDto dto = new OrderDto(order.getId());
+                                fill(dto, order);
+                                return dto;
+                            }
+                            private void fill(OrderDto dto, OrderEntity order) {
+                                dto.setItemCount(order.getItems().size());
+                            }
+                            OrderDto toShort(OrderEntity order) {
+                                return new OrderDto(order.getId());
+                            }
+                        }
+                        """)
+                .source("OrderService.java", """
+                        @Service
+                        class OrderService {
+                            private final OrderRepository orderRepository;
+                            private final OrderConverter orderConverter;
+                            List<OrderModel> models() {
+                                return orderRepository.findAll().stream().map(OrderModel::new).toList();
+                            }
+                            List<ShortModel> shorts() {
+                                return orderRepository.findAll().stream().map(ShortModel::new).toList();
+                            }
+                            List<OrderDto> dtos(List<OrderEntity> orders) {
+                                return orders.stream().map(orderConverter::toDto).toList();
+                            }
+                            List<String> names(List<OrderEntity> orders) {
+                                List<String> names = new ArrayList<>();
+                                for (OrderEntity order : orders) {
+                                    names.add(orderConverter.toShort(order).title());
+                                    names.add(order.getClient().getName());
+                                }
+                                return names;
+                            }
+                            OrderModel one(Long id) {
+                                return new OrderModel(orderRepository.getReferenceById(id));
+                            }
+                        }
+                        """);
+        List<Violation> violations = project.check(new LazyRelationInMappingRule());
+
+        // getId() прокси не раскрывает; shop загружается сразу, notes - пачкой; одна сущность - не список
+        assertThat(violations).extracting(violation -> violation.file().getFileName() + ":" + violation.line())
+                .containsExactly("OrderService.java:6", "OrderService.java:12", "OrderService.java:18");
+        assertThat(violations.get(0).message()).contains("'OrderModel::new'", "'OrderEntity.client'", "N+1");
+        assertThat(violations.get(1).message()).contains("'OrderEntity.items'");
+        assertThat(violations).extracting(Violation::confidenceOrDefault).containsOnly(Confidence.PROBABLE);
+    }
+
+    @Test
+    void relationLoadedInAdvanceIsNotReported() {
+        String service = """
+                @Service
+                class OrderService {
+                    private final OrderRepository orderRepository;
+                    List<OrderModel> models() {
+                        return orderRepository.findAll().stream().map(OrderModel::new).toList();
+                    }
+                }
+                """;
+        ProjectFixture withGraph = new ProjectFixture(dir.resolve("graph"))
+                .source("OrderEntity.java", ORDER_ENTITY)
+                .source("OrderModel.java", ORDER_MODEL)
+                .source("OrderService.java", service)
+                .source("OrderRepository.java", """
+                        interface OrderRepository extends JpaRepository<OrderEntity, Long> {
+                            @EntityGraph(attributePaths = "client")
+                            List<OrderEntity> findAll();
+                        }
+                        """);
+        ProjectFixture withBatches = new ProjectFixture(dir.resolve("batch"))
+                .source("OrderEntity.java", ORDER_ENTITY)
+                .source("OrderModel.java", ORDER_MODEL)
+                .source("OrderService.java", service)
+                .write("src/main/resources/application.properties",
+                        "spring.jpa.properties.hibernate.default_batch_fetch_size=100\n");
+
+        ProjectFixture jmix = new ProjectFixture(dir.resolve("jmix"))
+                .source("OrderEntity.java", "@JmixEntity\n" + ORDER_ENTITY)
+                .source("OrderModel.java", ORDER_MODEL)
+                .source("OrderService.java", service);
+
+        // Сущности Jmix загружают по планам выборки: правило о них не судит
+        assertThat(jmix.check(new LazyRelationInMappingRule())).isEmpty();
+        // Каким запросом загружен список, по месту преобразования не видно - остается подозрение
+        assertThat(withGraph.check(new LazyRelationInMappingRule()))
+                .extracting(Violation::confidenceOrDefault).containsExactly(Confidence.SUSPICION);
+        assertThat(withBatches.check(new LazyRelationInMappingRule())).isEmpty();
+    }
 
     @Test
     void sameValueIsComputedTwiceInOneExpression() {
