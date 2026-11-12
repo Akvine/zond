@@ -221,7 +221,7 @@ public class InMemoryFiles {
                 .map(parent -> (MethodCallExpr) parent)
                 .filter(call -> call.findAll(MethodCallExpr.class).stream()
                         .anyMatch(inner -> CHARACTER_STREAMS.contains(inner.getNameAsString())
-                                && !lambda.isAncestorOf(inner)))
+                                && !Nodes.isInside(inner, lambda)))
                 .isPresent();
     }
 

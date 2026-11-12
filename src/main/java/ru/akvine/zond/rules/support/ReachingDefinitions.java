@@ -160,7 +160,7 @@ public final class ReachingDefinitions {
         while (current != null && current != callable) {
             if (current instanceof TypeDeclaration<?> || current instanceof ObjectCreationExpr creation
                     && creation.getAnonymousClassBody().isPresent()
-                    && creation.getAnonymousClassBody().get().stream().anyMatch(member -> member.isAncestorOf(node))) {
+                    && creation.getAnonymousClassBody().get().stream().anyMatch(member -> Nodes.isInside(node, member))) {
                 return false;
             }
             current = current.getParentNode().orElse(null);

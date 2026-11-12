@@ -525,4 +525,6 @@ public class RuleCodes {
     public final static String CALENDAR_FOR_CURRENT_TIME_RULE_CODE = "jr:519";
     public final static String COPY_ON_WRITE_IN_LOOP_RULE_CODE = "jr:520";
     public final static String EXCEPTION_AS_BRANCH_IN_LOOP_RULE_CODE = "jr:521";
+    public final static String FILTER_AFTER_SORT_RULE_CODE = "jr:522";
+    public final static String DUPLICATE_SETTER_CALL_RULE_CODE = "jr:523";
 }

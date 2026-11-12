@@ -126,7 +126,7 @@ public class NullUnboxingRule extends AbstractRule {
                         && assign.getTarget().asFieldAccessExpr().getNameAsString().equals(name.getNameAsString()))
                 .filter(assign -> assign.getBegin().map(begin -> begin.line).orElse(Integer.MAX_VALUE) < position)
                 // Присваивание в одной из веток if не обязательно выполнилось
-                .filter(assign -> assign.findAncestor(BlockStmt.class).filter(block -> block.isAncestorOf(name)).isPresent())
+                .filter(assign -> assign.findAncestor(BlockStmt.class).filter(block -> Nodes.isInside(name, block)).isPresent())
                 .reduce((first, second) -> second)
                 .map(AssignExpr::getValue);
         Optional<Expression> value = last.or(() -> LocalTypes.findDeclaration(name)

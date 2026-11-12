@@ -22,6 +22,7 @@ import java.util.regex.Pattern;
 
 @Component
 public class SqlForeignKeyWithoutIndexRule extends AbstractContextRule {
+    private static final Pattern NAME_QUOTES = Pattern.compile("[\"`\\[\\]]");
     private static final Pattern CREATE_TABLE = Pattern.compile(
             "^create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?(\\S+?)\\s*\\((.*)\\).*", Pattern.CASE_INSENSITIVE);
     private static final Pattern ALTER_TABLE = Pattern.compile(
@@ -168,7 +169,7 @@ public class SqlForeignKeyWithoutIndexRule extends AbstractContextRule {
 
     // "public"."Orders" -> orders
     private String name(String raw) {
-        String cleaned = raw.replaceAll("[\"`\\[\\]]", "").toLowerCase(Locale.ROOT);
+        String cleaned = NAME_QUOTES.matcher(raw).replaceAll("").toLowerCase(Locale.ROOT);
         return cleaned.substring(cleaned.lastIndexOf('.') + 1);
     }
 }

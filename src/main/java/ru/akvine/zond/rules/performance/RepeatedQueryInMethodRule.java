@@ -154,7 +154,7 @@ public class RepeatedQueryInMethodRule extends AbstractRule {
     private boolean isEitherOr(MethodCallExpr first, MethodCallExpr second) {
         Node child = first;
         Node current = first.getParentNode().orElse(null);
-        while (current != null && !current.isAncestorOf(second)) {
+        while (current != null && !Nodes.isInside(second, current)) {
             // if (cached) { return repository.findByCode(code); } - после этой ветки до второго запроса не доходят
             if (current instanceof BlockStmt block && endsWithExit(block)) {
                 return true;
@@ -166,7 +166,7 @@ public class RepeatedQueryInMethodRule extends AbstractRule {
             return false;
         }
         Node other = current.getChildNodes().stream()
-                .filter(node -> node == second || node.isAncestorOf(second))
+                .filter(node -> node == second || Nodes.isInside(second, node))
                 .findFirst()
                 .orElse(null);
         return areAlternatives(current, child, other);

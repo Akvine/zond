@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * orderRepository.countByClientId(id) > 0: чтобы ответить "есть ли хоть одна", база пересчитывает все подходящие
@@ -24,6 +25,7 @@ import java.util.Set;
  */
 @Component
 public class RepositoryCountForExistenceRule extends AbstractRule {
+    private static final Pattern LONG_SUFFIX = Pattern.compile("[lL]$");
     private static final String COUNT_PREFIX = "count";
     private static final String ZERO = "0";
     private static final String ONE = "1";
@@ -91,7 +93,7 @@ public class RepositoryCountForExistenceRule extends AbstractRule {
         if (!value.isIntegerLiteralExpr() && !value.isLongLiteralExpr()) {
             return false;
         }
-        String bound = value.toString().replaceAll("[lL]$", "");
+        String bound = LONG_SUFFIX.matcher(value.toString()).replaceAll("");
         return ZERO.equals(bound) && ZERO_CHECKS.contains(operator) || ONE.equals(bound) && ONE_CHECKS.contains(operator);
     }
 }

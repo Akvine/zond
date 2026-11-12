@@ -9,12 +9,17 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Annotations;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
 public class PublicStaticNonFinalFieldRule extends AbstractRule {
+    private static final String SUPPRESS_FB_WARNINGS = "SuppressFBWarnings";
+    // Коды SpotBugs об изменяемых статических полях: MS_SHOULD_BE_FINAL, MS_CANNOT_BE_FINAL, MS_PKGPROTECT
+    private static final String MUTABLE_STATIC_CODES = "MS_";
+
 
     @Override
     public String code() {
@@ -31,6 +36,7 @@ public class PublicStaticNonFinalFieldRule extends AbstractRule {
         // Поля интерфейса неявно final, а без модификатора public они сюда и не попадут
         return sourceFile.unit().findAll(FieldDeclaration.class).stream()
                 .filter(field -> field.isPublic() && field.isStatic() && !field.isFinal())
+                .filter(field -> !isAcknowledged(field))
                 .map(field -> violation(sourceFile, field,
                         "public static поле '" + fieldNames(field) + "' без final: изменить его может любой код"
                                 + " из любого потока; сделайте поле final или закройте доступ"))
@@ -52,5 +58,13 @@ public class PublicStaticNonFinalFieldRule extends AbstractRule {
         return field.getVariables().stream()
                 .map(NodeWithSimpleName::getNameAsString)
                 .collect(Collectors.joining(", "));
+    }
+
+    // @SuppressFBWarnings(value = "MS_SHOULD_BE_FINAL", justification = "for script console"): то же замечание
+    // от SpotBugs уже разобрано, и поле оставлено изменяемым намеренно
+    private boolean isAcknowledged(FieldDeclaration field) {
+        return Annotations.find(field, SUPPRESS_FB_WARNINGS)
+                .filter(annotation -> annotation.toString().contains(MUTABLE_STATIC_CODES))
+                .isPresent();
     }
 }

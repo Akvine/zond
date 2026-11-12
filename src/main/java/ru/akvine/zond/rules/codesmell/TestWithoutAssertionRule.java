@@ -17,6 +17,7 @@ import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.ProjectClasses;
 import ru.akvine.zond.rules.support.TestClasses;
 
@@ -177,7 +178,7 @@ public class TestWithoutAssertionRule extends AbstractRule implements ProjectRul
     private boolean failsOnCondition(MethodDeclaration method) {
         return method.findAll(ThrowStmt.class).stream()
                 .anyMatch(statement -> statement.findAncestor(IfStmt.class)
-                        .filter(branch -> method.isAncestorOf(branch))
+                        .filter(branch -> Nodes.isInside(branch, method))
                         .isPresent());
     }
 

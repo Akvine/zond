@@ -122,7 +122,7 @@ public class AsyncAwaitedImmediatelyRule extends AbstractRule {
             return false;
         }
         Node next = block.get().getStatement(index + 1);
-        return next == wait || next.isAncestorOf(wait);
+        return next == wait || Nodes.isInside(wait, next);
     }
 
     private boolean isUsedOnce(NameExpr variable) {

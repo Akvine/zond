@@ -15,9 +15,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class ComposeDatabasePortExposedRule extends AbstractContextRule {
+    private static final Pattern PROTOCOL = Pattern.compile("/\\w+$");
     // Порт контейнера -> что на нем обычно работает
     private static final Map<String, String> INTERNAL_PORTS = Map.ofEntries(
             Map.entry("5432", "PostgreSQL"), Map.entry("3306", "MySQL"), Map.entry("1433", "SQL Server"),
@@ -77,7 +79,7 @@ public class ComposeDatabasePortExposedRule extends AbstractContextRule {
             return isPublished ? port.get("target").text() : "";
         }
         // "5432:5432", "127.0.0.1:5432:5432", "5432:5432/tcp"; один порт без двоеточия получает случайный порт хоста
-        String[] parts = port.text().replaceAll("/\\w+$", "").split(":");
+        String[] parts = PROTOCOL.matcher(port.text()).replaceAll("").split(":");
         if (parts.length == HOST_AND_CONTAINER) {
             return parts[1];
         }

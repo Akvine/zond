@@ -123,7 +123,7 @@ public class LockWithoutFinallyRule extends AbstractRule {
         while (start.isPresent()) {
             Statement statement = start.get();
             Optional<Node> parent = statement.getParentNode();
-            if (parent.isPresent() && parent.get() instanceof BlockStmt block && block.isAncestorOf(unlock)) {
+            if (parent.isPresent() && parent.get() instanceof BlockStmt block && Nodes.isInside(unlock, block)) {
                 List<Statement> statements = block.getStatements();
                 int from = 0;
                 // indexOf сравнивает узлы по тексту, а одинаковых операторов в блоке может быть несколько
@@ -131,7 +131,7 @@ public class LockWithoutFinallyRule extends AbstractRule {
                     from++;
                 }
                 for (int index = from; index < statements.size(); index++) {
-                    if (statements.get(index).isAncestorOf(unlock)) {
+                    if (Nodes.isInside(unlock, statements.get(index))) {
                         return Optional.of(statements.subList(from, index + 1));
                     }
                 }

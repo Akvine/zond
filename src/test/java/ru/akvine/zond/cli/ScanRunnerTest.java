@@ -237,6 +237,28 @@ class ScanRunnerTest {
     }
 
     @Test
+    void onlyArgumentRunsNamedRule() {
+        ScanRunner everything = runner("");
+        everything.run(new DefaultApplicationArguments("--path=" + dir));
+
+        ScanRunner selected = runner("");
+        selected.run(new DefaultApplicationArguments("--path=" + dir, "--only=jr:1"));
+
+        // Единственное правило названо в --only: прогон заканчивается так же, как без параметра
+        assertThat(selected.getExitCode()).isEqualTo(everything.getExitCode());
+    }
+
+    @Test
+    void onlyArgumentWithUnknownRuleIsError() {
+        ScanRunner runner = runner("");
+
+        // Опечатка в коде правила оставила бы прогон без единого правила
+        runner.run(new DefaultApplicationArguments("--path=" + dir, "--only=jr:99999"));
+
+        assertThat(runner.getExitCode()).isEqualTo(ScanExecutor.EXIT_ERROR);
+    }
+
+    @Test
     void excludeArgumentSkipsMatchingPaths() throws IOException {
         // Единственный файл с нарушением переносим в каталог, который исключаем
         Path generated = Files.createDirectories(dir.resolve("src/generated"));

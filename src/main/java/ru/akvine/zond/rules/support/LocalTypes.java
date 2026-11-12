@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.support;
 
+import com.github.javaparser.ast.DataKey;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
@@ -15,7 +16,9 @@ import lombok.experimental.UtilityClass;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -28,6 +31,9 @@ import java.util.stream.Collectors;
  */
 @UtilityClass
 public class LocalTypes {
+    private static final DataKey<Map<String, List<Node>>> DECLARATIONS = new DataKey<>() {
+    };
+
 
     /**
      * Выражение, для которого известен тип места назначения: инициализатор, правая часть присваивания, return
@@ -96,18 +102,12 @@ public class LocalTypes {
     public Optional<Node> findDeclaration(Node usage, String name) {
         Optional<Node> callable = Nodes.enclosingCallable(usage);
         if (callable.isPresent()) {
-            List<Node> candidates = new ArrayList<>();
-            callable.get().findAll(Parameter.class).stream()
-                    .filter(parameter -> parameter.getNameAsString().equals(name))
-                    .forEach(candidates::add);
-            callable.get().findAll(VariableDeclarator.class).stream()
-                    .filter(variable -> variable.getNameAsString().equals(name))
-                    .forEach(candidates::add);
+            List<Node> candidates = declarationsOf(callable.get()).getOrDefault(name, List.of());
 
             // Одно имя может быть объявлено в методе несколько раз (в разных циклах, лямбдах):
             // берем объявление из ближайшей области видимости, в которой находится использование
             Optional<Node> nearest = candidates.stream()
-                    .filter(candidate -> scopeOf(candidate).filter(scope -> scope.isAncestorOf(usage)).isPresent())
+                    .filter(candidate -> scopeOf(candidate).filter(scope -> Nodes.isInside(usage, scope)).isPresent())
                     .max(Comparator.comparingInt(candidate -> depth(scopeOf(candidate).get())));
             if (nearest.isPresent()) {
                 return nearest;
@@ -122,6 +122,30 @@ public class LocalTypes {
             }
         }
         return findField(usage, name).map(variable -> variable);
+    }
+
+    /**
+     * Параметры и локальные переменные метода по именам. Собираются один раз на метод и хранятся в самом узле:
+     * искать объявление приходится на каждом имени, и обход метода ради каждого поиска на больших проектах
+     * занимал большую часть времени сканирования
+     */
+    private Map<String, List<Node>> declarationsOf(Node callable) {
+        // Правила работают в несколько потоков, а данные узла - обычная таблица без синхронизации
+        synchronized (callable) {
+            if (callable.containsData(DECLARATIONS)) {
+                return callable.getData(DECLARATIONS);
+            }
+            Map<String, List<Node>> byName = new HashMap<>();
+            // Порядок прежний: сначала параметры, затем переменные - от него зависит выбор при равных областях
+            callable.findAll(Parameter.class)
+                    .forEach(parameter -> byName.computeIfAbsent(parameter.getNameAsString(), key -> new ArrayList<>())
+                            .add(parameter));
+            callable.findAll(VariableDeclarator.class)
+                    .forEach(variable -> byName.computeIfAbsent(variable.getNameAsString(), key -> new ArrayList<>())
+                            .add(variable));
+            callable.setData(DECLARATIONS, byName);
+            return byName;
+        }
     }
 
     // Параметр виден в своем методе или лямбде, локальная переменная - в блоке, цикле или try, где объявлена

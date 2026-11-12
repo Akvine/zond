@@ -170,7 +170,7 @@ public class FileBytesInResponseRule extends AbstractRule implements ProjectRule
 
     private static boolean isInside(List<Expression> sites, Node node) {
         for (Expression site : sites) {
-            if (site.isAncestorOf(node)) {
+            if (Nodes.isInside(node, site)) {
                 return true;
             }
         }

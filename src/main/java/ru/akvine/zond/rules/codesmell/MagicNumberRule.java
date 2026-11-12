@@ -1,5 +1,7 @@
 package ru.akvine.zond.rules.codesmell;
 
+import com.github.javaparser.ast.ArrayCreationLevel;
+import com.github.javaparser.ast.DataKey;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.AnnotationMemberDeclaration;
 import com.github.javaparser.ast.body.EnumConstantDeclaration;
@@ -10,6 +12,7 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.ArrayInitializerExpr;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.CastExpr;
 import com.github.javaparser.ast.expr.ConditionalExpr;
 import com.github.javaparser.ast.expr.DoubleLiteralExpr;
 import com.github.javaparser.ast.expr.EnclosedExpr;
@@ -42,7 +45,38 @@ import java.util.regex.Pattern;
 
 @Component
 public class MagicNumberRule extends AbstractRule {
+    private static final Pattern TYPE_SUFFIX = Pattern.compile("[lLfFdD]$");
     private static final String HASH_CODE = "hashCode";
+    private static final DataKey<Boolean> BINARY_FORMAT = new DataKey<>() {
+    };
+    // offset + 4, length - 2: смещение и длина складываются из частей
+    private static final Set<BinaryExpr.Operator> OFFSET_OPERATORS = Set.of(
+            BinaryExpr.Operator.PLUS, BinaryExpr.Operator.MINUS);
+    // Маска, сдвиг и сравнение с кодом или длиной
+    private static final Set<BinaryExpr.Operator> FORMAT_OPERATORS = Set.of(
+            BinaryExpr.Operator.BINARY_AND, BinaryExpr.Operator.BINARY_OR, BinaryExpr.Operator.XOR,
+            BinaryExpr.Operator.LEFT_SHIFT, BinaryExpr.Operator.SIGNED_RIGHT_SHIFT,
+            BinaryExpr.Operator.UNSIGNED_RIGHT_SHIFT, BinaryExpr.Operator.EQUALS, BinaryExpr.Operator.NOT_EQUALS,
+            BinaryExpr.Operator.LESS, BinaryExpr.Operator.LESS_EQUALS, BinaryExpr.Operator.GREATER,
+            BinaryExpr.Operator.GREATER_EQUALS);
+    private static final Set<String> LAYOUT_TYPES = Set.of(
+            "Dimension", "Insets", "Rectangle", "Point", "Font", "Color", "EmptyBorder", "GridLayout",
+            "BorderLayout", "FlowLayout", "GridBagConstraints", "JTextField", "JTextArea", "JPasswordField");
+    private static final Set<String> LAYOUT_METHODS = Set.of(
+            "setSize", "setPreferredSize", "setMinimumSize", "setMaximumSize", "setBounds", "setLocation",
+            "setColumns", "setRows", "setDividerLocation", "setDividerSize", "setPreferredWidth", "setMinWidth",
+            "setMaxWidth", "setRowHeight", "setVisibleRowCount", "createEmptyBorder", "createHorizontalStrut",
+            "createVerticalStrut", "createRigidArea", "setTabSize", "setIconTextGap", "setFixedCellWidth",
+            "setFixedCellHeight");
+    private static final Set<String> GRID_FIELDS = Set.of(
+            "gridx", "gridy", "gridwidth", "gridheight", "weightx", "weighty", "ipadx", "ipady");
+    private static final Pattern SIZED_TYPES = Pattern.compile(
+            "String(Builder|Buffer)|(Array|Linked)?(List|Deque)|(Hash|LinkedHash|ConcurrentHash)(Map|Set)"
+                    + "|ByteArrayOutputStream|(Char|String)(Array)?Writer|Buffered(Reader|Writer|InputStream|OutputStream)");
+    private static final int MIN_BUFFER = 256;
+    private static final Set<String> BINARY_BUFFER_TYPES = Set.of(
+            "ByteBuf", "ByteBuffer", "ChannelBuffer", "BitBuffer", "DataInput", "DataInputStream", "DataOutput",
+            "DataOutputStream", "ByteArrayDataInput", "ByteArrayDataOutput");
     private static final int MIN_TABLE_SIZE = 3;
     private static final int MIN_VARIANTS = 3;
     private static final Pattern SMALL_NUMBER = Pattern.compile("\\d{1,4}");
@@ -130,7 +164,7 @@ public class MagicNumberRule extends AbstractRule {
 
     private boolean isAllowed(String literal) {
         try {
-            return ALLOWED.contains(Double.parseDouble(literal.replace("_", "").replaceAll("[lLfFdD]$", "")));
+            return ALLOWED.contains(Double.parseDouble(TYPE_SUFFIX.matcher(literal.replace("_", "")).replaceAll("")));
         } catch (NumberFormatException exception) {
             // 0xFF, 0b1010: битовые маски и флаги
             return true;
@@ -157,12 +191,94 @@ public class MagicNumberRule extends AbstractRule {
                     || current instanceof EnumConstantDeclaration
                     || current instanceof ArrayInitializerExpr table && isDataTable(table)
                     || current instanceof AssignExpr assignment && isTableEntry(assignment)
-                    || (current instanceof MethodDeclaration method && HASH_CODE.equals(method.getNameAsString()))) {
+                    || current instanceof MethodDeclaration method && isIgnoredIn(method, literal)) {
                 return true;
             }
             current = current.getParentNode().orElse(null);
         }
-        return TestClasses.isInside(literal) || hasUnit(literal) || isUnitFactor(literal) || isPosition(literal);
+        return TestClasses.isInside(literal) || hasUnit(literal) || isUnitFactor(literal) || isPosition(literal)
+                || isScreenLayout(literal) || isCapacity(literal);
+    }
+
+    // В hashCode числа - множители хеша, в разборе двоичного сообщения - часть описания формата
+    private boolean isIgnoredIn(MethodDeclaration method, Node literal) {
+        return HASH_CODE.equals(method.getNameAsString())
+                || handlesBinaryFormat(method) && isWireFormatDetail(literal);
+    }
+
+    /**
+     * decode(Channel channel, ByteBuf buf), write(ByteBuffer buffer, Header header): метод разбирает или собирает
+     * двоичное сообщение. Длины полей, маски и коды типов в нем заданы описанием формата, и константа на каждое
+     * такое число его не прояснит
+     */
+    private boolean handlesBinaryFormat(MethodDeclaration method) {
+        // Вопрос задается на каждое число метода, а ответ у метода один
+        synchronized (method) {
+            if (!method.containsData(BINARY_FORMAT)) {
+                method.setData(BINARY_FORMAT, BINARY_BUFFER_TYPES.contains(LocalTypes.typeName(method.getType()))
+                        || method.getParameters().stream()
+                        .anyMatch(parameter -> BINARY_BUFFER_TYPES.contains(LocalTypes.typeName(parameter.getType())))
+                        // decode(Channel channel, Object msg) { ByteBuf buf = (ByteBuf) msg; ... }
+                        || method.findAll(VariableDeclarator.class).stream()
+                        .anyMatch(variable -> BINARY_BUFFER_TYPES.contains(LocalTypes.typeName(variable.getType()))));
+            }
+            return method.getData(BINARY_FORMAT);
+        }
+    }
+
+    /**
+     * setSize(300, 200), new Insets(2, 2, 2, 2), constraints.gridx = 1: размеры и раскладка окна в пикселях
+     * и ячейках. Их подбирают на глаз под конкретное окно, и имя такому числу ничего не добавит
+     */
+    private boolean isScreenLayout(Node literal) {
+        Node parent = literal.getParentNode().orElse(null);
+        while (parent instanceof UnaryExpr || parent instanceof EnclosedExpr || parent instanceof BinaryExpr) {
+            parent = parent.getParentNode().orElse(null);
+        }
+        if (parent instanceof ObjectCreationExpr creation) {
+            return LAYOUT_TYPES.contains(creation.getType().getNameAsString());
+        }
+        if (parent instanceof MethodCallExpr call) {
+            return LAYOUT_METHODS.contains(call.getNameAsString());
+        }
+        return parent instanceof AssignExpr assignment && assignment.getTarget().isFieldAccessExpr()
+                && GRID_FIELDS.contains(assignment.getTarget().asFieldAccessExpr().getNameAsString());
+    }
+
+    // new StringBuilder(250), new ArrayList<>(16), new byte[4096]: начальная емкость и размер буфера - подсказка
+    // для выделения памяти, а не величина из предметной области
+    private boolean isCapacity(Node literal) {
+        Node parent = literal.getParentNode().orElse(null);
+        if (parent instanceof ObjectCreationExpr creation) {
+            return creation.getArguments().size() == 1
+                    && SIZED_TYPES.matcher(creation.getType().getNameAsString()).matches();
+        }
+        return parent instanceof ArrayCreationLevel && literal instanceof IntegerLiteralExpr size
+                && size.asNumber() instanceof Integer bytes && bytes >= MIN_BUFFER && Integer.bitCount(bytes) == 1;
+    }
+
+    /**
+     * Число в разборе двоичного сообщения, которое описывает сам формат: код в case, маска и сдвиг, длина или
+     * код в сравнении, аргумент операции с буфером. Множитель единицы измерения (speed * 1.852) и числа в
+     * посторонних вызовах сюда не относятся - им имя нужно
+     */
+    private boolean isWireFormatDetail(Node literal) {
+        Node parent = literal.getParentNode().orElse(null);
+        while (parent instanceof EnclosedExpr || parent instanceof UnaryExpr || parent instanceof CastExpr
+                || parent instanceof BinaryExpr sum && OFFSET_OPERATORS.contains(sum.getOperator())) {
+            parent = parent.getParentNode().orElse(null);
+        }
+        if (parent instanceof SwitchEntry) {
+            return true;
+        }
+        if (parent instanceof BinaryExpr binary) {
+            return FORMAT_OPERATORS.contains(binary.getOperator());
+        }
+        return argumentOf(literal)
+                .flatMap(MethodCallExpr::getScope)
+                .flatMap(LocalTypes::typeOf)
+                .filter(BINARY_BUFFER_TYPES::contains)
+                .isPresent();
     }
 
     // Число называет место, а не величину: номер бита, смещение поля, основание, сдвиг, группа шаблона, вариант
@@ -311,7 +427,7 @@ public class MagicNumberRule extends AbstractRule {
             parent = parent.getParentNode().orElse(null);
         }
         return parent instanceof MethodCallExpr call && call.getArguments().stream()
-                .anyMatch(argument -> argument.isAncestorOf(literal) || argument == literal)
+                .anyMatch(argument -> Nodes.isInside(literal, argument) || argument == literal)
                 ? Optional.of(call) : Optional.empty();
     }
 

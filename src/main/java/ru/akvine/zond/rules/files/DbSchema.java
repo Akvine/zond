@@ -25,6 +25,9 @@ import java.util.regex.Pattern;
  * команда, которую понять не удалось, пропускается, а таблица с неизвестным составом помечается как неясная.
  */
 public final class DbSchema {
+    private static final Pattern SPACES = Pattern.compile("\\s+");
+    private static final Pattern LEADING_ZEROS = Pattern.compile("^0+(?=\\d)");
+    private static final Pattern NAME_QUOTES = Pattern.compile("[\"`\\[\\]]");
     private static final int FLAGS = Pattern.CASE_INSENSITIVE;
 
     private static final Pattern CREATE_TABLE = Pattern.compile(
@@ -330,7 +333,7 @@ public final class DbSchema {
      * @return имя без кавычек и схемы, в нижнем регистре: "public"."Orders" -> orders
      */
     public static String name(String raw) {
-        String cleaned = raw.replaceAll("[\"`\\[\\]]", "").toLowerCase(Locale.ROOT);
+        String cleaned = NAME_QUOTES.matcher(raw).replaceAll("").toLowerCase(Locale.ROOT);
         return cleaned.substring(cleaned.lastIndexOf('.') + 1);
     }
 
@@ -379,7 +382,7 @@ public final class DbSchema {
         if (!CONSTRAINT_START.matcher(definition).matches()) {
             return false;
         }
-        String[] words = definition.split("\\s+", 3);
+        String[] words = SPACES.split(definition, 3);
         return words.length < 2 || !COLUMN_TYPE.matcher(words[1]).matches();
     }
 
@@ -398,7 +401,7 @@ public final class DbSchema {
             if (isConstraint(definition)) {
                 tableKey(definition).ifPresent(keys::add);
             } else if (UNIQUE.matcher(definition).find() || PRIMARY_KEY.matcher(definition).find()) {
-                keys.add(new DeclaredKey(constraintName(definition), keyColumns(definition.split("\\s+")[0]), true));
+                keys.add(new DeclaredKey(constraintName(definition), keyColumns(SPACES.split(definition)[0]), true));
             }
         }
         return keys;
@@ -727,8 +730,8 @@ public final class DbSchema {
             if (text != 0) {
                 return text;
             }
-            String leftNumber = leftNumbers.group().replaceFirst("^0+(?=\\d)", "");
-            String rightNumber = rightNumbers.group().replaceFirst("^0+(?=\\d)", "");
+            String leftNumber = LEADING_ZEROS.matcher(leftNumbers.group()).replaceFirst("");
+            String rightNumber = LEADING_ZEROS.matcher(rightNumbers.group()).replaceFirst("");
             int number = leftNumber.length() != rightNumber.length()
                     ? Integer.compare(leftNumber.length(), rightNumber.length())
                     : leftNumber.compareTo(rightNumber);

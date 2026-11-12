@@ -7,6 +7,7 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.InstanceOfExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -17,12 +18,15 @@ import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.ProjectClasses;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 /**
  * Наследник класса-значения с новым полем. Расширить класс, у которого есть equals, и добавить поле, не нарушив
@@ -39,6 +43,15 @@ public class EqualsInstanceofInHierarchyRule extends AbstractRule implements Pro
     private static final Set<String> LOMBOK_EQUALS = Set.of("Data", "Value", "EqualsAndHashCode");
     // Хранимые объекты сравнивают по идентификатору, а не по всем полям: наследник с новым полем им не мешает
     private static final Set<String> STORED = Set.of("Entity", "MappedSuperclass", "Embeddable", "Document", "Table");
+    private static final String NOT_COMPARED = ". В проекте такие объекты не сравнивают и не кладут в Set и ключи Map,"
+            + " поэтому сейчас это ни на что не влияет";
+    // Коллекции, которые находят элемент через equals и hashCode
+    private static final Pattern HASH_COLLECTION = Pattern.compile(
+            "(Hash|LinkedHash|ConcurrentHash|Concurrent|Immutable)?(Set|Map)|Multimap|Multiset");
+    private static final String MAP = "Map";
+    private static final Set<String> COMPARING_CALLS = Set.of(
+            "equals", "contains", "containsKey", "indexOf", "lastIndexOf", "remove", "assertEquals",
+            "assertNotEquals", "isEqualTo", "isNotEqualTo", "containsExactly", "containsExactlyInAnyOrder");
     private static final String COMPOSITION = "; объявите класс-значение final, а новые данные добавляйте композицией:"
             + " отдельный класс, в котором исходный объект - одно из полей";
 
@@ -68,6 +81,7 @@ public class EqualsInstanceofInHierarchyRule extends AbstractRule implements Pro
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
+        Set<String> compared = comparedTypes(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
@@ -80,7 +94,7 @@ public class EqualsInstanceofInHierarchyRule extends AbstractRule implements Pro
                 }
                 Node place = explicitEquals(type).map(method -> (Node) method).orElse(type.getName());
                 describe(type, parent.get(), added.get()).ifPresent(problem -> violations.add(
-                        violation(sourceFile, place, problem.text() + COMPOSITION).withConfidence(problem.confidence())));
+                        report(sourceFile, place, problem, compared.contains(type.getNameAsString()))));
             }
         }
         return violations;
@@ -96,7 +110,48 @@ public class EqualsInstanceofInHierarchyRule extends AbstractRule implements Pro
         return ErrorType.LOGICAL;
     }
 
-    private record Problem(String text, Confidence confidence) {
+    /**
+     * @param generated equals написан не руками: достался от предка либо от Lombok
+     */
+    private record Problem(String text, Confidence confidence, boolean generated) {
+    }
+
+    /**
+     * Объекты запросов и ответов обычно никто не сравнивает: equals у них есть только потому, что его дал
+     * Lombok или предок. Пока класс в проекте не сравнивают и не кладут в Set и ключи Map, ошибка в таком
+     * equals ни на что не влияет - это замечание, а не дефект
+     */
+    private Violation report(SourceFile sourceFile, Node place, Problem problem, boolean compared) {
+        if (!problem.generated() || compared) {
+            return violation(sourceFile, place, problem.text() + COMPOSITION).withConfidence(problem.confidence());
+        }
+        return violation(sourceFile, place, problem.text() + COMPOSITION + NOT_COMPARED)
+                .withConfidence(problem.confidence())
+                .withLevel(ErrorLevel.INFO);
+    }
+
+    // Типы, для которых в проекте вызывается equals: напрямую, из тестов либо через Set и ключи Map
+    private Set<String> comparedTypes(List<SourceFile> sourceFiles) {
+        Set<String> types = new HashSet<>();
+        for (SourceFile sourceFile : sourceFiles) {
+            for (ClassOrInterfaceType type : sourceFile.unit().findAll(ClassOrInterfaceType.class)) {
+                String collection = type.getNameAsString();
+                if (HASH_COLLECTION.matcher(collection).matches()) {
+                    // У Map сравниваются ключи, у Set - элементы
+                    type.getTypeArguments().ifPresent(arguments -> arguments.stream()
+                            .limit(collection.endsWith(MAP) ? 1 : arguments.size())
+                            .map(LocalTypes::typeName)
+                            .forEach(types::add));
+                }
+            }
+            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+                if (COMPARING_CALLS.contains(call.getNameAsString())) {
+                    call.getScope().flatMap(LocalTypes::typeOf).ifPresent(types::add);
+                    call.getArguments().forEach(argument -> LocalTypes.typeOf(argument).ifPresent(types::add));
+                }
+            }
+        }
+        return types;
     }
 
     private Optional<Problem> describe(ClassOrInterfaceDeclaration type, ClassOrInterfaceDeclaration parent, String added) {
@@ -115,7 +170,7 @@ public class EqualsInstanceofInHierarchyRule extends AbstractRule implements Pro
                     "Класс '" + child + "' наследует класс-значение '" + ancestor
                     + "' и добавляет поле '" + added + "', а equals и hashCode остаются от предка: новое поле в"
                     + " сравнении не участвует, и два объекта с разным '" + added + "' считаются равными - в"
-                    + " HashSet и в ключах Map один из них пропадет", Confidence.PROBABLE));
+                    + " HashSet и в ключах Map один из них пропадет", Confidence.PROBABLE, true));
         }
         if (inherited == Kind.INSTANCEOF) {
             String how = own == Kind.INSTANCEOF
@@ -125,13 +180,13 @@ public class EqualsInstanceofInHierarchyRule extends AbstractRule implements Pro
                     + " а equals у '" + child + "' предка не принимает";
             return Optional.of(new Problem(how + ": предок.equals(наследник) вернет true, а"
                     + " наследник.equals(предок) - false. Сравнение перестает быть симметричным, и коллекции с"
-                    + " такими объектами ведут себя непредсказуемо", Confidence.CONFIRMED));
+                    + " такими объектами ведут себя непредсказуемо", Confidence.CONFIRMED, false));
         }
         if (own == Kind.LOMBOK && !decidesOnSuper(type)) {
             return Optional.of(new Problem("Lombok пишет equals и hashCode у '" + child + "' только по его"
                     + " собственным полям: поля предка '" + ancestor + "' в сравнении не участвуют, и объекты,"
                     + " которые различаются только ими, считаются равными; укажите"
-                    + " @EqualsAndHashCode(callSuper = true)", Confidence.CONFIRMED));
+                    + " @EqualsAndHashCode(callSuper = true)", Confidence.CONFIRMED, true));
         }
         return Optional.empty();
     }

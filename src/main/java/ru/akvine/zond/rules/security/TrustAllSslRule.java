@@ -185,11 +185,11 @@ public class TrustAllSslRule extends AbstractContextRule {
         boolean inThen;
         if (branch instanceof IfStmt statement) {
             condition = statement.getCondition();
-            inThen = statement.getThenStmt().isAncestorOf(node) || statement.getThenStmt() == node;
+            inThen = Nodes.isInside(node, statement.getThenStmt()) || statement.getThenStmt() == node;
         } else {
             ConditionalExpr conditional = (ConditionalExpr) branch;
             condition = conditional.getCondition();
-            inThen = conditional.getThenExpr().isAncestorOf(node) || conditional.getThenExpr() == node;
+            inThen = Nodes.isInside(node, conditional.getThenExpr()) || conditional.getThenExpr() == node;
         }
 
         boolean negated = false;

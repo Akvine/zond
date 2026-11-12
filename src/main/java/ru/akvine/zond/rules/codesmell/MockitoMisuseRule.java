@@ -38,6 +38,7 @@ import java.util.regex.Pattern;
  */
 @Component
 public class MockitoMisuseRule extends AbstractRule implements ProjectRule {
+    private static final Pattern THIS_PREFIX = Pattern.compile("^this\\.");
     private static final Set<String> MOCK_ANNOTATIONS = Set.of("Mock", "Spy", "Captor", "InjectMocks");
     // Чем заполняются поля с @Mock: расширение JUnit 5, раннер и правило JUnit 4, ручной вызов, контекст Spring
     private static final Pattern MOCKITO_SETUP = Pattern.compile(
@@ -139,7 +140,7 @@ public class MockitoMisuseRule extends AbstractRule implements ProjectRule {
         // jdbcTable = mock(JdbcTable.class) в setUp: поле заполняют вручную, аннотация лишь лишняя
         Set<String> assigned = new HashSet<>();
         type.findAll(AssignExpr.class).forEach(assignment -> assigned.add(
-                assignment.getTarget().toString().replaceFirst("^this\\.", "")));
+                THIS_PREFIX.matcher(assignment.getTarget().toString()).replaceFirst("")));
         Optional<FieldDeclaration> mock = type.getFields().stream()
                 .filter(field -> Annotations.hasAny(field, MOCK_ANNOTATIONS))
                 .filter(field -> field.getVariables().stream()

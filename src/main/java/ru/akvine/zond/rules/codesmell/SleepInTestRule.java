@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.codesmell;
 
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -8,12 +9,16 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 @Component
 public class SleepInTestRule extends AbstractRule {
+    private static final Pattern VIRTUAL_CLOCK = Pattern.compile("(?i).*(time|clock|timer|ticker|scheduler)");
     private static final String SLEEP = "sleep";
 
     @Override
@@ -31,6 +36,7 @@ public class SleepInTestRule extends AbstractRule {
         // Thread.sleep(...), TimeUnit.SECONDS.sleep(...)
         return sourceFile.unit().findAll(MethodCallExpr.class).stream()
                 .filter(call -> SLEEP.equals(call.getNameAsString()) && call.getScope().isPresent())
+                .filter(call -> !isVirtualClock(call.getScope().get()))
                 .filter(TestClasses::isInside)
                 .map(call -> violation(sourceFile, call,
                         "'" + call + "' в тесте: на медленной машине паузы не хватит и тест упадет, на быстрой -"
@@ -53,5 +59,15 @@ public class SleepInTestRule extends AbstractRule {
     @Override
     public boolean appliesToTests() {
         return true;
+    }
+
+    /**
+     * time.sleep(100) у MockTime, clock.sleep(...), timer.sleep(...): тестовые часы переводят виртуальное время
+     * вперед и поток не останавливают. Настоящая пауза - Thread.sleep, TimeUnit.SECONDS.sleep и подобные
+     */
+    private boolean isVirtualClock(Expression scope) {
+        String receiver = MethodCalls.receiverName(scope);
+        return VIRTUAL_CLOCK.matcher(receiver).matches()
+                || LocalTypes.typeOf(scope).filter(type -> VIRTUAL_CLOCK.matcher(type).matches()).isPresent();
     }
 }

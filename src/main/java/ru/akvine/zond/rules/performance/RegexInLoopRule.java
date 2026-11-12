@@ -8,25 +8,18 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
-import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Loops;
 import ru.akvine.zond.rules.support.MethodCalls;
-import ru.akvine.zond.rules.support.Nodes;
+import ru.akvine.zond.rules.support.RegexCalls;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.List;
-import java.util.Set;
 
 @Component
 public class RegexInLoopRule extends AbstractRule {
     private static final String PATTERN = "Pattern";
     private static final String COMPILE = "compile";
-    private static final String MATCHES = "matches";
-    private static final String MATCHER = "matcher";
-    private static final String MATCHER_TYPE = "Matcher";
 
-    // split(",") в список не входит: для разделителя из одного символа шаблон не компилируется
-    private static final Set<String> STRING_REGEX_METHODS = Set.of("replaceAll", "replaceFirst");
 
     @Override
     public String code() {
@@ -46,7 +39,7 @@ public class RegexInLoopRule extends AbstractRule {
                 .map(call -> violation(sourceFile, call,
                         "'" + call.getNameAsString() + "(...)' в цикле: один и тот же шаблон компилируется заново"
                                 + " на каждой итерации; вынесите Pattern.compile(...) в константу и используйте"
-                                + " matcher(...)"))
+                                + " matcher(...), а для split - метод split(...) самого шаблона"))
                 .toList();
     }
 
@@ -62,21 +55,8 @@ public class RegexInLoopRule extends AbstractRule {
 
     // Шаблон задан строкой в коде - значит, он один и тот же на всех итерациях
     private boolean compilesConstantRegex(MethodCallExpr call) {
-        if (call.getArguments().isEmpty() || !call.getArgument(0).isStringLiteralExpr()) {
-            return false;
-        }
-        String method = call.getNameAsString();
-        return !isOnMatcher(call) && (MethodCalls.isCallOn(call, PATTERN, COMPILE)
-                || call.getScope().isPresent() && STRING_REGEX_METHODS.contains(method)
-                || call.getScope().isPresent() && MATCHES.equals(method) && call.getArguments().size() == 1);
-    }
-
-    // SPACES.matcher(text).replaceAll(" "): шаблон уже скомпилирован, а строка в аргументе - замена
-    private boolean isOnMatcher(MethodCallExpr call) {
-        return call.getScope()
-                .map(Nodes::unwrap)
-                .filter(scope -> scope.isMethodCallExpr() && MATCHER.equals(scope.asMethodCallExpr().getNameAsString())
-                        || LocalTypes.typeOf(scope).filter(MATCHER_TYPE::equals).isPresent())
-                .isPresent();
+        boolean compiles = !call.getArguments().isEmpty() && call.getArgument(0).isStringLiteralExpr()
+                && MethodCalls.isCallOn(call, PATTERN, COMPILE);
+        return compiles || RegexCalls.compilesConstantRegex(call);
     }
 }

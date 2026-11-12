@@ -24,6 +24,8 @@ public class StaticSimpleDateFormatRule implements Rule {
     private static final Set<String> FORMAT_TYPES = Set.of("DecimalFormat", "NumberFormat", "MessageFormat", "ChoiceFormat");
     // Объекты с состоянием вычисления: дайджест, шифр, подпись, сопоставление по шаблону
     private static final Set<String> STATEFUL_TYPES = Set.of("MessageDigest", "Cipher", "Mac", "Signature", "Matcher");
+    private static final String JDK_PREFIX = "java.";
+    private static final String JDK_EXTENSION_PREFIX = "javax.";
 
     @Override
     public String name() {
@@ -55,7 +57,9 @@ public class StaticSimpleDateFormatRule implements Rule {
             }
 
             for (VariableDeclarator variable : field.getVariables()) {
-                findNotThreadSafeType(variable).ifPresent(type -> violations.add(new Violation(
+                findNotThreadSafeType(variable)
+                        .filter(type -> !isNamesake(sourceFile, type))
+                        .ifPresent(type -> violations.add(new Violation(
                         errorLevel(),
                         errorType(),
                         code(),
@@ -113,6 +117,17 @@ public class StaticSimpleDateFormatRule implements Rule {
             return Optional.empty();
         }
         return created.isPresent() || !isNotThreadSafe(declaredType) ? created : Optional.of(declaredType);
+    }
+
+    /**
+     * Тезка из другой библиотеки: org.springframework.cglib.core.Signature и org.objectweb.asm.signature - обычные
+     * неизменяемые описания метода, а не java.security.Signature. Чей это класс, видно по импорту файла
+     */
+    private boolean isNamesake(SourceFile sourceFile, String type) {
+        return STATEFUL_TYPES.contains(type) && sourceFile.unit().getImports().stream()
+                .filter(imported -> !imported.isAsterisk() && !imported.isStatic())
+                .map(imported -> imported.getNameAsString())
+                .anyMatch(name -> name.endsWith("." + type) && !name.startsWith(JDK_PREFIX) && !name.startsWith(JDK_EXTENSION_PREFIX));
     }
 
     private boolean isNotThreadSafe(String type) {

@@ -17,6 +17,7 @@ import java.util.regex.Pattern;
 
 @Component
 public class CommentedOutCodeRule extends AbstractRule {
+    private static final Pattern COMMENT_PREFIX = Pattern.compile("^\\s*\\*?\\s*");
     // Объявление члена класса: начинается с модификатора доступа
     private static final Pattern MEMBER_DECLARATION = Pattern.compile("^\\s*(private|public|protected)\\s+\\S.*$");
     // Оператор целиком: начинается как код и заканчивается точкой с запятой
@@ -91,7 +92,7 @@ public class CommentedOutCodeRule extends AbstractRule {
     // Хотя бы одна строка комментария похожа на код
     private boolean looksLikeCode(Comment comment) {
         return comment.getContent().lines()
-                .map(line -> line.replaceFirst("^\\s*\\*?\\s*", "").trim())
+                .map(line -> COMMENT_PREFIX.matcher(line).replaceFirst("").trim())
                 .filter(line -> !PROSE.matcher(line).matches())
                 .anyMatch(line -> STATEMENT.matcher(line).matches() || BLOCK_HEADER.matcher(line).matches());
     }

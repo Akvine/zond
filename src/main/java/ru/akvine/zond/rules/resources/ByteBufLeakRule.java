@@ -111,7 +111,7 @@ public class ByteBufLeakRule extends AbstractRule {
                     || parent instanceof AssignExpr assignment && assignment.getValue() == value
                     || parent instanceof VariableDeclarator
                     || usage.findAncestor(LambdaExpr.class)
-                    .filter(lambda -> callable.isAncestorOf(lambda)).isPresent()) {
+                    .filter(lambda -> Nodes.isInside(lambda, callable)).isPresent()) {
                 return true;
             }
         }

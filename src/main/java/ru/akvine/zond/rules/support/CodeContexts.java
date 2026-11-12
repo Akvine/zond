@@ -161,7 +161,7 @@ public class CodeContexts {
         if (type.isEmpty()) {
             return false;
         }
-        Optional<Node> callable = Nodes.enclosingCallable(node).filter(type.get()::isAncestorOf);
+        Optional<Node> callable = Nodes.enclosingCallable(node).filter(found -> Nodes.isInside(found, type.get()));
         if (callable.isEmpty()) {
             // Значение поля: статическое вычисляется при загрузке класса, обычное - при создании объекта
             return node.findAncestor(FieldDeclaration.class)

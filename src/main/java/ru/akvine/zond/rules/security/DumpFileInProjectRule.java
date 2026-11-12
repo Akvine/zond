@@ -28,6 +28,7 @@ import java.util.stream.Stream;
  */
 @Component
 public class DumpFileInProjectRule extends AbstractContextRule {
+    private static final Pattern OUTER_SLASHES = Pattern.compile("^/+|/+$");
     private static final String GIT_IGNORE = ".gitignore";
     private static final String GIT_DIRECTORY = ".git";
     // Каталоги сборки и служебные: их содержимое в репозиторий не попадает
@@ -181,7 +182,7 @@ public class DumpFileInProjectRule extends AbstractContextRule {
      */
     private String toRegex(String line) {
         boolean anchored = line.startsWith("/");
-        String glob = line.replaceAll("^/+|/+$", "");
+        String glob = OUTER_SLASHES.matcher(line).replaceAll("");
         StringBuilder regex = new StringBuilder(anchored ? "" : "(.*/)?");
         for (int index = 0; index < glob.length(); index++) {
             char symbol = glob.charAt(index);

@@ -13,6 +13,7 @@ import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.Loggers;
+import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.List;
 import java.util.Optional;
@@ -52,7 +53,7 @@ public class LoggingInLoopRule extends AbstractRule {
     // if (!headerPrinted) { log.info("Cleaning started"); headerPrinted = true; }: запись одна на весь обход
     private boolean isPrintedOnce(MethodCallExpr call) {
         Optional<IfStmt> branch = call.findAncestor(IfStmt.class)
-                .filter(statement -> statement.getThenStmt().isAncestorOf(call));
+                .filter(statement -> Nodes.isInside(call, statement.getThenStmt()));
         if (branch.isEmpty()) {
             return false;
         }

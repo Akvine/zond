@@ -158,7 +158,7 @@ public final class SideEffects {
             method.getParameters().stream().map(Parameter::getNameAsString).forEach(locals::add);
         }
         for (VariableDeclarator variable : callable.findAll(VariableDeclarator.class)) {
-            if (variable.findAncestor(TypeDeclaration.class).filter(type -> type.isAncestorOf(callable)).isEmpty()) {
+            if (variable.findAncestor(TypeDeclaration.class).filter(type -> Nodes.isInside(callable, type)).isEmpty()) {
                 continue;
             }
             locals.add(variable.getNameAsString());

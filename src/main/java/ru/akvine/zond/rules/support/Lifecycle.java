@@ -198,7 +198,7 @@ public final class Lifecycle {
                         .anyMatch(extended -> extended.getNameAsString().equals(type.getNameAsString())))
                 .isPresent();
         if (scope.isEmpty()) {
-            return type.isAncestorOf(site) || inSubclass;
+            return Nodes.isInside(site, type) || inSubclass;
         }
         // super.start() идет в метод родителя: в этот класс - только из его наследника
         if (scope.get().isSuperExpr()) {

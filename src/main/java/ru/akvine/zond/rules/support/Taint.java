@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.support;
 
+import com.github.javaparser.ast.DataKey;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
@@ -61,6 +62,16 @@ import java.util.regex.Pattern;
 public final class Taint {
     // Сколько вызовов можно пройти вверх от метода к тем, кто его вызывает, если правило не задало свое число
     private static final int DEFAULT_CALL_DEPTH = 4;
+    /**
+     * Сколько выражений поиск источника просматривает ради одного вопроса. Обычно хватает десятков; предел нужен
+     * проектам, где у метода сотни вызывающих и перебор всех цепочек вызовов шел бы минутами. Когда предел
+     * исчерпан, источник считается ненайденным
+     */
+    private static final int MAX_STEPS = 5_000;
+    private static final DataKey<Map<Node, List<MethodCallExpr>>> WRITES_BY_VARIABLE = new DataKey<>() {
+    };
+    private static final DataKey<List<MethodCallExpr>> STATEMENT_CALLS = new DataKey<>() {
+    };
 
     // Источники, передающие методы и очистка - в справочнике taint-library.properties. Множества живые:
     // дополнения из своего файла (zond.taint.library) видны в них сразу
@@ -261,6 +272,9 @@ public final class Taint {
     // зависит от того, откуда спросили, и в сводку не идет
     private final ThreadLocal<int[]> guardHits = ThreadLocal.withInitial(() -> new int[1]);
 
+    // Сколько выражений уже просмотрено в поиске источника для текущего вопроса
+    private final ThreadLocal<int[]> steps = ThreadLocal.withInitial(() -> new int[1]);
+
     /**
      * Что доходит до результата метода
      *
@@ -334,6 +348,7 @@ public final class Taint {
      * @return откуда в выражение попадают данные извне; пусто, если их в выражении нет
      */
     public Optional<Source> findSource(Expression expression) {
+        steps.get()[0] = 0;
         Set<Node> visited = Collections.newSetFromMap(new IdentityHashMap<>());
         Optional<Origin> origin = source(expression, 0, visited);
         Optional<Node> here = Nodes.enclosingCallable(expression);
@@ -372,6 +387,7 @@ public final class Taint {
         if (targets.isEmpty() || targets.stream().anyMatch(target -> target.getBody().isEmpty())) {
             return Optional.empty();
         }
+        steps.get()[0] = 0;
         Set<Integer> arguments = new HashSet<>();
         for (MethodDeclaration target : targets) {
             ReturnSummary summary = summaryOf(target);
@@ -415,7 +431,7 @@ public final class Taint {
 
     private Optional<Origin> source(Expression expression, int depth, Set<Node> visited) {
         Expression value = Nodes.unwrap(expression);
-        if (value.isLiteralExpr() || !visited.add(value)) {
+        if (value.isLiteralExpr() || !visited.add(value) || isOverBudget()) {
             return Optional.empty();
         }
         if (LocalTypes.typeOf(value).filter(SAFE_TYPES::contains).isPresent()) {
@@ -460,6 +476,15 @@ public final class Taint {
                     .flatMap(initializer -> firstSource(initializer.getValues(), depth, visited));
         }
         return Optional.empty();
+    }
+
+    // Перебор оборван: ответ неполный и верен только для этого вопроса, поэтому в сводки он не идет
+    private boolean isOverBudget() {
+        if (++steps.get()[0] <= MAX_STEPS) {
+            return false;
+        }
+        guardHits.get()[0]++;
+        return true;
     }
 
     private Optional<Origin> sourceOfVariable(NameExpr name, int depth, Set<Node> visited) {
@@ -629,12 +654,31 @@ public final class Taint {
 
     // sql.append(a).append(b): обе записи - в sql
     private List<MethodCallExpr> writesInto(VariableDeclarator variable, Node callable) {
-        return callable.findAll(MethodCallExpr.class).stream()
-                .filter(call -> CONTAINER_WRITES.contains(call.getNameAsString()))
-                .filter(call -> receiverRoot(call).filter(root -> LocalTypes.findDeclaration(root)
-                        .filter(found -> found == variable).isPresent()).isPresent())
-                .filter(call -> !ConstantValues.isUnreachable(call, callable))
-                .toList();
+        return containerWrites(callable).getOrDefault(variable, List.of());
+    }
+
+    /**
+     * Записи в коллекции и строители метода, разложенные по переменным. Метод обходится один раз, а не заново
+     * ради каждой переменной: на методах с сотнями обращений это была заметная часть времени всех правил
+     * об утечке данных
+     */
+    private Map<Node, List<MethodCallExpr>> containerWrites(Node callable) {
+        // Правила работают в несколько потоков, а данные узла - обычная таблица без синхронизации
+        synchronized (callable) {
+            if (callable.containsData(WRITES_BY_VARIABLE)) {
+                return callable.getData(WRITES_BY_VARIABLE);
+            }
+            Map<Node, List<MethodCallExpr>> writes = new IdentityHashMap<>();
+            for (MethodCallExpr call : callable.findAll(MethodCallExpr.class)) {
+                if (CONTAINER_WRITES.contains(call.getNameAsString()) && !ConstantValues.isUnreachable(call, callable)) {
+                    receiverRoot(call)
+                            .flatMap(LocalTypes::findDeclaration)
+                            .ifPresent(target -> writes.computeIfAbsent(target, key -> new ArrayList<>()).add(call));
+                }
+            }
+            callable.setData(WRITES_BY_VARIABLE, writes);
+            return writes;
+        }
     }
 
     private Optional<NameExpr> receiverRoot(MethodCallExpr call) {
@@ -819,15 +863,28 @@ public final class Taint {
         String variable = owner.getNameAsString();
         int line = owner.getBegin().map(position -> position.line).orElse(Integer.MAX_VALUE);
         return Nodes.enclosingCallable(owner).stream()
-                .flatMap(callable -> callable.findAll(ExpressionStmt.class).stream())
-                .filter(statement -> statement.getBegin().map(position -> position.line).orElse(Integer.MAX_VALUE) < line)
-                .map(ExpressionStmt::getExpression)
-                .filter(expression -> expression instanceof MethodCallExpr)
-                .map(expression -> (MethodCallExpr) expression)
+                .flatMap(callable -> statementCalls(callable).stream())
+                .filter(call -> call.getBegin().map(position -> position.line).orElse(Integer.MAX_VALUE) < line)
                 .filter(call -> ASSERTING_METHOD.matcher(call.getNameAsString()).matches()
                         || isSanitizer(call.getNameAsString()))
                 .anyMatch(call -> call.getArguments().stream()
                         .anyMatch(argument -> argument instanceof NameExpr name && name.getNameAsString().equals(variable)));
+    }
+
+    // Вызовы метода, стоящие отдельными операторами: validator.validate(dto);
+    private List<MethodCallExpr> statementCalls(Node callable) {
+        synchronized (callable) {
+            if (callable.containsData(STATEMENT_CALLS)) {
+                return callable.getData(STATEMENT_CALLS);
+            }
+            List<MethodCallExpr> calls = callable.findAll(ExpressionStmt.class).stream()
+                    .map(ExpressionStmt::getExpression)
+                    .filter(expression -> expression instanceof MethodCallExpr)
+                    .map(expression -> (MethodCallExpr) expression)
+                    .toList();
+            callable.setData(STATEMENT_CALLS, calls);
+            return calls;
+        }
     }
 
     // Среди операторов до текущего есть выход при непрошедшей проверке либо вызов-утверждение

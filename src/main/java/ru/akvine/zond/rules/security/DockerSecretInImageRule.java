@@ -20,6 +20,7 @@ import java.util.regex.Pattern;
 
 @Component
 public class DockerSecretInImageRule extends AbstractContextRule {
+    private static final Pattern OUTER_QUOTES = Pattern.compile("^[\"']|[\"']$");
     private static final Set<String> VALUE_INSTRUCTIONS = Set.of("ENV", "ARG");
 
     // NAME=value, NAME="value"; у ENV допустима и запись через пробел: ENV NAME value
@@ -76,7 +77,7 @@ public class DockerSecretInImageRule extends AbstractContextRule {
     // Значение из переменной сборки (${TOKEN}) секретом в файле не является; пустое - тоже
     private void report(
             TextFile file, Dockerfiles.Instruction instruction, String name, String value, List<Violation> violations) {
-        String plain = value.replaceAll("^[\"']|[\"']$", "");
+        String plain = OUTER_QUOTES.matcher(value).replaceAll("");
         if (Secrets.isSecretName(name) && !plain.isEmpty() && !plain.contains(VARIABLE)) {
             violations.add(violation(file.path(), instruction.line(),
                     "Секрет '" + name + "' записан в " + instruction.keyword() + ": значение остается в слоях"

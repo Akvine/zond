@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.support;
 
+import com.github.javaparser.ast.DataKey;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
@@ -17,6 +18,8 @@ import com.github.javaparser.ast.stmt.SwitchStmt;
 import lombok.experimental.UtilityClass;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -30,6 +33,9 @@ import java.util.Set;
  */
 @UtilityClass
 public class ConstantValues {
+    private static final DataKey<Set<Node>> CHANGED = new DataKey<>() {
+    };
+
     // Через сколько переменных и вложенных выражений прослеживается значение
     private static final int MAX_DEPTH = 8;
     private static final Set<UnaryExpr.Operator> CHANGES = Set.of(UnaryExpr.Operator.PREFIX_INCREMENT,
@@ -291,13 +297,30 @@ public class ConstantValues {
             return field.get().isFinal() ? evaluate(variable.getInitializer().get(), depth + 1) : Optional.empty();
         }
         Optional<Node> callable = Nodes.enclosingCallable(variable);
-        boolean changed = callable.isEmpty() || callable.get().findAll(AssignExpr.class).stream()
-                .anyMatch(assignment -> assignment.getTarget().isNameExpr()
-                        && LocalTypes.findDeclaration(assignment.getTarget()).filter(found -> found == variable).isPresent())
-                || callable.get().findAll(UnaryExpr.class).stream()
-                .anyMatch(unary -> CHANGES.contains(unary.getOperator()) && unary.getExpression().isNameExpr()
-                        && LocalTypes.findDeclaration(unary.getExpression()).filter(found -> found == variable).isPresent());
+        boolean changed = callable.isEmpty() || changedIn(callable.get()).contains(variable);
         return changed ? Optional.empty() : evaluate(variable.getInitializer().get(), depth + 1);
+    }
+
+    /**
+     * Переменные, которым в методе что-то присваивают или которые меняют через ++ и --. Собираются один раз
+     * на метод: иначе ради каждой переменной метод обходится заново
+     */
+    private Set<Node> changedIn(Node callable) {
+        synchronized (callable) {
+            if (callable.containsData(CHANGED)) {
+                return callable.getData(CHANGED);
+            }
+            Set<Node> changed = Collections.newSetFromMap(new IdentityHashMap<>());
+            callable.findAll(AssignExpr.class).stream()
+                    .map(AssignExpr::getTarget)
+                    .filter(Expression::isNameExpr)
+                    .forEach(target -> LocalTypes.findDeclaration(target).ifPresent(changed::add));
+            callable.findAll(UnaryExpr.class).stream()
+                    .filter(unary -> CHANGES.contains(unary.getOperator()) && unary.getExpression().isNameExpr())
+                    .forEach(unary -> LocalTypes.findDeclaration(unary.getExpression()).ifPresent(changed::add));
+            callable.setData(CHANGED, changed);
+            return changed;
+        }
     }
 
     // "ABC".charAt(1), guess.length(), mode.equals("safe")

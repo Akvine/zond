@@ -53,6 +53,7 @@ import java.util.stream.Stream;
  * тоже считается использованием.
  */
 public final class ProjectUsages {
+    private static final Pattern LINE_COMMENT = Pattern.compile("#.*");
     private static final Pattern IDENTIFIER = Pattern.compile("[A-Za-z_$][A-Za-z0-9_$]*");
     private static final String TEST_DIRECTORY = "test";
     private static final String MAIN = "main";
@@ -68,6 +69,7 @@ public final class ProjectUsages {
     private static final Pattern CONFIGURATION_FILE = Pattern.compile(
             ".*\\.(xml|ya?ml|properties|factories|imports|json|conf)", Pattern.CASE_INSENSITIVE);
     private static final long MAX_CONFIGURATION_FILE_SIZE = 1_000_000;
+    private static final Pattern BUILD_SCRIPT = Pattern.compile(".*\\.gradle(\\.kts)?");
     // ru.app.liquibase.DataLoader, com.acme.jobs.CleanupJob$Step: пакет строчными буквами и имя класса
     private static final Pattern QUALIFIED_CLASS = Pattern.compile(
             "\\b(?:[a-z_][a-z0-9_]*\\.){2,}(?:[A-Z][A-Za-z0-9_]*\\$)*([A-Z][A-Za-z0-9_]*)");
@@ -458,7 +460,7 @@ public final class ProjectUsages {
         try (Stream<Path> files = Files.list(services)) {
             for (Path file : files.filter(Files::isRegularFile).toList()) {
                 for (String line : Files.readAllLines(file)) {
-                    String name = line.replaceAll("#.*", "").trim();
+                    String name = LINE_COMMENT.matcher(line).replaceAll("").trim();
                     if (!name.isEmpty()) {
                         serviceClasses.add(name.substring(Math.max(name.lastIndexOf('.'), name.lastIndexOf('$')) + 1));
                     }
@@ -474,10 +476,26 @@ public final class ProjectUsages {
      * аппендер в logback.xml, задание в quartz.properties, spring.factories: класс назван полным именем в файле
      * настроек - создает его фреймворк, и ссылок из кода на него может не быть вовсе
      */
+    private void readBuildScripts(Path directory) {
+        if (directory == null || !Files.isDirectory(directory)) {
+            return;
+        }
+        try (Stream<Path> files = Files.list(directory)) {
+            files.filter(path -> BUILD_SCRIPT.matcher(path.getFileName().toString()).matches())
+                    .forEach(this::readClassNames);
+        } catch (IOException | UncheckedIOException exception) {
+            // Скрипт сборки не прочитался - о классах судим по коду
+        }
+    }
+
     private void readConfiguredClasses(String module) {
         if (module.isEmpty()) {
             return;
         }
+        // build.gradle.kts подключает задачи и плагины из buildSrc по полному имени класса: скрипт лежит
+        // в корне модуля или проекта, а не в src
+        readBuildScripts(Path.of(module));
+        readBuildScripts(Path.of(module).toAbsolutePath().getParent());
         Path sourceRoot = Path.of(module).resolve(SOURCE_DIRECTORY);
         if (!Files.isDirectory(sourceRoot)) {
             return;
@@ -591,7 +609,7 @@ public final class ProjectUsages {
     // Места, где записано имя класса, за пределами самого класса
     private List<Node> referencesTo(TypeDeclaration<?> type) {
         return identifiers.getOrDefault(type.getNameAsString(), List.of()).stream()
-                .filter(usage -> usage != type.getName() && !type.isAncestorOf(usage))
+                .filter(usage -> usage != type.getName() && !Nodes.isInside(usage, type))
                 .toList();
     }
 

@@ -20,6 +20,7 @@ import java.util.stream.Stream;
  */
 @Component
 public class OrderByRandomRule extends AbstractContextRule {
+    private static final Pattern SPACES = Pattern.compile("\\s+");
     private static final Pattern ORDER_BY_RANDOM = Pattern.compile(
             "(?i)\\border\\s+by\\s+(rand\\s*\\(\\s*\\)|random\\s*\\(\\s*\\)|newid\\s*\\(\\s*\\)|dbms_random\\.value)");
 
@@ -40,7 +41,7 @@ public class OrderByRandomRule extends AbstractContextRule {
                     Matcher matcher = ORDER_BY_RANDOM.matcher(query.text());
                     return matcher.find()
                             ? Stream.of(violation(query.file(), query.line(),
-                            "'" + matcher.group().replaceAll("\\s+", " ") + "': чтобы выбрать случайные строки,"
+                            "'" + SPACES.matcher(matcher.group()).replaceAll(" ") + "': чтобы выбрать случайные строки,"
                                     + " база присваивает случайное число каждой строке таблицы и сортирует ее целиком,"
                                     + " и время растет вместе с таблицей; выберите случайные id в приложении"
                                     + " либо используйте TABLESAMPLE или выборку по случайному смещению ключа"))

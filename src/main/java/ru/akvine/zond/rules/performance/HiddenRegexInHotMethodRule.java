@@ -17,36 +17,27 @@ import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.CallGraph;
 import ru.akvine.zond.rules.support.CodeContexts;
-import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Loops;
 import ru.akvine.zond.rules.support.MethodReferences;
-import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.ProjectClasses;
+import ru.akvine.zond.rules.support.RegexCalls;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
- * {@code value.replaceAll("\\s+", " ")} и {@code code.matches("[A-Z]{3}")} внутри метода компилируют шаблон при
+ * {@code value.replaceAll("\\s+", " ")}, {@code code.matches("[A-Z]{3}")} и {@code row.split("\\s+")} компилируют шаблон при
  * каждом вызове. Пока метод вызывают изредка, это мелочь; когда его вызывают на каждом элементе - из цикла или
  * из стрима, - шаблон разбирается столько раз, сколько элементов. Сам цикл с таким вызовом показывает jr:239,
  * здесь - метод, который вызывают из цикла.
  */
 @Component
 public class HiddenRegexInHotMethodRule extends AbstractRule implements ProjectRule {
-    private static final Set<String> REPLACING = Set.of("replaceAll", "replaceFirst");
-    private static final String MATCHES = "matches";
-    private static final String MATCHER = "matcher";
-    private static final String MATCHER_TYPE = "Matcher";
     private static final String FIELD_INITIALIZER = "инициализация поля";
-    private static final Pattern REGEX_SYNTAX = Pattern.compile("[\\\\\\[\\](){}.*+?^$|]");
 
     // Откуда метод вызывают на каждом элементе; exact - цель вызова определена однозначно
     private record HotSite(String place, boolean exact) {
@@ -59,7 +50,7 @@ public class HiddenRegexInHotMethodRule extends AbstractRule implements ProjectR
 
     @Override
     public String description() {
-        return "Сканирует код и ищет String.matches, replaceAll и replaceFirst с постоянным шаблоном в методах,"
+        return "Сканирует код и ищет String.matches, replaceAll, replaceFirst и split с постоянным шаблоном в методах,"
                 + " которые вызываются на каждом элементе цикла или стрима";
     }
 
@@ -70,16 +61,23 @@ public class HiddenRegexInHotMethodRule extends AbstractRule implements ProjectR
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             // name.replaceAll(...).replaceAll(...) - одна находка на выражение, а не на каждое звено
-            Map<Node, List<MethodCallExpr>> byStatement = new LinkedHashMap<>();
+            // Узлы сравниваются по содержимому, а одинаковые выражения в разных методах - разные находки,
+            // поэтому таблица различает операторы по ссылке
+            Map<Node, List<MethodCallExpr>> byStatement = new IdentityHashMap<>();
+            List<List<MethodCallExpr>> groups = new ArrayList<>();
             for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
                 // Шаблон прямо в цикле - находка jr:239
-                if (compilesConstantRegex(call) && !Loops.isRepeated(call) && !CodeContexts.isStartup(call)
+                if (RegexCalls.compilesConstantRegex(call) && !Loops.isRepeated(call) && !CodeContexts.isStartup(call)
                         && !TestClasses.isInside(call)) {
-                    byStatement.computeIfAbsent(call.findAncestor(Statement.class).map(Node.class::cast).orElse(call),
-                            key -> new ArrayList<>()).add(call);
+                    Node statement = call.findAncestor(Statement.class).map(Node.class::cast).orElse(call);
+                    byStatement.computeIfAbsent(statement, key -> {
+                        List<MethodCallExpr> group = new ArrayList<>();
+                        groups.add(group);
+                        return group;
+                    }).add(call);
                 }
             }
-            for (List<MethodCallExpr> calls : byStatement.values()) {
+            for (List<MethodCallExpr> calls : groups) {
                 calls.stream().findFirst()
                         .flatMap(first -> first.findAncestor(MethodDeclaration.class))
                         .flatMap(method -> findHotSite(method, graph, referenced)
@@ -105,7 +103,7 @@ public class HiddenRegexInHotMethodRule extends AbstractRule implements ProjectR
         // В цепочке первым найден внешний вызов, а читают ее с внутреннего
         MethodCallExpr call = calls.get(calls.size() - 1);
         String others = calls.size() > 1 ? " и еще " + (calls.size() - 1) + " в этом выражении" : "";
-        boolean plainText = calls.stream().noneMatch(this::needsRegex);
+        boolean plainText = calls.stream().allMatch(RegexCalls::replacesPlainText);
         Violation violation = violation(sourceFile, call.getName(),
                 "'" + call.getNameAsString() + "(" + call.getArgument(0)
                         + (call.getArguments().size() > 1 ? ", ..." : "") + ")'" + others
@@ -114,14 +112,9 @@ public class HiddenRegexInHotMethodRule extends AbstractRule implements ProjectR
                         + " разбирается столько раз, сколько элементов; " + (plainText
                         ? "здесь ищется обычный текст - замените вызов на replace(...), ему регулярные выражения"
                         + " не нужны"
-                        : "вынесите Pattern.compile(...) в private static final и используйте matcher(...)"));
+                        : "вынесите Pattern.compile(...) в private static final и используйте его matcher(...)"
+                        + " или split(...)"));
         return site.exact() ? violation : violation.withConfidence(Confidence.PROBABLE);
-    }
-
-    // replaceAll(" ", "") ищет обычный текст, replaceAll("\\s+", " ") - шаблон
-    private boolean needsRegex(MethodCallExpr call) {
-        return MATCHES.equals(call.getNameAsString())
-                || REGEX_SYNTAX.matcher(call.getArgument(0).asStringLiteralExpr().asString()).find();
     }
 
     // items.stream().map(this::normalize), names.forEach(Cleaner::clean)
@@ -159,23 +152,5 @@ public class HiddenRegexInHotMethodRule extends AbstractRule implements ProjectR
         return caller.findAncestor(ClassOrInterfaceDeclaration.class)
                 .map(type -> type.getNameAsString() + ".")
                 .orElse("") + caller.getNameAsString();
-    }
-
-    private boolean compilesConstantRegex(MethodCallExpr call) {
-        if (call.getArguments().isEmpty() || !call.getArgument(0).isStringLiteralExpr() || call.getScope().isEmpty()) {
-            return false;
-        }
-        boolean regexMethod = REPLACING.contains(call.getNameAsString())
-                || MATCHES.equals(call.getNameAsString()) && call.getArguments().size() == 1;
-        return regexMethod && !isOnMatcher(call);
-    }
-
-    // SPACES.matcher(text).replaceAll(" "): шаблон уже скомпилирован, а строка в аргументе - замена
-    private boolean isOnMatcher(MethodCallExpr call) {
-        return call.getScope()
-                .map(Nodes::unwrap)
-                .filter(scope -> scope.isMethodCallExpr() && MATCHER.equals(scope.asMethodCallExpr().getNameAsString())
-                        || LocalTypes.typeOf(scope).filter(MATCHER_TYPE::equals).isPresent())
-                .isPresent();
     }
 }

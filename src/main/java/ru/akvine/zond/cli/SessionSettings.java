@@ -85,6 +85,11 @@ public class SessionSettings {
     private final Set<String> disabledRules = new LinkedHashSet<>();
 
     /**
+     * Правила через запятую, кроме которых ничего запускать не нужно; пустая строка - все правила
+     */
+    private String onlyRules = "";
+
+    /**
      * Библиотеки проверяемого проекта, по которым разрешаются типы
      */
     private List<Path> classpath = List.of();
@@ -204,6 +209,7 @@ public class SessionSettings {
                 .withMinConfidence(minConfidence)
                 .withTimeUnit(timeUnit)
                 .withTestRulesOnly(testRulesOnly)
-                .withSkippedKinds(skippedKinds);
+                .withSkippedKinds(skippedKinds)
+                .withOnlyRules(onlyRules);
     }
 }

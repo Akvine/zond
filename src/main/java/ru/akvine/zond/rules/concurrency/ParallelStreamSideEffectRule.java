@@ -11,6 +11,7 @@ import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.CollectionKinds;
 import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.StreamChains;
 
 import java.util.ArrayList;
@@ -90,7 +91,7 @@ public class ParallelStreamSideEffectRule extends AbstractRule {
                 .flatMap(Optional::stream)
                 .filter(scope -> scope.isNameExpr() || scope.isFieldAccessExpr())
                 .filter(scope -> LocalTypes.findDeclaration(scope)
-                        .filter(declaration -> !action.isAncestorOf(declaration))
+                        .filter(declaration -> !Nodes.isInside(declaration, action))
                         .isPresent())
                 .filter(scope -> !CollectionKinds.isThreadSafe(scope))
                 .map(Expression::toString)

@@ -1,8 +1,10 @@
 package ru.akvine.zond.rules.performance;
 
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.stmt.IfStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -16,9 +18,12 @@ import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.StringLiterals;
 
 import java.util.List;
+import java.util.regex.Pattern;
 
 @Component
 public class LogConcatenationRule extends AbstractRule {
+    private static final Pattern LEVEL_CHECK = Pattern.compile("is(Trace|Debug|Info|Warn|Error|Fatal)Enabled|isLoggable");
+
     private static final String STRING = "String";
     private static final String FORMAT = "format";
 
@@ -37,6 +42,7 @@ public class LogConcatenationRule extends AbstractRule {
         return sourceFile.unit().findAll(MethodCallExpr.class).stream()
                 .filter(Loggers::isLogCall)
                 .filter(call -> call.getArguments().stream().anyMatch(this::isBuiltEagerly))
+                .filter(call -> !isUnderLevelCheck(call))
                 .map(call -> violation(sourceFile, call,
                         "Сообщение для " + call.getScope().get() + "." + call.getNameAsString() + "(...) собирается"
                                 + " до вызова: строка формируется, даже когда этот уровень логирования выключен;"
@@ -61,5 +67,20 @@ public class LogConcatenationRule extends AbstractRule {
             return StringLiterals.textOf(value).isEmpty();
         }
         return value.isMethodCallExpr() && MethodCalls.isCallOn(value.asMethodCallExpr(), STRING, FORMAT);
+    }
+
+    // if (logger.isDebugEnabled()) { logger.debug("Rejected [" + expression + "]"); } - строка собирается только
+    // при включенном уровне, а у commons-logging подстановок нет вовсе
+    private boolean isUnderLevelCheck(MethodCallExpr call) {
+        Node current = call.getParentNode().orElse(null);
+        while (current != null) {
+            if (current instanceof IfStmt check && Nodes.isInside(call, check.getThenStmt())
+                    && check.getCondition().findFirst(MethodCallExpr.class,
+                    asked -> LEVEL_CHECK.matcher(asked.getNameAsString()).matches()).isPresent()) {
+                return true;
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
     }
 }

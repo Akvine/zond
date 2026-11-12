@@ -20,9 +20,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class DuplicateEndpointRule extends AbstractRule implements ProjectRule {
+    private static final Pattern PATH_VARIABLE = Pattern.compile("\\{[^/}]*}");
+    private static final Pattern SLASHES = Pattern.compile("/+");
     private static final Set<String> CONTROLLER_ANNOTATIONS = Set.of("Controller", "RestController");
 
     // Обработчики с одним адресом могут различаться по этим условиям - сравнивать их только по адресу нельзя
@@ -96,7 +99,7 @@ public class DuplicateEndpointRule extends AbstractRule implements ProjectRule {
 
     // /users//{id}/ и users/{userId} - один и тот же адрес: имя переменной на выбор обработчика не влияет
     private String normalize(String path) {
-        String normalized = (SLASH + path).replaceAll("\\{[^/}]*}", "{}").replaceAll("/+", SLASH);
+        String normalized = SLASHES.matcher(PATH_VARIABLE.matcher(SLASH + path).replaceAll("{}")).replaceAll(SLASH);
         return normalized.length() > 1 && normalized.endsWith(SLASH)
                 ? normalized.substring(0, normalized.length() - 1)
                 : normalized;

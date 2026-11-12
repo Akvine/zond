@@ -119,7 +119,7 @@ public class GitChangedFiles {
     /**
      * @return вывод команды; пусто, если git завершился с ошибкой, не ответил вовремя либо не установлен
      */
-    private Optional<String> run(Path directory, String... arguments) {
+    public static Optional<String> run(Path directory, String... arguments) {
         // core.quotepath=off: имена с кириллицей приходят как есть, а не кодами
         List<String> command = new ArrayList<>(List.of(GIT, "-c", "core.quotepath=off"));
         command.addAll(List.of(arguments));

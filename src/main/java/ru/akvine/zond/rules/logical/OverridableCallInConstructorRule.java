@@ -14,6 +14,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.ProjectClasses;
 
 import java.util.ArrayList;
@@ -82,9 +83,9 @@ public class OverridableCallInConstructorRule extends AbstractRule implements Pr
 
     // Внутри лямбды и анонимного класса вызов выполняется позже, когда объект уже создан
     private boolean isDeferred(MethodCallExpr call, ConstructorDeclaration constructor) {
-        return call.findAncestor(LambdaExpr.class, lambda -> constructor.isAncestorOf(lambda)).isPresent()
+        return call.findAncestor(LambdaExpr.class, lambda -> Nodes.isInside(lambda, constructor)).isPresent()
                 || call.findAncestor(ObjectCreationExpr.class,
-                creation -> creation.getAnonymousClassBody().isPresent() && constructor.isAncestorOf(creation)).isPresent();
+                creation -> creation.getAnonymousClassBody().isPresent() && Nodes.isInside(creation, constructor)).isPresent();
     }
 
     private Optional<String> findOverride(MethodCallExpr call, List<ClassOrInterfaceDeclaration> subclasses) {

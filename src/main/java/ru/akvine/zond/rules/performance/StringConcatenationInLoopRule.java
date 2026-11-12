@@ -45,7 +45,7 @@ public class StringConcatenationInLoopRule extends AbstractRule {
             String name = assign.getTarget().asNameExpr().getNameAsString();
             Optional<Node> declaration = LocalTypes.findDeclaration(assign, name);
             boolean accumulatesString = declaration
-                    .filter(node -> !loop.get().isAncestorOf(node))
+                    .filter(node -> !Nodes.isInside(node, loop.get()))
                     .flatMap(LocalTypes::declaredType)
                     .filter(STRING::equals)
                     .isPresent();

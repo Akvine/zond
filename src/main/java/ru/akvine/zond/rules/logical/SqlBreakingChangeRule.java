@@ -12,6 +12,7 @@ import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.files.DbSchema;
 import ru.akvine.zond.rules.files.Liquibase;
 import ru.akvine.zond.rules.files.SqlStatements;
+import ru.akvine.zond.rules.support.MigrationHistory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -84,7 +85,7 @@ public class SqlBreakingChangeRule extends AbstractContextRule {
                 }
             }
         }
-        return violations;
+        return MigrationHistory.soften(context.root(), violations);
     }
 
     @Override

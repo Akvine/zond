@@ -106,7 +106,7 @@ public class Loops {
      * @return true, если переменная объявлена до цикла, а не заново на каждой итерации
      */
     public boolean isDeclaredOutside(Node iteration, Node declaration) {
-        return !iteration.isAncestorOf(declaration);
+        return !Nodes.isInside(declaration, iteration);
     }
 
     // optional.map(value -> ...) выполняет лямбду не больше одного раза - это не перебор

@@ -9,6 +9,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractContextRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.files.DbSchema;
+import ru.akvine.zond.rules.support.MigrationHistory;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -55,7 +56,7 @@ public class SqlTableWithoutPrimaryKeyRule extends AbstractContextRule {
                             + " изменить или удалить, возможны полные дубликаты, а логическая репликация таких"
                             + " таблиц не работает; добавьте первичный ключ"));
         }
-        return violations;
+        return MigrationHistory.soften(context.root(), violations);
     }
 
     @Override

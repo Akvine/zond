@@ -105,7 +105,7 @@ public class TextFileAssembledInStringRule extends AbstractRule {
                 .filter(declaration -> declaration instanceof VariableDeclarator)
                 .map(declaration -> (VariableDeclarator) declaration)
                 .filter(InMemoryFiles::isTextBuffer);
-        Optional<Node> callable = buffer.flatMap(Nodes::enclosingCallable).filter(method -> method.isAncestorOf(usage));
+        Optional<Node> callable = buffer.flatMap(Nodes::enclosingCallable).filter(method -> Nodes.isInside(usage, method));
         if (buffer.isEmpty() || callable.isEmpty()) {
             return Optional.empty();
         }

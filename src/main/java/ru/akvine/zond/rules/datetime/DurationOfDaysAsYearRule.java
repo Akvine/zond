@@ -14,9 +14,11 @@ import ru.akvine.zond.rules.support.MethodCalls;
 
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class DurationOfDaysAsYearRule implements Rule {
+    private static final Pattern LONG_SUFFIX = Pattern.compile("[lL]$");
     private static final String DURATION = "Duration";
     private static final String OF_DAYS = "ofDays";
     private static final Set<String> DAYS_IN_YEAR = Set.of("365", "366");
@@ -78,7 +80,7 @@ public class DurationOfDaysAsYearRule implements Rule {
             return DAYS_IN_YEAR.contains(expression.asIntegerLiteralExpr().getValue());
         }
         if (expression.isLongLiteralExpr()) {
-            return DAYS_IN_YEAR.contains(expression.asLongLiteralExpr().getValue().replaceAll("[lL]$", ""));
+            return DAYS_IN_YEAR.contains(LONG_SUFFIX.matcher(expression.asLongLiteralExpr().getValue()).replaceAll(""));
         }
         if (expression.isBinaryExpr() && expression.asBinaryExpr().getOperator() == BinaryExpr.Operator.MULTIPLY) {
             return isYearInDays(expression.asBinaryExpr().getLeft())

@@ -8,13 +8,14 @@ import org.springframework.stereotype.Component;
 import ru.akvine.zond.config.ZondSettings;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.DurationUnit;
-import ru.akvine.zond.printers.StatisticReportPrinter;
 import ru.akvine.zond.enums.FileKind;
 import ru.akvine.zond.loaders.GitChangedFiles;
 import ru.akvine.zond.models.PathExclusions;
+import ru.akvine.zond.printers.StatisticReportPrinter;
 import ru.akvine.zond.services.RuleCatalog;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 
@@ -24,6 +25,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String PATH_OPTION = "path";
     private static final String REPORT_OPTION = "report";
     private static final String DISABLE_OPTION = "disable";
+    private static final String ONLY_OPTION = "only";
     private static final String MIN_LEVEL_OPTION = "min-level";
     private static final String SKIP_TESTS_OPTION = "skip-tests";
     private static final String CLASSPATH_OPTION = "classpath";
@@ -36,6 +38,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String CHANGED_SINCE_OPTION = "changed-since";
     private static final String STATISTIC_REPORT_OPTION = "statistic-report";
     private static final String RULES_SEPARATOR = ",";
+    private static final String ONLY_SEPARATOR = "[,;\\s]+";
     private static final String TRUE = "true";
     private static final String FALSE = "false";
 
@@ -135,10 +138,28 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         session.setTimeUnit(DurationUnit.parse(timeUnit == null ? settings.timeUnit() : timeUnit));
         session.setTestRulesOnly(settings.testRulesOnly());
 
+        session.setOnlyRules(resolveOnlyRules(args));
+
         String statisticReport = optionValue(args, STATISTIC_REPORT_OPTION);
         session.setStatisticReportFile(parseStatisticReport(statisticReport == null ? settings.statisticReportPath() : statisticReport));
         session.setTimingThresholds(settings.timingThresholds());
         return session;
+    }
+
+    // --only=jr:510,jr:511: запускаются только названные правила - чтобы проверить одно, не ждать все.
+    // Опечатка в коде правила оставила бы прогон без единого правила и с пустым отчетом, поэтому это ошибка
+    private String resolveOnlyRules(ApplicationArguments args) {
+        String rules = optionValue(args, ONLY_OPTION);
+        if (rules == null) {
+            return "";
+        }
+        List<String> unknown = Arrays.stream(rules.split(ONLY_SEPARATOR))
+                .filter(rule -> !rule.isBlank() && ruleCatalog.findCode(rule).isEmpty())
+                .toList();
+        if (!unknown.isEmpty()) {
+            throw new IllegalArgumentException("В --only названы правила, которых нет: " + String.join(", ", unknown));
+        }
+        return rules;
     }
 
     // Цвета ячеек есть только в Excel, поэтому другого формата у этого отчета нет

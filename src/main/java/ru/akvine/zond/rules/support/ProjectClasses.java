@@ -7,6 +7,7 @@ import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import ru.akvine.zond.models.SourceFile;
 
+import java.lang.ref.WeakReference;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -44,6 +45,10 @@ public final class ProjectClasses {
     public record FieldType(String name, String elementName) {
     }
 
+    // Классы последнего проекта: список файлов у всех правил одного сканирования один и тот же
+    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
+    private static ProjectClasses cached;
+
     private final Map<String, List<ClassOrInterfaceDeclaration>> bySimpleName = new HashMap<>();
     private final Map<ClassOrInterfaceDeclaration, SourceFile> files = new HashMap<>();
 
@@ -54,7 +59,19 @@ public final class ProjectClasses {
     private ProjectClasses() {
     }
 
-    public static ProjectClasses of(List<SourceFile> sourceFiles) {
+    /**
+     * Классы проекта нужны десяткам правил, а чтобы их собрать, приходится обойти все файлы. Поэтому для одного
+     * и того же списка файлов они собираются один раз
+     */
+    public static synchronized ProjectClasses of(List<SourceFile> sourceFiles) {
+        if (cachedSources.get() != sourceFiles) {
+            cached = collect(sourceFiles);
+            cachedSources = new WeakReference<>(sourceFiles);
+        }
+        return cached;
+    }
+
+    private static ProjectClasses collect(List<SourceFile> sourceFiles) {
         ProjectClasses classes = new ProjectClasses();
         for (SourceFile sourceFile : sourceFiles) {
             for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
@@ -203,7 +220,7 @@ public final class ProjectClasses {
     }
 
     // Наследников спрашивают про каждый класс проекта: перебор всех классов на каждый вопрос - квадрат от их числа
-    private Map<ClassOrInterfaceDeclaration, List<ClassOrInterfaceDeclaration>> children() {
+    private synchronized Map<ClassOrInterfaceDeclaration, List<ClassOrInterfaceDeclaration>> children() {
         if (children == null) {
             children = new HashMap<>();
             for (ClassOrInterfaceDeclaration candidate : all()) {

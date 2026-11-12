@@ -99,7 +99,7 @@ public class MapDoubleLookupRule extends AbstractRule {
         }
         return guard.get().getParentNode()
                 .filter(parent -> parent instanceof BlockStmt)
-                .map(block -> repeatsIn(block, check).stream().filter(call -> !guard.get().isAncestorOf(call)).toList())
+                .map(block -> repeatsIn(block, check).stream().filter(call -> !Nodes.isInside(call, guard.get())).toList())
                 .orElse(List.of());
     }
 

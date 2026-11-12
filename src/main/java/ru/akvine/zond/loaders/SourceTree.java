@@ -117,7 +117,10 @@ final class SourceTree {
                 return parser.parse(ParseStart.COMPILATION_UNIT,
                                 Providers.provider(file, parser.getParserConfiguration().getCharacterEncoding()))
                         .getResult()
-                        .map(unit -> unit.setStorage(file));
+                        .map(unit -> {
+                            FileSystemSourceLoader.dropTokens(unit);
+                            return unit.setStorage(file);
+                        });
             }
         } catch (IOException exception) {
             throw new UncheckedIOException("Не удалось прочитать " + file, exception);

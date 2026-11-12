@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
  */
 @UtilityClass
 public class SqlStatements {
+    private static final Pattern SPACES = Pattern.compile("\\s+");
     private static final String LINE_COMMENT = "--";
     private static final String HASH_COMMENT = "#";
     private static final String BLOCK_COMMENT_START = "/*";
@@ -106,7 +107,7 @@ public class SqlStatements {
     }
 
     private void add(List<Statement> statements, StringBuilder current, int line) {
-        String text = current.toString().trim().replaceAll("\\s+", " ");
+        String text = SPACES.matcher(current.toString().trim()).replaceAll(" ");
         if (!text.isEmpty()) {
             statements.add(new Statement(text, line));
         }

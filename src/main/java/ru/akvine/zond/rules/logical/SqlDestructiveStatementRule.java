@@ -10,6 +10,7 @@ import ru.akvine.zond.rules.AbstractContextRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.files.SqlStatements;
 import ru.akvine.zond.rules.files.TextFiles;
+import ru.akvine.zond.rules.support.MigrationHistory;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -21,6 +22,7 @@ import java.util.regex.Pattern;
 
 @Component
 public class SqlDestructiveStatementRule extends AbstractContextRule {
+    private static final Pattern NAME_QUOTES = Pattern.compile("[\"`]");
     private static final Pattern DESTRUCTIVE = Pattern.compile(
             "^(drop\\s+table|truncate)\\b.*|^alter\\s+table\\s+.*\\bdrop\\s+(column\\s+)?(?!constraint\\b|index\\b|not\\s+null\\b|default\\b|identity\\b|primary\\b|foreign\\b)\\w+.*",
             Pattern.CASE_INSENSITIVE);
@@ -59,7 +61,7 @@ public class SqlDestructiveStatementRule extends AbstractContextRule {
                 }
             }
         }
-        return violations;
+        return MigrationHistory.soften(context.root(), violations);
     }
 
     @Override
@@ -93,6 +95,6 @@ public class SqlDestructiveStatementRule extends AbstractContextRule {
     }
 
     private String normalize(String table) {
-        return table.replaceAll("[\"`]", "").toLowerCase(Locale.ROOT);
+        return NAME_QUOTES.matcher(table).replaceAll("").toLowerCase(Locale.ROOT);
     }
 }

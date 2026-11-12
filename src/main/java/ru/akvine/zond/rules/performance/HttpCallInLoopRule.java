@@ -127,13 +127,15 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
      * @param confidence вызов стоит прямо в цикле - это видно в коде; путь через вызовы установлен точно, только
      *                   если каждый вызов в нем найден по типам
      */
+    private static final Pattern URL_OPENING = Pattern.compile("\\.open(Stream|Connection)$");
+
     private record Problem(String text, Confidence confidence) {
     }
 
     private Optional<Problem> describe(MethodCallExpr call, CallGraph graph) {
         Optional<String> direct = describeBlocking(call);
         if (direct.isPresent()) {
-            return Optional.of(new Problem("Сетевой вызов '" + direct.get() + "' в цикле", Confidence.CONFIRMED));
+            return Optional.of(new Problem("Сетевой вызов '" + direct.get() + "' в цикле", certainty(direct.get())));
         }
 
         // enrich(order) в цикле, а запрос к внешнему сервису - внутри enrich или еще глубже
@@ -144,7 +146,9 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
                 return Optional.of(new Problem(
                         "Вызов '" + call.getNameAsString() + "(...)' в цикле делает сетевой вызов '"
                                 + found.get().operation() + "' (через вызов " + found.get().chain() + ")",
-                        found.get().confidence(graph.isExact(call))));
+                        isLocalOrRemote(found.get().operation())
+                                ? Confidence.PROBABLE
+                                : found.get().confidence(graph.isExact(call))));
             }
         }
         return Optional.empty();
@@ -171,6 +175,16 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
             }
         }
         return Optional.empty();
+    }
+
+    private Confidence certainty(String operation) {
+        return isLocalOrRemote(operation) ? Confidence.PROBABLE : Confidence.CONFIRMED;
+    }
+
+    // url.openStream() и url.openConnection(): адрес может вести и к файлу, и к ресурсу из jar - тогда это
+    // чтение с диска, а не обращение по сети
+    private boolean isLocalOrRemote(String operation) {
+        return URL_OPENING.matcher(operation).find();
     }
 
     private static Optional<String> describeBlocking(Node node) {

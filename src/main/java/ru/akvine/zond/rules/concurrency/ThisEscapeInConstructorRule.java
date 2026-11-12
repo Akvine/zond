@@ -27,9 +27,11 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class ThisEscapeInConstructorRule extends AbstractRule {
+    private static final Pattern SPACES = Pattern.compile("\\s+");
     private static final Set<String> IMMEDIATE_CALLS = Set.of(
             "forEach", "anyMatch", "allMatch", "noneMatch", "filter", "map", "flatMap", "mapToInt", "mapToLong",
             "mapToObj", "collect", "reduce", "peek", "sorted", "sort", "removeIf", "replaceAll", "computeIfAbsent",
@@ -193,8 +195,8 @@ public class ThisEscapeInConstructorRule extends AbstractRule {
 
     // Для сообщения берем выражение, в котором this уходит наружу: bus.register(this)
     private String snippet(Node escape) {
-        String text = escape.getParentNode().map(Node::toString).orElse(escape.toString())
-                .replaceAll("\\s+", " ");
+        String text = SPACES.matcher(escape.getParentNode().map(Node::toString).orElse(escape.toString()))
+                .replaceAll(" ");
         return text.length() > SNIPPET_LENGTH ? text.substring(0, SNIPPET_LENGTH) + "..." : text;
     }
 }

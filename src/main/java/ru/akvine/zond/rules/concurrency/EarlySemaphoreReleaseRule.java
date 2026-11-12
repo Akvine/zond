@@ -111,7 +111,7 @@ public class EarlySemaphoreReleaseRule extends AbstractRule {
         return callable.findAll(MethodCallExpr.class).stream()
                 .filter(this::isAsyncStart)
                 .filter(call -> isBefore(acquire, call) && isBefore(call, release))
-                .filter(call -> !call.isAncestorOf(release))
+                .filter(call -> !Nodes.isInside(release, call))
                 .findFirst();
     }
 

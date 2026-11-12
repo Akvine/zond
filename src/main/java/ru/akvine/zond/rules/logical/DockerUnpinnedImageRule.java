@@ -17,9 +17,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class DockerUnpinnedImageRule extends AbstractContextRule {
+    private static final Pattern SPACES = Pattern.compile("\\s+");
     private static final String FLAG_PREFIX = "--";
     private static final String AS = "as";
 
@@ -46,7 +48,7 @@ public class DockerUnpinnedImageRule extends AbstractContextRule {
                 if (!Dockerfiles.FROM.equals(instruction.keyword())) {
                     continue;
                 }
-                String[] words = instruction.arguments().split("\\s+");
+                String[] words = SPACES.split(instruction.arguments());
                 int imageIndex = words[0].startsWith(FLAG_PREFIX) && words.length > 1 ? 1 : 0;
                 String image = words[imageIndex];
                 if (Images.isUnpinned(image) && !stages.contains(image.toLowerCase(Locale.ROOT))) {

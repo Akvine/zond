@@ -117,6 +117,6 @@ public class RepeatedComputationRule extends AbstractRule {
     }
 
     private boolean inside(Node branch, Node node) {
-        return branch == node || branch.isAncestorOf(node);
+        return branch == node || Nodes.isInside(node, branch);
     }
 }

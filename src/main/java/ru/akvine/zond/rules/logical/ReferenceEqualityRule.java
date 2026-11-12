@@ -23,6 +23,7 @@ import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -108,7 +109,8 @@ public class ReferenceEqualityRule extends AbstractRule {
                         .filter(parent -> parent instanceof IfStmt branch && branch.getCondition() == comparison
                                 && returnsTrue(branch.getThenStmt()))
                         .flatMap(branch -> Nodes.enclosingCallable(comparison)));
-        Set<String> operands = Set.of(left.toString(), right.toString());
+        // Не Set.of: в 'supplier.get() == supplier.get()' тексты операндов совпадают, а он на повторе бросает исключение
+        Set<String> operands = new HashSet<>(List.of(left.toString(), right.toString()));
         return scope.stream()
                 .flatMap(node -> node.findAll(MethodCallExpr.class).stream())
                 .filter(call -> EQUALS.equals(call.getNameAsString()))

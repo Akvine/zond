@@ -24,6 +24,9 @@ import java.util.stream.Stream;
  * Gradle - это код, и все его возможности здесь не повторить: для разрешения типов хватает и такого разбора
  */
 final class GradleBuildFiles {
+    private static final Pattern LINE_COMMENT = Pattern.compile("#.*");
+    private static final Pattern OUTER_QUOTES = Pattern.compile("^\"|\"$");
+    private static final Pattern ALIAS_SEPARATOR = Pattern.compile("[-_]");
     private static final Set<String> BUILD_FILES = Set.of("build.gradle", "build.gradle.kts");
     private static final String PROPERTIES_FILE = "gradle.properties";
     private static final Path CATALOG = Path.of("gradle", "libs.versions.toml");
@@ -161,7 +164,7 @@ final class GradleBuildFiles {
         String section = "";
         List<String[]> libraries = new ArrayList<>();
         for (String raw : text.get().lines().toList()) {
-            String line = raw.replaceAll("#.*", "").trim();
+            String line = LINE_COMMENT.matcher(raw).replaceAll("").trim();
             if (line.startsWith("[")) {
                 section = line;
                 continue;
@@ -208,12 +211,12 @@ final class GradleBuildFiles {
     }
 
     private static String unquote(String value) {
-        return value.replaceAll("^\"|\"$", "");
+        return OUTER_QUOTES.matcher(value).replaceAll("");
     }
 
     // spring-boot-starter и spring_boot_starter в каталоге - это libs.spring.boot.starter в build.gradle
     private static String normalize(String alias) {
-        return alias.replaceAll("[-_]", ".").toLowerCase();
+        return ALIAS_SEPARATOR.matcher(alias).replaceAll(".").toLowerCase();
     }
 
     private static Optional<String> readText(Path file) {

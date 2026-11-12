@@ -3,8 +3,10 @@ package ru.akvine.zond.loaders;
 import com.github.javaparser.JavaParser;
 import com.github.javaparser.ParseResult;
 import com.github.javaparser.ParserConfiguration;
+import com.github.javaparser.Range;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.DataKey;
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.SimpleName;
 import com.github.javaparser.resolution.TypeSolver;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
@@ -113,9 +115,31 @@ public class FileSystemSourceLoader implements SourceLoader {
             // Дерево запоминает объект для печати при первом toString(); делаем это сейчас, пока с файлом
             // работает один поток, чтобы правила потом только читали дерево
             unit.findFirst(SimpleName.class).ifPresent(SimpleName::toString);
+            dropTokens(unit);
             return Optional.of(unit);
         } catch (IOException | RuntimeException exception) {
             return Optional.empty();
+        }
+    }
+
+    /**
+     * Разборщик оставляет в каждом узле ссылку на список лексем файла. Правилам лексемы не нужны, а памяти они
+     * занимают вдвое больше самого дерева: на проекте в несколько тысяч файлов из-за них кончалась куча.
+     * Отключить их в настройках разборщика нельзя - без лексем он не собирает комментарии, - поэтому ссылки
+     * убираются после разбора. Строки и колонки узлов при этом сохраняются
+     */
+    static void dropTokens(CompilationUnit unit) {
+        List<Node> nodes = new ArrayList<>();
+        // Комментарий узла в обход дерева не попадает, а держит тот же список лексем
+        unit.walk(node -> {
+            nodes.add(node);
+            node.getComment().ifPresent(nodes::add);
+        });
+        nodes.addAll(unit.getAllContainedComments());
+        for (Node node : nodes) {
+            Range range = node.getRange().orElse(null);
+            node.setTokenRange(null);
+            node.setRange(range);
         }
     }
 

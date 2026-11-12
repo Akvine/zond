@@ -26,6 +26,7 @@ import java.util.stream.Collectors;
  * @param timeUnit      в чем показывать время работы правил
  * @param testRulesOnly в тестовом коде работают только правила для тестов
  * @param changedFiles  файлы, находки в которых нужно показать; null - весь проект
+ * @param onlyRules     правила, кроме которых ничего запускать не нужно; пустой набор - все правила
  */
 public record ScanOptions(
         Set<String> disabledRules,
@@ -38,7 +39,8 @@ public record ScanOptions(
         Confidence minConfidence,
         DurationUnit timeUnit,
         boolean testRulesOnly,
-        Set<Path> changedFiles) {
+        Set<Path> changedFiles,
+        Set<String> onlyRules) {
     private static final int SINGLE_THREAD = 1;
     private static final String SEPARATOR = "[,;\\s]+";
     // src/test, tests, javatests (Bazel и Google), integrationTest и testFixtures (Gradle). "it" сюда не входит:
@@ -58,38 +60,51 @@ public record ScanOptions(
      */
     public static ScanOptions defaults() {
         return new ScanOptions(
-                Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(), Confidence.SUSPICION, DurationUnit.MILLISECONDS, true, null);
+                Set.of(), ErrorLevel.INFO, false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(), Confidence.SUSPICION, DurationUnit.MILLISECONDS, true, null, Set.of());
     }
 
     public ScanOptions withSkipTests(boolean skip) {
-        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles);
+        return new ScanOptions(disabledRules, minLevel, skip, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles, onlyRules);
     }
 
     public ScanOptions withClasspath(List<Path> libraries) {
         return new ScanOptions(
-                disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles);
+                disabledRules, minLevel, skipTests, List.copyOf(libraries), exclusions, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles, onlyRules);
     }
 
     public ScanOptions withExclusions(PathExclusions excluded) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, excluded, threads, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles, onlyRules);
     }
 
     public ScanOptions withThreads(int count) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, count, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, count, skippedKinds, minConfidence, timeUnit, testRulesOnly, changedFiles, onlyRules);
     }
 
     public ScanOptions withMinConfidence(Confidence confidence) {
         return new ScanOptions(
-                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, confidence, timeUnit, testRulesOnly, changedFiles);
+                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, confidence, timeUnit, testRulesOnly, changedFiles, onlyRules);
     }
 
     public ScanOptions withTimeUnit(DurationUnit unit) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, unit, testRulesOnly, changedFiles);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, unit, testRulesOnly, changedFiles, onlyRules);
     }
 
     public ScanOptions withTestRulesOnly(boolean only) {
         return new ScanOptions(
-                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit, only, changedFiles);
+                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit, only, changedFiles, onlyRules);
+    }
+
+    /**
+     * @param rules коды или имена правил через запятую: "jr:510, RegexInLoopRule"; пустая строка - все правила
+     */
+    public ScanOptions withOnlyRules(String rules) {
+        Set<String> only = Arrays.stream(rules.split(SEPARATOR))
+                .filter(rule -> !rule.isBlank())
+                .map(ScanOptions::normalize)
+                .collect(Collectors.toUnmodifiableSet());
+        return new ScanOptions(
+                disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit,
+                testRulesOnly, changedFiles, only);
     }
 
     /**
@@ -98,7 +113,7 @@ public record ScanOptions(
     public ScanOptions withChangedFiles(Set<Path> files) {
         return new ScanOptions(
                 disabledRules, minLevel, skipTests, classpath, exclusions, threads, skippedKinds, minConfidence, timeUnit,
-                testRulesOnly, files == null ? null : Set.copyOf(files));
+                testRulesOnly, files == null ? null : Set.copyOf(files), onlyRules);
     }
 
     /**
@@ -116,7 +131,7 @@ public record ScanOptions(
     }
 
     public ScanOptions withSkippedKinds(Set<FileKind> kinds) {
-        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, Set.copyOf(kinds), minConfidence, timeUnit, testRulesOnly, changedFiles);
+        return new ScanOptions(disabledRules, minLevel, skipTests, classpath, exclusions, threads, Set.copyOf(kinds), minConfidence, timeUnit, testRulesOnly, changedFiles, onlyRules);
     }
 
     /**
@@ -219,7 +234,7 @@ public record ScanOptions(
                 .collect(Collectors.toSet());
         return new ScanOptions(
                 disabled, parseLevel(minLevel), false, List.of(), PathExclusions.none(), SINGLE_THREAD, Set.of(),
-                Confidence.SUSPICION, DurationUnit.MILLISECONDS, true, null);
+                Confidence.SUSPICION, DurationUnit.MILLISECONDS, true, null, Set.of());
     }
 
     /**
@@ -235,10 +250,16 @@ public record ScanOptions(
     public boolean allows(String ruleCode, String ruleName, ErrorLevel level) {
         // Уровни в ErrorLevel объявлены от самого строгого к самому мягкому
         return level.ordinal() <= minLevel.ordinal()
+                && isSelected(ruleCode, ruleName)
                 && !disabledRules.contains(normalize(ruleCode))
                 && !disabledRules.contains(normalize(ruleName))
                 // Имя из настроек, написанных до переименования правил: CheckTodoCommentRule
                 && !disabledRules.contains(normalize(OLD_NAME_PREFIX + ruleName));
+    }
+
+    // --only=jr:510,RegexInLoopRule: запускаются только названные правила
+    private boolean isSelected(String ruleCode, String ruleName) {
+        return onlyRules.isEmpty() || onlyRules.contains(normalize(ruleCode)) || onlyRules.contains(normalize(ruleName));
     }
 
     private static ErrorLevel parseLevel(String level) {

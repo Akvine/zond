@@ -6,12 +6,14 @@ import ru.akvine.zond.models.TextFile;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /**
  * Разбор Dockerfile на инструкции: FROM, RUN, USER и остальные
  */
 @UtilityClass
 public class Dockerfiles {
+    private static final Pattern SPACES = Pattern.compile("\\s+");
     public static final String FROM = "FROM";
 
     private static final String COMMENT = "#";
@@ -65,7 +67,7 @@ public class Dockerfiles {
     }
 
     private void add(List<Instruction> instructions, String text, int line) {
-        String[] parts = text.split("\\s+", 2);
+        String[] parts = SPACES.split(text, 2);
         instructions.add(new Instruction(parts[0].toUpperCase(Locale.ROOT), parts.length > 1 ? parts[1].trim() : "", line));
     }
 }

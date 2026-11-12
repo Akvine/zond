@@ -162,7 +162,7 @@ public class UniqueCodeGenerationRule extends AbstractRule {
 
     private boolean stopsOnSuccess(Statement loop, MethodCallExpr check) {
         boolean checkedInCondition = conditionOf(loop)
-                .filter(condition -> condition == check || condition.isAncestorOf(check))
+                .filter(condition -> condition == check || Nodes.isInside(check, condition))
                 .isPresent();
         return checkedInCondition || bodyOf(loop).findAll(Statement.class, statement -> statement.isReturnStmt()
                         || statement.isBreakStmt())

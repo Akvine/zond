@@ -12,6 +12,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.CodeContexts;
+import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -94,6 +95,6 @@ public class MdcWithoutCleanupRule extends AbstractRule {
 
     private boolean isInFinally(MethodCallExpr call) {
         return call.findAncestor(TryStmt.class, statement ->
-                statement.getFinallyBlock().filter(block -> block.isAncestorOf(call)).isPresent()).isPresent();
+                statement.getFinallyBlock().filter(block -> Nodes.isInside(call, block)).isPresent()).isPresent();
     }
 }

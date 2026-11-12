@@ -18,6 +18,7 @@ import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Messaging;
+import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -102,9 +103,9 @@ public class ManualAckMisuseRule extends AbstractRule {
     private void checkBranches(
             SourceFile sourceFile, TryStmt statement, String name, List<MethodCallExpr> confirms,
             List<MethodCallExpr> answers, List<Violation> violations) {
-        boolean confirmedInTry = confirms.stream().anyMatch(statement.getTryBlock()::isAncestorOf);
+        boolean confirmedInTry = confirms.stream().anyMatch(confirm -> Nodes.isInside(confirm, statement.getTryBlock()));
         boolean answeredAlways = statement.getFinallyBlock().filter(block -> containsAny(block, answers)).isPresent()
-                || answers.stream().anyMatch(answer -> !statement.isAncestorOf(answer) && isAfter(answer, statement));
+                || answers.stream().anyMatch(answer -> !Nodes.isInside(answer, statement) && isAfter(answer, statement));
         if (!confirmedInTry || answeredAlways) {
             return;
         }
@@ -145,7 +146,7 @@ public class ManualAckMisuseRule extends AbstractRule {
     }
 
     private boolean containsAny(Node root, List<MethodCallExpr> calls) {
-        return calls.stream().anyMatch(root::isAncestorOf);
+        return calls.stream().anyMatch(call -> Nodes.isInside(call, root));
     }
 
     private boolean isAfter(Node node, Node other) {

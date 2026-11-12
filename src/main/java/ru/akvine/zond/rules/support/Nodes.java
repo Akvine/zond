@@ -59,6 +59,21 @@ public class Nodes {
     }
 
     /**
+     * @return true, если узел лежит внутри ancestor. То же, что ancestor.isAncestorOf(node), но поиск идет вверх
+     * по родителям узла, а не обходом всего поддерева предка: на больших методах и классах это быстрее на порядки
+     */
+    public boolean isInside(Node node, Node ancestor) {
+        Node current = node.getParentNode().orElse(null);
+        while (current != null) {
+            if (current == ancestor) {
+                return true;
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
+    }
+
+    /**
      * @return true, если между узлом и границей есть лямбда, анонимный или локальный класс:
      * return / throw внутри них относятся уже к другой функции
      */

@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
 
 @Component
 public class SqlChangeWithoutWhereRule extends AbstractContextRule {
+    private static final Pattern SET_CLAUSE = Pattern.compile("\\s+set\\s+|\\s*$");
     private static final Pattern CHANGE = Pattern.compile("^(update|delete\\s+from)\\b.*", Pattern.CASE_INSENSITIVE);
     private static final Pattern UPDATE = Pattern.compile("^update\\s+(\\S+)\\s+set\\s+(.+)$", Pattern.CASE_INSENSITIVE);
     private static final Pattern DELETE = Pattern.compile("^delete\\s+from\\s+(\\S+)\\s*$", Pattern.CASE_INSENSITIVE);
@@ -58,7 +59,7 @@ public class SqlChangeWithoutWhereRule extends AbstractContextRule {
                 if (CHANGE.matcher(text).matches() && !WHERE.matcher(text).matches() && !isBackfill(text, addedHere)
                         && !isReload(text, filled)) {
                     violations.add(violation(file.path(), statement.line(),
-                            "'" + text.split("\\s+set\\s+|\\s*$")[0] + "' без WHERE затрагивает все строки таблицы:"
+                            "'" + SET_CLAUSE.split(text)[0] + "' без WHERE затрагивает все строки таблицы:"
                                     + " на большой таблице это долгая блокировка и огромная транзакция; если так"
                                     + " и задумано, обрабатывайте строки пачками"));
                 }

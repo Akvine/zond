@@ -1,6 +1,5 @@
 package ru.akvine.zond.rules.flow;
 
-import ru.akvine.zond.enums.Confidence;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.NodeList;
 import com.github.javaparser.ast.body.CallableDeclaration;
@@ -59,10 +58,11 @@ import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import com.github.javaparser.ast.stmt.YieldStmt;
 import com.github.javaparser.ast.type.Type;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
-import ru.akvine.zond.rules.support.StreamChains;
 import ru.akvine.zond.rules.support.Nodes;
+import ru.akvine.zond.rules.support.StreamChains;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -1359,7 +1359,7 @@ public final class FlowInterpreter {
         }
         // text.contains(":") && text.substring(text.indexOf(':')).isBlank(): правая часть идет после левой
         boolean afterLeft = current instanceof BinaryExpr binary && LOGICAL.contains(binary.getOperator())
-                && !binary.getLeft().isAncestorOf(place) && binary.getLeft() != place;
+                && !Nodes.isInside(place, binary.getLeft()) && binary.getLeft() != place;
         return afterLeft ? ((BinaryExpr) current).getLeft().toString() : "";
     }
 
@@ -1838,7 +1838,7 @@ public final class FlowInterpreter {
         while (root != null && root.getParentNode().orElse(null) instanceof Expression parent) {
             root = parent;
         }
-        return root != null && root.isAncestorOf(place);
+        return root != null && Nodes.isInside(place, root);
     }
 
     private String describe(Expression expression, FlowValue value) {
