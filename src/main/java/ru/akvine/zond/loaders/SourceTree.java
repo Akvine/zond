@@ -119,6 +119,8 @@ final class SourceTree {
                         .getResult()
                         .map(unit -> {
                             FileSystemSourceLoader.dropTokens(unit);
+                            // Эти деревья тоже общие для потоков: правило может напечатать найденный в них узел
+                            AstPrinting.prepare(unit);
                             return unit.setStorage(file);
                         });
             }

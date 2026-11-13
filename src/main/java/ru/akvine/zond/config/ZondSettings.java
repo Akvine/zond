@@ -38,6 +38,8 @@ public class ZondSettings {
     private static final String AUTO_CLASSPATH = "zond.scan.auto-classpath";
     private static final String MAVEN_REPOSITORY = "zond.scan.maven-repository";
     private static final String REPORT_CONFIDENCE = "zond.report.confidence";
+    private static final String UI_ENABLED = "zond.ui.enabled";
+    private static final String UI_PORT = "zond.ui.port";
     private static final String FALSE = "false";
 
     private final String reportPath;
@@ -202,6 +204,20 @@ public class ZondSettings {
      */
     public boolean reportConfidence() {
         return !FALSE.equalsIgnoreCase(environment.getProperty(REPORT_CONFIDENCE, "").trim());
+    }
+
+    /**
+     * @return true, если вместо консольного меню нужно открыть страницу в браузере. Включается только явным true
+     */
+    public boolean uiEnabled() {
+        return Boolean.parseBoolean(environment.getProperty(UI_ENABLED, "").trim());
+    }
+
+    /**
+     * @return порт страницы в браузере как он задан; пустая строка - порт по умолчанию
+     */
+    public String uiPort() {
+        return environment.getProperty(UI_PORT, "").trim();
     }
 
     /**

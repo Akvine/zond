@@ -68,6 +68,25 @@ public class XlsxPrinter implements Printer {
 
     @Override
     public void print(ScanResult result) {
+        try {
+            Path parent = reportFile.toAbsolutePath().getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+            try (OutputStream output = Files.newOutputStream(reportFile)) {
+                write(result, output);
+            }
+        } catch (IOException exception) {
+            throw new UncheckedIOException("Не удалось записать отчет: " + reportFile, exception);
+        }
+        System.out.println("Отчет записан: " + reportFile.toAbsolutePath().normalize()
+                + " (проблем: " + result.violations().size() + ")");
+    }
+
+    /**
+     * Пишет ту же книгу в поток, а не в файл: так отчет отдает на скачивание страница Zond в браузере
+     */
+    public void write(ScanResult result, OutputStream output) throws IOException {
         try (SXSSFWorkbook workbook = new SXSSFWorkbook(ROWS_IN_MEMORY)) {
             Styles styles = new Styles(workbook);
             writeSummary(workbook.createSheet(SUMMARY_SHEET), result, styles);
@@ -75,19 +94,8 @@ public class XlsxPrinter implements Printer {
             if (!result.failedFiles().isEmpty()) {
                 writeFailedFiles(workbook.createSheet(FAILED_FILES_SHEET), result, styles);
             }
-
-            Path parent = reportFile.toAbsolutePath().getParent();
-            if (parent != null) {
-                Files.createDirectories(parent);
-            }
-            try (OutputStream output = Files.newOutputStream(reportFile)) {
-                workbook.write(output);
-            }
-        } catch (IOException exception) {
-            throw new UncheckedIOException("Не удалось записать отчет: " + reportFile, exception);
+            workbook.write(output);
         }
-        System.out.println("Отчет записан: " + reportFile.toAbsolutePath().normalize()
-                + " (проблем: " + result.violations().size() + ")");
     }
 
     private void writeSummary(Sheet sheet, ScanResult result, Styles styles) {

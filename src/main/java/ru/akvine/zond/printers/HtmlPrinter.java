@@ -146,10 +146,13 @@ public class HtmlPrinter implements Printer {
 
     @Override
     public void print(ScanResult result) {
-        ReportFiles.write(reportFile, toHtml(result), result);
+        ReportFiles.write(reportFile, render(result), result);
     }
 
-    private String toHtml(ScanResult result) {
+    /**
+     * @return та же страница отчета текстом, без записи в файл: ее показывает страница Zond в браузере
+     */
+    public String render(ScanResult result) {
         StringBuilder html = new StringBuilder();
         html.append("<!doctype html>\n<html lang=\"ru\">\n<head>\n<meta charset=\"utf-8\">\n")
                 .append("<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n")

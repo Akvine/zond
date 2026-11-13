@@ -35,10 +35,13 @@ public class MarkdownPrinter implements Printer {
 
     @Override
     public void print(ScanResult result) {
-        ReportFiles.write(reportFile, toMarkdown(result), result);
+        ReportFiles.write(reportFile, render(result), result);
     }
 
-    private String toMarkdown(ScanResult result) {
+    /**
+     * @return тот же отчет текстом, без записи в файл: его отдает на скачивание страница Zond в браузере
+     */
+    public String render(ScanResult result) {
         StringBuilder markdown = new StringBuilder();
         markdown.append("# Zond: отчет о сканировании").append(NEW_LINE).append(NEW_LINE);
         appendSummary(markdown, result);

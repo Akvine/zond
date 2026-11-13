@@ -1,5 +1,6 @@
 package ru.akvine.zond.services;
 
+import com.github.javaparser.ast.body.MethodDeclaration;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import ru.akvine.zond.config.RuleSettings;
@@ -33,11 +34,18 @@ import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ScannerTest {
+    // Правила, которые печатают один и тот же файл из разных потоков
+    private static final int PRINTING_RULES = 8;
+    private static final int PRINTS_PER_RULE = 200;
+    private static final int PRINTING_ATTEMPTS = 5;
+    private static final int FIRST_PRINTING_CODE = 9000;
+
     private final Scanner scanner = new Scanner(
             new FileSystemSourceLoader(),
             new FileSystemConfigLoader(),
@@ -504,6 +512,46 @@ class ScannerTest {
         assertThat(parallel.filesCount()).isEqualTo(sequential.filesCount());
     }
 
+    // Правила в разных потоках печатают один и тот же файл - целиком и по частям. Раньше такая проверка
+    // время от времени обрывалась ConcurrentModificationException: в консоли это была «Ошибка: null»
+    @Test
+    void rulesPrintTheSameFileFromSeveralThreads(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("Sample.java"), """
+                class Sample {
+                    void first() {
+                        int a = 1;
+                    }
+
+                    void second() {
+                        if (true) {
+                            first();
+                        }
+                    }
+                }
+                """);
+        Set<String> printed = ConcurrentHashMap.newKeySet();
+        List<Rule> printing = new ArrayList<>();
+        for (int number = 0; number < PRINTING_RULES; number++) {
+            printing.add(new PrintingRule(number, printed));
+        }
+        Scanner parallel = new Scanner(
+                new FileSystemSourceLoader(),
+                new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(),
+                printing,
+                (number, total, rule) -> {},
+                RuleSettings.empty());
+
+        for (int attempt = 0; attempt < PRINTING_ATTEMPTS; attempt++) {
+            parallel.scan(dir, ScanOptions.defaults().withThreads(PRINTING_RULES));
+        }
+
+        // Файл целиком и два его метода: текст один и тот же, какой бы поток и когда его ни печатал
+        assertThat(printed).hasSize(3);
+        // Конец строки в напечатанном тот же, что в файле, в какой бы системе ни шла проверка
+        assertThat(printed).noneMatch(text -> text.contains("\r"));
+    }
+
     @Test
     void failedRuleIsNamedInTheError(@TempDir Path dir) throws IOException {
         Files.writeString(dir.resolve("Sample.java"), "class Sample {}");
@@ -540,6 +588,40 @@ class ScannerTest {
         @Override
         public List<Violation> check(SourceFile sourceFile) {
             throw new ConcurrentModificationException();
+        }
+    }
+
+    // Правило, которое только печатает код, как это делают настоящие правила: нечетные - файл целиком,
+    // четные - его методы
+    private static class PrintingRule extends TransactionOnPrivateMethodRule {
+        private final int number;
+        private final Set<String> printed;
+
+        PrintingRule(int number, Set<String> printed) {
+            this.number = number;
+            this.printed = printed;
+        }
+
+        @Override
+        public String code() {
+            return "jr:" + (FIRST_PRINTING_CODE + number);
+        }
+
+        @Override
+        public String name() {
+            return "PrintingRule" + number;
+        }
+
+        @Override
+        public List<Violation> check(SourceFile sourceFile) {
+            for (int time = 0; time < PRINTS_PER_RULE; time++) {
+                if (number % 2 == 1) {
+                    printed.add(sourceFile.unit().toString());
+                } else {
+                    sourceFile.unit().findAll(MethodDeclaration.class).forEach(method -> printed.add(method.toString()));
+                }
+            }
+            return List.of();
         }
     }
 }

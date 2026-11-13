@@ -43,10 +43,13 @@ public class SarifPrinter implements Printer {
 
     @Override
     public void print(ScanResult result) {
-        ReportFiles.write(reportFile, toJson(result), result);
+        ReportFiles.write(reportFile, render(result), result);
     }
 
-    private String toJson(ScanResult result) {
+    /**
+     * @return тот же отчет текстом, без записи в файл: его отдает на скачивание страница Zond в браузере
+     */
+    public String render(ScanResult result) {
         // Правило описывается один раз, находки ссылаются на него по коду
         Map<String, Violation> rules = new LinkedHashMap<>();
         for (Violation violation : result.violations()) {

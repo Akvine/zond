@@ -13,6 +13,7 @@ import ru.akvine.zond.loaders.GitChangedFiles;
 import ru.akvine.zond.models.PathExclusions;
 import ru.akvine.zond.printers.StatisticReportPrinter;
 import ru.akvine.zond.services.RuleCatalog;
+import ru.akvine.zond.ui.UiServer;
 
 import java.nio.file.Path;
 import java.util.Arrays;
@@ -37,6 +38,8 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private static final String CHANGED_ONLY_OPTION = "changed-only";
     private static final String CHANGED_SINCE_OPTION = "changed-since";
     private static final String STATISTIC_REPORT_OPTION = "statistic-report";
+    private static final String UI_OPTION = "ui";
+    private static final String UI_PORT_OPTION = "ui-port";
     private static final String RULES_SEPARATOR = ",";
     private static final String ONLY_SEPARATOR = "[,;\\s]+";
     private static final String TRUE = "true";
@@ -46,6 +49,7 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
     private final MainMenu mainMenu;
     private final ZondSettings settings;
     private final RuleCatalog ruleCatalog;
+    private final UiServer uiServer;
 
     private int exitCode = ScanExecutor.EXIT_OK;
 
@@ -60,16 +64,25 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         }
 
         SessionSettings session;
+        boolean ui;
+        int uiPort;
         try {
             session = resolveSettings(args);
+            ui = resolveUi(args);
+            uiPort = resolveUiPort(args);
         } catch (IllegalArgumentException exception) {
             System.err.println("Ошибка: " + exception.getMessage());
             exitCode = ScanExecutor.EXIT_ERROR;
             return;
         }
 
-        // Путь передан аргументом - сканируем и выходим, без меню: так приложение запускают скрипты и CI
         String path = resolvePath(args);
+        // Страница в браузере заменяет и меню, и разовый запуск: путь из аргумента на ней уже подставлен
+        if (ui) {
+            exitCode = uiServer.serve(session, path == null ? null : Path.of(path), uiPort);
+            return;
+        }
+        // Путь передан аргументом - сканируем и выходим, без меню: так приложение запускают скрипты и CI
         exitCode = path != null ? scanExecutor.scan(Path.of(path), session) : mainMenu.open(session);
     }
 
@@ -196,6 +209,23 @@ public class ScanRunner implements ApplicationRunner, ExitCodeGenerator {
         }
         String value = optionValue(args, SKIP_TESTS_OPTION);
         return value == null || value.isBlank() || Boolean.parseBoolean(value.trim());
+    }
+
+    // --ui и --ui=true открывают страницу в браузере, --ui=false отменяет заданное в app.properties;
+    // без аргумента решает zond.ui.enabled
+    private boolean resolveUi(ApplicationArguments args) {
+        if (!args.containsOption(UI_OPTION)) {
+            return settings.uiEnabled();
+        }
+        String value = optionValue(args, UI_OPTION);
+        return value == null || value.isBlank() || Boolean.parseBoolean(value.trim());
+    }
+
+    // --ui-port=N важнее zond.ui.port. Порт проверяется и тогда, когда страница не нужна: опечатка в настройках
+    // не должна ждать дня, когда страницу включат
+    private int resolveUiPort(ApplicationArguments args) {
+        String port = optionValue(args, UI_PORT_OPTION);
+        return UiServer.parsePort(port == null ? settings.uiPort() : port);
     }
 
     // --changed-only и --changed-only=true включают, --changed-only=false отключает; без аргумента решает

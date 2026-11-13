@@ -26,6 +26,8 @@ import ru.akvine.zond.rules.logical.SqlDestructiveStatementRule;
 import ru.akvine.zond.rules.logical.TransactionOnPrivateMethodRule;
 import ru.akvine.zond.services.RuleCatalog;
 import ru.akvine.zond.services.Scanner;
+import ru.akvine.zond.ui.UiScanProgress;
+import ru.akvine.zond.ui.UiServer;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -61,6 +63,11 @@ class ScanRunnerTest {
     private final MockEnvironment environment = new MockEnvironment();
 
     private List<Rule> rules = List.of(new TransactionOnPrivateMethodRule());
+
+    // С чем была открыта страница в браузере; в тестах она не открывается, запоминается только вызов
+    private boolean pageOpened;
+    private Path pagePath;
+    private int pagePort;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -444,6 +451,67 @@ class ScanRunnerTest {
         assertThat(runner.getExitCode()).isEqualTo(2);
     }
 
+    @Test
+    void uiArgumentOpensPageInsteadOfScanning() {
+        Path report = dir.resolve("settings-report.txt");
+        ScanRunner runner = runner(report.toString());
+
+        runner.run(new DefaultApplicationArguments("--ui", "--ui-port=0", "--path=" + dir));
+
+        assertThat(pageOpened).isTrue();
+        assertThat(pagePath).isEqualTo(dir);
+        assertThat(pagePort).isZero();
+        assertThat(report).doesNotExist();
+        assertThat(runner.getExitCode()).isZero();
+    }
+
+    @Test
+    void uiFromSettingsOpensPageOnPortFromSettings() {
+        environment.setProperty("zond.ui.enabled", "true");
+        environment.setProperty("zond.ui.port", "9100");
+        ScanRunner runner = runner("");
+
+        runner.run(new DefaultApplicationArguments());
+
+        assertThat(pageOpened).isTrue();
+        assertThat(pagePath).isNull();
+        assertThat(pagePort).isEqualTo(9100);
+    }
+
+    @Test
+    void uiFromSettingsIsSwitchedOffByArgument() {
+        environment.setProperty("zond.ui.enabled", "true");
+        Path report = dir.resolve("settings-report.txt");
+        ScanRunner runner = runner(report.toString());
+
+        runner.run(new DefaultApplicationArguments("--ui=false", "--path=" + dir));
+
+        assertThat(pageOpened).isFalse();
+        assertThat(report).exists();
+        assertThat(runner.getExitCode()).isEqualTo(1);
+    }
+
+    @Test
+    void pageIsNotOpenedByDefault() {
+        ScanRunner runner = runner("", EXIT);
+
+        runner.run(new DefaultApplicationArguments());
+
+        assertThat(pageOpened).isFalse();
+        assertThat(runner.getExitCode()).isZero();
+    }
+
+    // Порт проверяется и без --ui: опечатка в настройках видна сразу, а не в день, когда страницу включат
+    @Test
+    void wrongUiPortIsAnError() {
+        ScanRunner runner = runner("");
+
+        runner.run(new DefaultApplicationArguments("--path=" + dir, "--ui-port=99999"));
+
+        assertThat(pageOpened).isFalse();
+        assertThat(runner.getExitCode()).isEqualTo(2);
+    }
+
     private ScanRunner runner(String reportPath, String... inputLines) {
         Queue<String> input = new ArrayDeque<>(List.of(inputLines));
         ConsoleInput consoleInput = new ConsoleInput() {
@@ -476,6 +544,17 @@ class ScanRunnerTest {
                         new SettingsStore(configDir.resolve("app.properties").toString())),
                 new RulesMenu(menu, catalog, ruleListFormatter, new RuleListWriter(ruleListFormatter)),
                 executor);
-        return new ScanRunner(executor, mainMenu, new ZondSettings(reportPath, "", "", "", "", "", "", environment), catalog);
+        // Настоящая страница открыла бы браузер и ждала бы нажатия «Завершить»
+        UiServer uiServer = new UiServer(executor, catalog, new ReportFormatter(), new UiScanProgress()) {
+            @Override
+            public int serve(SessionSettings settings, Path initialPath, int port) {
+                pageOpened = true;
+                pagePath = initialPath;
+                pagePort = port;
+                return ScanExecutor.EXIT_OK;
+            }
+        };
+        return new ScanRunner(
+                executor, mainMenu, new ZondSettings(reportPath, "", "", "", "", "", "", environment), catalog, uiServer);
     }
 }

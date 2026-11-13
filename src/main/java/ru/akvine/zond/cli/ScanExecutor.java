@@ -60,20 +60,7 @@ public class ScanExecutor {
      */
     public int scan(Path target, SessionSettings settings) {
         try {
-            Changed changed = changedFilesOf(target, settings);
-            // Изменений нет - проверять нечего: проект даже не читаем, но отчет пишем, чтобы его было видно
-            ScanResult result = changed.isNothing()
-                    ? new ScanResult(target, 0, 0, 0, List.of(), 0, settings.isSkipTests(), List.of(), 0, List.of(), 0, 0)
-                    : scanner.scan(target, optionsOf(target, settings).withChangedFiles(changed.files()));
-            printerFactory.create(settings.reportFile()).print(result);
-            // Точка отсчета сдвигается, только когда отчет уже записан: иначе находки этого запуска пропали бы
-            remember(changed);
-            // Время считается от запуска первого правила: загрузка и разбор кода в него не входят
-            if (settings.getStatisticReportFile() != null) {
-                new StatisticReportPrinter(
-                        settings.getStatisticReportFile(), settings.getTimeUnit(), settings.getTimingThresholds())
-                        .print(result);
-            }
+            ScanResult result = run(target, settings, true);
             System.out.println(TOTAL_TIME + settings.getTimeUnit().format(result.checkNanos()));
             return result.hasViolations() ? EXIT_VIOLATIONS_FOUND : EXIT_OK;
         } catch (RuntimeException exception) {
@@ -82,6 +69,33 @@ public class ScanExecutor {
             System.err.println("Ошибка: " + (message == null || message.isBlank() ? Failures.describe(exception) : message));
             return EXIT_ERROR;
         }
+    }
+
+    /**
+     * Сканирует и пишет отчеты так, как задано настройками сеанса.
+     *
+     * @param reportToConsole выводить ли находки в консоль, когда файл отчета не задан; страница в браузере
+     *                        показывает их сама и в консоли не дублирует
+     * @return результат сканирования
+     */
+    public ScanResult run(Path target, SessionSettings settings, boolean reportToConsole) {
+        Changed changed = changedFilesOf(target, settings);
+        // Изменений нет - проверять нечего: проект даже не читаем, но отчет пишем, чтобы его было видно
+        ScanResult result = changed.isNothing()
+                ? new ScanResult(target, 0, 0, 0, List.of(), 0, settings.isSkipTests(), List.of(), 0, List.of(), 0, 0)
+                : scanner.scan(target, optionsOf(target, settings).withChangedFiles(changed.files()));
+        if (settings.reportFile() != null || reportToConsole) {
+            printerFactory.create(settings.reportFile()).print(result);
+        }
+        // Точка отсчета сдвигается, только когда отчет уже записан: иначе находки этого запуска пропали бы
+        remember(changed);
+        // Время считается от запуска первого правила: загрузка и разбор кода в него не входят
+        if (settings.getStatisticReportFile() != null) {
+            new StatisticReportPrinter(
+                    settings.getStatisticReportFile(), settings.getTimeUnit(), settings.getTimingThresholds())
+                    .print(result);
+        }
+        return result;
     }
 
     /**

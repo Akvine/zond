@@ -7,7 +7,6 @@ import com.github.javaparser.Range;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.DataKey;
 import com.github.javaparser.ast.Node;
-import com.github.javaparser.ast.expr.SimpleName;
 import com.github.javaparser.resolution.TypeSolver;
 import com.github.javaparser.symbolsolver.JavaSymbolSolver;
 import org.springframework.stereotype.Component;
@@ -112,9 +111,9 @@ public class FileSystemSourceLoader implements SourceLoader {
             }
             CompilationUnit unit = result.getResult().get();
             unit.setData(TYPE_SOLVER, solver);
-            // Дерево запоминает объект для печати при первом toString(); делаем это сейчас, пока с файлом
+            // Правила в разных потоках печатают узлы одного файла. Печать настраивается сейчас, пока с файлом
             // работает один поток, чтобы правила потом только читали дерево
-            unit.findFirst(SimpleName.class).ifPresent(SimpleName::toString);
+            AstPrinting.prepare(unit);
             dropTokens(unit);
             return Optional.of(unit);
         } catch (IOException | RuntimeException exception) {
