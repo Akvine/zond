@@ -10,6 +10,7 @@ import ru.akvine.zond.loaders.FileSystemSourceLoader;
 import ru.akvine.zond.loaders.FileSystemTextFileLoader;
 import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
+import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.printers.FilePrinter;
 import ru.akvine.zond.printers.ReportFormatter;
@@ -28,11 +29,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ScannerTest {
     private final Scanner scanner = new Scanner(
@@ -499,5 +502,44 @@ class ScannerTest {
         assertThat(parallel.violations()).isEqualTo(sequential.violations());
         assertThat(allCores.violations()).isEqualTo(sequential.violations());
         assertThat(parallel.filesCount()).isEqualTo(sequential.filesCount());
+    }
+
+    @Test
+    void failedRuleIsNamedInTheError(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("Sample.java"), "class Sample {}");
+        Scanner failing = new Scanner(
+                new FileSystemSourceLoader(),
+                new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(),
+                List.of(new FailingRule()),
+                (number, total, rule) -> {},
+                RuleSettings.empty());
+
+        // У ConcurrentModificationException нет текста: без правила и вида ошибки в консоли было бы «Ошибка: null»
+        assertThatThrownBy(() -> failing.scan(dir))
+                .isInstanceOf(RuleFailedException.class)
+                .hasMessageContaining("FailingRule (jr:1)")
+                .hasMessageContaining("java.util.ConcurrentModificationException")
+                .hasMessageContaining("FailingRule.check");
+    }
+
+    @Test
+    void failureWithoutTextIsDescribedByKindAndPlace() {
+        String described = Failures.describe(new ConcurrentModificationException());
+
+        assertThat(described)
+                .startsWith("java.util.ConcurrentModificationException (")
+                .contains("ScannerTest.failureWithoutTextIsDescribedByKindAndPlace")
+                .doesNotContain("null");
+        assertThat(Failures.describe(new IllegalStateException("нет файла")))
+                .startsWith("java.lang.IllegalStateException: нет файла (");
+    }
+
+    // Правило, которое падает ошибкой без текста
+    private static class FailingRule extends TransactionOnPrivateMethodRule {
+        @Override
+        public List<Violation> check(SourceFile sourceFile) {
+            throw new ConcurrentModificationException();
+        }
     }
 }

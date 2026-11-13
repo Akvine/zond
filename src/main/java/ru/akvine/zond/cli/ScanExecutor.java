@@ -9,6 +9,7 @@ import ru.akvine.zond.models.ScanOptions;
 import ru.akvine.zond.models.ScanResult;
 import ru.akvine.zond.printers.PrinterFactory;
 import ru.akvine.zond.printers.StatisticReportPrinter;
+import ru.akvine.zond.services.Failures;
 import ru.akvine.zond.services.Scanner;
 
 import java.io.UncheckedIOException;
@@ -76,7 +77,9 @@ public class ScanExecutor {
             System.out.println(TOTAL_TIME + settings.getTimeUnit().format(result.checkNanos()));
             return result.hasViolations() ? EXIT_VIOLATIONS_FOUND : EXIT_OK;
         } catch (RuntimeException exception) {
-            System.err.println("Ошибка: " + exception.getMessage());
+            // У ошибки без текста называем ее вид и место: «Ошибка: null» ничего не объясняет
+            String message = exception.getMessage();
+            System.err.println("Ошибка: " + (message == null || message.isBlank() ? Failures.describe(exception) : message));
             return EXIT_ERROR;
         }
     }

@@ -189,6 +189,9 @@ public class Scanner {
         long startedAt = System.nanoTime();
         try {
             return withLevel(ruleSettings.level(rule.code(), rule.name()), rule.confidence(), apply(rule, context, perFile));
+        } catch (RuntimeException | StackOverflowError failure) {
+            // По самой ошибке не видно, какое правило работало, а текста у нее может не быть вовсе
+            throw new RuleFailedException(rule, failure);
         } finally {
             long nanos = System.nanoTime() - startedAt;
             spent.put(rule, nanos);
