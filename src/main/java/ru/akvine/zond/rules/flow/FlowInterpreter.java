@@ -265,7 +265,14 @@ public final class FlowInterpreter {
             }
             for (VariableDeclarator variable : field.getVariables()) {
                 String key = THIS + variable.getNameAsString();
-                FlowValue value = fieldValue(field, variable);
+                // private static final Registry INSTANCE = new Registry(): пока выполняется этот самый new Registry(),
+                // поле INSTANCE еще не задано - в конструкторе о нем ничего не известно
+                boolean underConstruction = callable instanceof ConstructorDeclaration && field.isStatic()
+                        && variable.getInitializer()
+                        .filter(initializer -> initializer.isObjectCreationExpr() && initializer.asObjectCreationExpr()
+                                .getType().getNameAsString().equals(type.get().getNameAsString()))
+                        .isPresent();
+                FlowValue value = underConstruction ? FlowValue.unknown() : fieldValue(field, variable);
                 rememberType(key, variable.getType());
                 fields.put(key, value);
                 state.assign(key, value);
@@ -1954,7 +1961,7 @@ public final class FlowInterpreter {
                     "'" + snippet(checked) + "' здесь не может быть null: " + describe(checked, value));
             return new Branches(null, state);
         }
-        String variable = key(checked, state);
+        String variable = key(subject(checked), state);
         if (variable == null) {
             FlowState whenNull = state.copy();
             if (checked instanceof MethodCallExpr || checked instanceof FieldAccessExpr) {
@@ -1989,9 +1996,19 @@ public final class FlowInterpreter {
         }
         FlowState falseState = whenFalse == null ? null : (whenTrue == null ? state : state.copy());
         FlowState trueState = whenTrue == null ? null : state;
-        narrow(trueState, leftExpression, left, rightExpression, right, whenTrue);
-        narrow(falseState, leftExpression, left, rightExpression, right, whenFalse);
+        narrow(trueState, subject(leftExpression), left, subject(rightExpression), right, whenTrue);
+        narrow(falseState, subject(leftExpression), left, subject(rightExpression), right, whenFalse);
         return new Branches(trueState, falseState);
+    }
+
+    // if ((pos = line.indexOf(':')) < 0), while ((line = reader.readLine()) != null): сравнивают значение, которое
+    // только что присвоили переменной, - значит, проверка говорит и о самой переменной
+    private Expression subject(Expression expression) {
+        if (expression instanceof AssignExpr assignment && assignment.getOperator() == AssignExpr.Operator.ASSIGN
+                && assignment.getTarget().isNameExpr()) {
+            return assignment.getTarget();
+        }
+        return expression;
     }
 
     private void narrow(

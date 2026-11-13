@@ -8,6 +8,7 @@ import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.type.Type;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -63,10 +64,15 @@ public class BroadCatchRule extends AbstractRule {
             Optional<String> broadType = findBroadType(clause.getParameter().getType());
             if (broadType.isPresent() && !rethrows(clause) && !barrier && !isRelease(clause)
                     && !passesToFailureHandler(clause)) {
-                violations.add(violation(sourceFile, clause,
-                        "catch (" + broadType.get() + ") без повторного выброса: вместе с ожидаемыми ошибками"
-                                + " перехватываются и ошибки программирования (NullPointerException и т.п.);"
-                                + " ловите конкретные исключения или пробрасывайте дальше"));
+                String text = "catch (" + broadType.get() + ") без повторного выброса: вместе с ожидаемыми ошибками"
+                        + " перехватываются и ошибки программирования (NullPointerException и т.п.);"
+                        + " ловите конкретные исключения или пробрасывайте дальше";
+                // Исключение записано в лог вместе со стеком: ошибка программирования не пропадет бесследно,
+                // ее увидят в логе. Широкий catch здесь - вопрос стиля, а не потерянная ошибка
+                violations.add(CodeContexts.logsException(clause)
+                        ? violation(sourceFile, clause, text + ". Здесь исключение уходит в лог вместе со стеком,"
+                                + " поэтому это подозрение").withConfidence(Confidence.SUSPICION)
+                        : violation(sourceFile, clause, text));
             }
         }
         return violations;

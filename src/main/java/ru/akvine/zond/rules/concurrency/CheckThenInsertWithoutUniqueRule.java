@@ -151,7 +151,7 @@ public class CheckThenInsertWithoutUniqueRule extends AbstractContextRule {
         }
 
         String where = String.join(", ", columns);
-        Optional<DbSchema.Table> table = EntityMapping.tableName(entity, classes).flatMap(schema::find)
+        Optional<DbSchema.Table> table = EntityMapping.tableName(entity, classes).flatMap(schema.visibleFrom(entity)::find)
                 .filter(found -> !found.isOpaque());
         if (table.isEmpty()) {
             return Optional.of(new Problem(

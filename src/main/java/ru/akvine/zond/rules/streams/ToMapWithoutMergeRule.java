@@ -14,8 +14,10 @@ import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.MethodCalls;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Component
@@ -27,6 +29,7 @@ public class ToMapWithoutMergeRule extends AbstractRule {
     private static final int ARGUMENTS_WITHOUT_MERGE = 2;
     private static final String ENTRY_KEY = "getKey";
     private static final Set<String> IDENTIFIER_GETTERS = Set.of("getId", "getUuid", "id", "uuid");
+    private static final Pattern OWN_IDENTIFIER = Pattern.compile("get(\\w+?)(Id|Uuid)");
     private static final Set<String> ENUM_KEYS = Set.of("name", "ordinal");
     private static final Pattern ENUM_SOURCE = Pattern.compile("\\.values\\(\\)|getEnumConstants\\(\\)|EnumSet\\.allOf");
 
@@ -61,9 +64,20 @@ public class ToMapWithoutMergeRule extends AbstractRule {
     // Идентификатор у разных объектов разный: повтор возможен, только если в поток дважды попал один объект
     private Violation report(SourceFile sourceFile, MethodCallExpr call) {
         Violation violation = describe(sourceFile, call);
-        return keyGetter(call).filter(IDENTIFIER_GETTERS::contains).isPresent()
+        return keyGetter(call).filter(IDENTIFIER_GETTERS::contains).isPresent() || isOwnIdentifier(call)
                 ? violation.withConfidence(Confidence.SUSPICION)
                 : violation;
+    }
+
+    // SysMenu::getMenuId, Order::getOrderUuid: идентификатор самого объекта, названный по его классу
+    private boolean isOwnIdentifier(MethodCallExpr call) {
+        Expression key = call.getArgument(0);
+        if (!key.isMethodReferenceExpr()) {
+            return false;
+        }
+        Matcher getter = OWN_IDENTIFIER.matcher(key.asMethodReferenceExpr().getIdentifier());
+        String owner = key.asMethodReferenceExpr().getScope().toString().toLowerCase(Locale.ROOT);
+        return getter.matches() && owner.endsWith(getter.group(1).toLowerCase(Locale.ROOT));
     }
 
     private boolean isOverEnumConstants(MethodCallExpr toMap) {

@@ -13,9 +13,12 @@ import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.Mappings;
+import ru.akvine.zond.rules.support.Modules;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,8 +47,9 @@ public class DuplicateEndpointRule extends AbstractRule implements ProjectRule {
 
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
-        // "GET /users/{}" -> первый обработчик с таким адресом
-        Map<String, String> known = new HashMap<>();
+        // "GET /users/{}" -> обработчики с таким адресом
+        Map<String, List<Handler>> known = new HashMap<>();
+        Modules modules = Modules.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
@@ -55,12 +59,18 @@ public class DuplicateEndpointRule extends AbstractRule implements ProjectRule {
                 List<String> prefixes = Mappings.find(type).map(Mappings::pathKeys).orElse(List.of(""));
                 for (MethodDeclaration method : type.getMethods()) {
                     String handler = type.getNameAsString() + "." + method.getNameAsString();
-                    for (String endpoint : endpointsOf(method, prefixes)) {
-                        String first = known.putIfAbsent(endpoint, handler);
-                        if (first != null) {
+                    // Один и тот же адрес, записанный у метода дважды ({"", "/"}), - не конфликт с самим собой
+                    for (String endpoint : new LinkedHashSet<>(endpointsOf(method, prefixes))) {
+                        List<Handler> handlers = known.computeIfAbsent(endpoint, key -> new ArrayList<>());
+                        // Обработчики разных приложений одного хранилища друг другу не мешают
+                        Optional<Handler> first = handlers.stream()
+                                .filter(other -> !modules.areSeparate(other.file(), sourceFile.path()))
+                                .findFirst();
+                        handlers.add(new Handler(handler, sourceFile.path()));
+                        if (first.isPresent()) {
                             violations.add(violation(sourceFile, method,
                                     "Обработчик '" + handler + "' отвечает на тот же запрос " + endpoint + ", что и '"
-                                            + first + "': Spring не сможет выбрать между ними, и приложение"
+                                            + first.get().name() + "': Spring не сможет выбрать между ними, и приложение"
                                             + " не запустится; оставьте один либо разведите адреса"));
                         }
                     }
@@ -78,6 +88,13 @@ public class DuplicateEndpointRule extends AbstractRule implements ProjectRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.LOGICAL;
+    }
+
+    /**
+     * @param name имя вида Контроллер.метод
+     * @param file файл, в котором обработчик объявлен
+     */
+    private record Handler(String name, Path file) {
     }
 
     private List<String> endpointsOf(MethodDeclaration method, List<String> prefixes) {

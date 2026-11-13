@@ -1,7 +1,9 @@
 package ru.akvine.zond.rules.files;
 
+import com.github.javaparser.ast.Node;
 import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.models.TextFile;
+import ru.akvine.zond.rules.support.Modules;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -223,7 +225,9 @@ public final class DbSchema {
          * Так сверка не зависит от стратегии именования Hibernate.
          */
         public Optional<Column> find(String columnName) {
-            String wanted = loose(columnName);
+            // @Column(name = "`AppId`"): кавычки в имени - указание Hibernate экранировать его в запросе,
+            // сама колонка называется AppId
+            String wanted = loose(NAME_QUOTES.matcher(columnName).replaceAll(""));
             return columns.values().stream().filter(column -> loose(column.name()).equals(wanted)).findFirst();
         }
     }
@@ -235,12 +239,24 @@ public final class DbSchema {
     private record Pending(Change change, Path file, int line) {
     }
 
+    // Заполнены только у схемы всего проекта: по ним строятся схемы отдельных приложений
+    private List<TextFile> allMigrations = List.of();
+    private Modules modules;
+    private final Map<Path, DbSchema> byApplication = new HashMap<>();
+
     private DbSchema() {
     }
 
     public static DbSchema of(ScanContext context) {
+        DbSchema schema = of(migrations(context));
+        schema.allMigrations = migrations(context);
+        schema.modules = Modules.of(context.sources());
+        return schema;
+    }
+
+    private static DbSchema of(List<TextFile> migrations) {
         DbSchema schema = new DbSchema();
-        for (TextFile file : migrations(context)) {
+        for (TextFile file : migrations) {
             for (SqlStatements.Statement statement : SqlStatements.of(file)) {
                 for (Change change : changes(statement.text())) {
                     schema.apply(change, file.path(), statement.line());
@@ -248,6 +264,27 @@ public final class DbSchema {
             }
         }
         return schema;
+    }
+
+    /**
+     * Схема, с которой работает этот код. В хранилище с несколькими приложениями у каждого свои миграции:
+     * таблица users соседнего сервиса к сущности User этого сервиса отношения не имеет, и его миграции
+     * сюда не входят. Миграции из модуля-библиотеки видны всем
+     *
+     * @param code сущность, запрос или другой узел кода, для которого нужна схема
+     */
+    public synchronized DbSchema visibleFrom(Node code) {
+        Optional<Path> file = Modules.fileOf(code);
+        if (modules == null || !modules.hasSeveralApplications() || file.isEmpty()) {
+            return this;
+        }
+        Optional<Path> module = modules.moduleOf(file.get());
+        if (module.isEmpty()) {
+            return this;
+        }
+        return byApplication.computeIfAbsent(module.get(), key -> of(allMigrations.stream()
+                .filter(migration -> !modules.areSeparate(migration.path(), file.get()))
+                .toList()));
     }
 
     /**

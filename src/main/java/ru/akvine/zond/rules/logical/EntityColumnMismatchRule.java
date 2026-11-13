@@ -47,7 +47,7 @@ public class EntityColumnMismatchRule extends AbstractContextRule {
         for (SourceFile sourceFile : context.sources()) {
             for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile.unit())) {
                 Optional<DbSchema.Table> table = EntityMapping.tableName(entity, classes)
-                        .flatMap(schema::find)
+                        .flatMap(schema.visibleFrom(entity)::find)
                         .filter(found -> !found.isOpaque());
                 if (table.isEmpty()) {
                     continue;

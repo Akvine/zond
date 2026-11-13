@@ -1,9 +1,11 @@
 package ru.akvine.zond.rules.logical;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.CastExpr;
+import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
@@ -31,6 +33,10 @@ import java.util.regex.Pattern;
 
 @Component
 public class NarrowingCastRule extends AbstractRule {
+    private static final String HASH_CODE = "hashCode";
+    // Запись числа заданной ширины в буфер или поток: ByteBuf.writeIntLE, ByteBuffer.putShort, DataOutput.writeByte
+    private static final Pattern BUFFER_WRITES =
+            Pattern.compile("(write|put|set)(Int|Short|Byte|Medium|UnsignedInt|UnsignedShort|UnsignedByte)(LE|BE)?");
     private static final String MATH = "Math";
     private static final String MIN = "min";
     private static final String MAX_VALUE = "MAX_VALUE";
@@ -97,6 +103,7 @@ public class NarrowingCastRule extends AbstractRule {
                 .filter(cast -> !isClamped(Nodes.unwrap(cast.getExpression())) && !isRangeChecked(cast)
                         && !isSmallUnit(Nodes.unwrap(cast.getExpression()))
                         && !isCollectionCount(cast.getExpression(), cast))
+                .filter(cast -> !isHashing(cast) && !isWrittenToBuffer(cast))
                 .map(cast -> violation(sourceFile, cast,
                         "'" + Nodes.text(cast) + "': long приводится к " + cast.getType() + " без проверки - значение,"
                                 + " которое не помещается, молча обрежется и станет другим числом, возможно"
@@ -179,6 +186,24 @@ public class NarrowingCastRule extends AbstractRule {
         return Nodes.enclosingCallable(usage).stream()
                 .flatMap(callable -> callable.findAll(AssignExpr.class).stream())
                 .anyMatch(assignment -> assignment.getTarget().toString().equals(name));
+    }
+
+    // return (int) (bits ^ (bits >>> 32)): в hashCode старшие разряды отбрасывают намеренно
+    private boolean isHashing(CastExpr cast) {
+        return cast.findAncestor(MethodDeclaration.class)
+                .filter(method -> HASH_CODE.equals(method.getNameAsString()))
+                .isPresent();
+    }
+
+    // buffer.writeInt((int) time), output.putShort((short) length): поле двоичного формата именно такой ширины,
+    // и число укладывают в него намеренно
+    private boolean isWrittenToBuffer(CastExpr cast) {
+        Node parent = cast.getParentNode().orElse(null);
+        while (parent instanceof EnclosedExpr) {
+            parent = parent.getParentNode().orElse(null);
+        }
+        return parent instanceof MethodCallExpr call && call.getScope().isPresent()
+                && BUFFER_WRITES.matcher(call.getNameAsString()).matches();
     }
 
     private boolean isClamped(Expression expression) {

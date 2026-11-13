@@ -25,6 +25,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
+import java.util.regex.Pattern;
 
 /**
  * Защищено ли использование значения проверкой, которая стоит на пути выполнения к нему.
@@ -36,6 +37,16 @@ import java.util.function.Predicate;
  */
 @UtilityClass
 public class Guards {
+    private static final String FAIL = "fail";
+    // Assert, Asserts, Assertions, Preconditions, Validate, Objects, Verify, Checks, Guard
+    private static final Pattern ASSERTION_OWNER =
+            Pattern.compile("(?i).*(assert|precondition|validate|objects|verify|checks?|guard|ensure|require)\\w*");
+    // Свой или статически импортированный помощник: checkArgument(...), requireNonNull(...), assertValid(...)
+    private static final Pattern ASSERTION_NAME = Pattern.compile("(assert|check|require|ensure|verify)\\w*");
+    // throwNotFound(...), rethrow(...); throwIfEmpty(...) бросает не всегда
+    private static final Pattern THROWING_NAME = Pattern.compile("(re)?throw(?!If|When|Unless|On)\\w*");
+    private static final Pattern FAILING_OWNER =
+            Pattern.compile("(?i).*(assert|exception|error|fail|precondition|validat|check|throw).*");
     // Objects.nonNull(x), Objects.requireNonNull(x), StringUtils.hasText(x), Assert.notNull(x, ...)
     private static final Set<String> NULL_CHECK_METHODS = Set.of(
             "nonNull", "isNull", "requireNonNull", "notNull", "hasText", "hasLength", "isEmpty", "isNotEmpty",
@@ -123,6 +134,9 @@ public class Guards {
             if (statement instanceof AssertStmt assertion && hasCheck(assertion.getCheck(), isCheck)) {
                 return true;
             }
+            if (isAssertionCall(statement, isCheck)) {
+                return true;
+            }
             if (statement instanceof IfStmt branch
                     && hasCheck(branch.getCondition(), isCheck)
                     && (alwaysExits(branch.getThenStmt()) || branch.getElseStmt().filter(Guards::alwaysExits).isPresent())) {
@@ -132,6 +146,20 @@ public class Guards {
         return false;
     }
 
+    // Assert.state(child instanceof Map, ...), Preconditions.checkArgument(!list.isEmpty()), Asserts.isNotNull(user):
+    // проверка записана вызовом помощника, который бросает исключение, когда условие не выполнено
+    private boolean isAssertionCall(Statement statement, Predicate<Expression> isCheck) {
+        if (!statement.isExpressionStmt() || !statement.asExpressionStmt().getExpression().isMethodCallExpr()) {
+            return false;
+        }
+        MethodCallExpr call = statement.asExpressionStmt().getExpression().asMethodCallExpr();
+        boolean assertion = call.getScope()
+                .map(scope -> ASSERTION_OWNER.matcher(scope.toString()).matches())
+                .orElseGet(() -> ASSERTION_NAME.matcher(call.getNameAsString()).matches());
+        return assertion && (isCheck.test(call)
+                || call.getArguments().stream().anyMatch(argument -> hasCheck(argument, isCheck)));
+    }
+
     private boolean alwaysExits(Statement statement) {
         if (statement instanceof BlockStmt block) {
             return !block.getStatements().isEmpty() && alwaysExits(block.getStatements().getLast().get());
@@ -139,7 +167,25 @@ public class Guards {
         return statement instanceof ReturnStmt
                 || statement instanceof ThrowStmt
                 || statement instanceof ContinueStmt
-                || statement instanceof BreakStmt;
+                || statement instanceof BreakStmt
+                || isFailingCall(statement);
+    }
+
+    // Asserts.fail("нет такого пользователя"), throwNotFound(id), ExceptionUtils.rethrow(e): метод, который
+    // сам всегда бросает исключение, - тот же выход из ветки, что и throw
+    private boolean isFailingCall(Statement statement) {
+        if (!statement.isExpressionStmt() || !statement.asExpressionStmt().getExpression().isMethodCallExpr()) {
+            return false;
+        }
+        MethodCallExpr call = statement.asExpressionStmt().getExpression().asMethodCallExpr();
+        String name = call.getNameAsString();
+        if (THROWING_NAME.matcher(name).matches()) {
+            return true;
+        }
+        // promise.fail(error) во Vert.x ничего не бросает: fail считаем выходом только у помощников проверок
+        return FAIL.equals(name) && call.getScope()
+                .map(scope -> FAILING_OWNER.matcher(scope.toString()).matches())
+                .orElse(true);
     }
 
     private boolean isCheckedEarlierInChain(LambdaExpr lambda, Predicate<Expression> isCheck) {

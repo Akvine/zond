@@ -21,6 +21,7 @@ import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class CaseWithoutLocaleRule extends AbstractRule {
@@ -41,6 +42,11 @@ public class CaseWithoutLocaleRule extends AbstractRule {
             "getOrDefault", "put", "putIfAbsent", "computeIfAbsent", "containsKey", "remove", "add", "valueOf",
             "of", "forName", "matcher", "isEqualTo");
 
+    // Сравнения, исход которых целиком определяет строка-образец
+    private static final Set<String> TEXT_CHECKS = Set.of("equals", "contains", "startsWith", "endsWith", "contentEquals");
+    // Буквы, которые в турецкой и азербайджанской локалях меняют регистр иначе: i -> İ, I -> ı
+    private static final Pattern LOCALE_LETTERS = Pattern.compile("[iIıİ]");
+
     @Override
     public String code() {
         return RuleCodes.CASE_WITHOUT_LOCALE_RULE_CODE;
@@ -57,6 +63,7 @@ public class CaseWithoutLocaleRule extends AbstractRule {
                 .filter(call -> CASE_METHODS.contains(call.getNameAsString()))
                 .filter(call -> call.getArguments().isEmpty() && call.getScope().isPresent())
                 .filter(call -> !TestClasses.isInside(call) && !isLocaleNeutral(call.getScope().get()))
+                .filter(call -> !isComparedWithNeutralText(call))
                 .map(call -> report(sourceFile, call))
                 .toList();
     }
@@ -90,6 +97,40 @@ public class CaseWithoutLocaleRule extends AbstractRule {
         }
         return parent instanceof MethodCallExpr call
                 && (isScope(call, current) ? COMPARING : LOOKING_UP).contains(call.getNameAsString());
+    }
+
+    /**
+     * type.toUpperCase().equals("LONG"), "json".equals(format.toLowerCase()), switch (unit.toLowerCase()) с ветками
+     * "day" и "month": от языка системы зависят только буквы i и I, а в строках, с которыми сверяют результат,
+     * их нет - исход сравнения в любой локали один и тот же
+     */
+    private boolean isComparedWithNeutralText(MethodCallExpr value) {
+        Node current = value;
+        Node parent = value.getParentNode().orElse(null);
+        while (parent instanceof EnclosedExpr
+                || parent instanceof MethodCallExpr chained && isScope(chained, current)
+                && PASSING.contains(chained.getNameAsString())) {
+            current = parent;
+            parent = parent.getParentNode().orElse(null);
+        }
+        List<Expression> compared;
+        if (parent instanceof SwitchStmt switchStmt) {
+            compared = switchStmt.getEntries().stream().flatMap(entry -> entry.getLabels().stream()).toList();
+        } else if (parent instanceof SwitchExpr switchExpr) {
+            compared = switchExpr.getEntries().stream().flatMap(entry -> entry.getLabels().stream()).toList();
+        } else if (parent instanceof MethodCallExpr call && isScope(call, current)
+                && TEXT_CHECKS.contains(call.getNameAsString())) {
+            compared = call.getArguments();
+        } else if (parent instanceof MethodCallExpr call && !isScope(call, current) && call.getScope().isPresent()
+                && TEXT_CHECKS.contains(call.getNameAsString())) {
+            compared = List.of(call.getScope().get());
+        } else {
+            return false;
+        }
+        return !compared.isEmpty() && compared.stream()
+                .map(Nodes::unwrap)
+                .allMatch(text -> text.isStringLiteralExpr()
+                        && !LOCALE_LETTERS.matcher(text.asStringLiteralExpr().getValue()).find());
     }
 
     private boolean isScope(MethodCallExpr call, Node node) {

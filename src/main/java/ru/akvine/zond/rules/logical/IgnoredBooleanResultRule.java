@@ -3,6 +3,7 @@ package ru.akvine.zond.rules.logical;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -12,6 +13,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.Nodes;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -32,6 +34,11 @@ public class IgnoredBooleanResultRule extends AbstractRule {
 
     private static final String OFFER = "offer";
     private static final Set<String> QUEUE_SUFFIXES = Set.of("Queue", "Deque");
+    private static final Set<String> UNBOUNDED_QUEUES = Set.of(
+            "PriorityQueue", "ArrayDeque", "LinkedList", "ConcurrentLinkedQueue", "ConcurrentLinkedDeque",
+            "PriorityBlockingQueue", "DelayQueue", "LinkedTransferQueue");
+    private static final Set<String> OPTIONALLY_BOUNDED_QUEUES = Set.of("LinkedBlockingQueue", "LinkedBlockingDeque");
+    private static final String BLOCKING = "Blocking";
 
     @Override
     public String code() {
@@ -87,11 +94,35 @@ public class IgnoredBooleanResultRule extends AbstractRule {
             return Optional.of("если попытка не удалась, код ниже все равно выполнится так, будто она удалась;"
                     + " проверьте результат");
         }
-        if (OFFER.equals(method) && type.filter(this::isQueue).isPresent()) {
+        if (OFFER.equals(method) && type.filter(this::isQueue).isPresent() && mayBeFull(scope, type.get())) {
             return Optional.of("если очередь заполнена, элемент молча теряется; проверьте результат"
                     + " либо используйте put / add");
         }
         return Optional.empty();
+    }
+
+    /**
+     * offer возвращает false только у очереди с пределом размера. PriorityQueue, ArrayDeque, LinkedList,
+     * ConcurrentLinkedQueue и LinkedBlockingQueue без емкости растут, пока есть память: элемент в них не теряется.
+     * Очередь, о которой известен только интерфейс Queue или Deque, пределом не считается; BlockingQueue - считается
+     */
+    private boolean mayBeFull(Expression queue, String declaredType) {
+        Optional<ObjectCreationExpr> created = LocalTypes.findInitializer(queue)
+                .map(Nodes::unwrap)
+                .filter(Expression::isObjectCreationExpr)
+                .map(Expression::asObjectCreationExpr);
+        if (created.isPresent()) {
+            String createdType = created.get().getType().getNameAsString();
+            if (UNBOUNDED_QUEUES.contains(createdType)) {
+                return false;
+            }
+            // new LinkedBlockingQueue<>() без емкости - без предела, new LinkedBlockingQueue<>(100) - с пределом
+            if (OPTIONALLY_BOUNDED_QUEUES.contains(createdType)) {
+                return !created.get().getArguments().isEmpty();
+            }
+            return true;
+        }
+        return !UNBOUNDED_QUEUES.contains(declaredType) && declaredType.contains(BLOCKING);
     }
 
     private boolean isQueue(String type) {

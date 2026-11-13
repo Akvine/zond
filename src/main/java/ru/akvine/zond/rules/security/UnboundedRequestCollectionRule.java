@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -51,6 +52,10 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
     private static final Set<String> VALIDATION_ANNOTATIONS = Set.of(
             "NotNull", "NotBlank", "NotEmpty", "Valid", "Min", "Max", "Pattern", "Positive", "PositiveOrZero",
             "Email", "Size");
+    // Настройки приложения проверяются теми же аннотациями (@NotEmpty, @Valid), но читаются из своего файла,
+    // а не приходят от клиента: KafkaProperties.bootstrapServers, RetrySettings.codes
+    private static final Set<String> SETTINGS_ANNOTATIONS = Set.of("ConfigurationProperties", "Configuration");
+    private static final Pattern SETTINGS_NAME = Pattern.compile(".*(Properties|Config|Configuration|Settings|Options)$");
     // Свой формат передачи: GetAliasesRequest(StreamInput in) и writeTo(StreamOutput out) в Elasticsearch,
     // Externalizable, Hadoop Writable. Объект собирает из байтов сам код, Bean Validation до него не доходит
     private static final Pattern WIRE_INPUT = Pattern.compile(".*Input$|^(InputStream|ByteBuffer)$");
@@ -184,11 +189,24 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
         if (Annotations.hasAny(type, PERSISTENT)) {
             return false;
         }
-        if (hasOwnWireFormat(type)) {
+        if (hasOwnWireFormat(type) || isSettings(type)) {
             return false;
         }
         return REQUEST_NAME.matcher(type.getNameAsString()).matches()
                 || type.getFields().stream().anyMatch(field -> Annotations.hasAny(field, VALIDATION_ANNOTATIONS));
+    }
+
+    // Сам класс настроек либо вложенный в него: KafkaProperties.Ssl
+    private boolean isSettings(ClassOrInterfaceDeclaration type) {
+        Optional<ClassOrInterfaceDeclaration> current = Optional.of(type);
+        while (current.isPresent()) {
+            if (Annotations.hasAny(current.get(), SETTINGS_ANNOTATIONS)
+                    || SETTINGS_NAME.matcher(current.get().getNameAsString()).matches()) {
+                return true;
+            }
+            current = current.get().findAncestor(ClassOrInterfaceDeclaration.class);
+        }
+        return false;
     }
 
     private boolean isCollection(FieldDeclaration field) {

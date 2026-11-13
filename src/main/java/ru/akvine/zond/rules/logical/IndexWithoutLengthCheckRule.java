@@ -2,6 +2,7 @@ package ru.akvine.zond.rules.logical;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.ArrayAccessExpr;
+import com.github.javaparser.ast.expr.BinaryExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.stmt.Statement;
@@ -32,7 +33,12 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
     private static final String SPLIT = "split";
     private static final String LENGTH = "length";
     private static final String FIRST_INDEX = "0";
-    private static final Set<String> POSITION_METHODS = Set.of("charAt", "substring");
+    private static final String SUBSTRING = "substring";
+    private static final Set<String> POSITION_METHODS = Set.of("charAt", SUBSTRING);
+    // Код вокруг уже ждет, что позиции в строке или части в массиве может не оказаться
+    private static final Set<String> INDEX_FAILURES = Set.of(
+            "Exception", "RuntimeException", "Throwable", "IndexOutOfBoundsException",
+            "StringIndexOutOfBoundsException", "ArrayIndexOutOfBoundsException");
     // Matcher.start(), Matcher.end(), MatchResult.start(group)
     private static final Set<String> MATCH_POSITIONS = Set.of("start", "end");
     private static final String RANDOM_UUID = "UUID.randomUUID()";
@@ -76,7 +82,8 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
         // name.charAt(0) + name.substring(1) - одна и та же непроверенная строка: сообщаем о ней один раз на оператор
         Map<Node, Set<String>> reported = new IdentityHashMap<>();
         for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
-            if (call.getScope().isEmpty() || !isLiteralPosition(call) || isCutByMatch(call)) {
+            if (call.getScope().isEmpty() || !isRiskyPosition(call) || isCutByMatch(call)
+                    || CodeContexts.isCaught(call, INDEX_FAILURES)) {
                 continue;
             }
             Expression scope = Nodes.unwrap(call.getScope().get());
@@ -103,7 +110,7 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
                     .isPresent();
             // Разбор в методе с throws Exception: короткая строка - неверный ввод, и он уходит вызывающему
             if (fromSplit && !TestClasses.isInside(access) && !isArrayLengthChecked(access)
-                    && !CodeContexts.isDeclaredToFail(access)) {
+                    && !CodeContexts.isDeclaredToFail(access) && !CodeContexts.isCaught(access, INDEX_FAILURES)) {
                 violations.add(violation(sourceFile, access,
                         "'" + access + "' без проверки числа частей после split: если разделителя в строке"
                                 + " не окажется, будет ArrayIndexOutOfBoundsException; проверьте length"));
@@ -111,9 +118,38 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
         }
     }
 
-    private boolean isLiteralPosition(MethodCallExpr call) {
-        return POSITION_METHODS.contains(call.getNameAsString())
-                && call.getArguments().stream().anyMatch(Expression::isIntegerLiteralExpr);
+    // Позиция, которой в короткой строке может не оказаться: charAt(0), substring(3), substring(0, 10),
+    // substring(0, text.length() - 1). Нулевое начало у substring есть в любой строке, поэтому
+    // substring(0, limit) и substring(0, Math.min(text.length(), 10)) сами по себе о длине ничего не требуют
+    private boolean isRiskyPosition(MethodCallExpr call) {
+        if (!POSITION_METHODS.contains(call.getNameAsString())) {
+            return false;
+        }
+        boolean substring = SUBSTRING.equals(call.getNameAsString());
+        boolean fromStart = substring && call.getArguments().size() == 2
+                && isFirstIndex(Nodes.unwrap(call.getArgument(0)));
+        return call.getArguments().stream()
+                .map(Nodes::unwrap)
+                .anyMatch(position -> isLiteralPosition(position, substring))
+                || fromStart && isLengthMinusLiteral(Nodes.unwrap(call.getArgument(1)));
+    }
+
+    private boolean isFirstIndex(Expression position) {
+        return position.isIntegerLiteralExpr() && FIRST_INDEX.equals(position.asIntegerLiteralExpr().getValue());
+    }
+
+    private boolean isLiteralPosition(Expression position, boolean substring) {
+        return position.isIntegerLiteralExpr() && !(substring && isFirstIndex(position));
+    }
+
+    // text.length() - 1: у пустой строки такая граница уходит в минус
+    private boolean isLengthMinusLiteral(Expression position) {
+        if (!position.isBinaryExpr() || position.asBinaryExpr().getOperator() != BinaryExpr.Operator.MINUS) {
+            return false;
+        }
+        Expression left = Nodes.unwrap(position.asBinaryExpr().getLeft());
+        return position.asBinaryExpr().getRight().isIntegerLiteralExpr() && left.isMethodCallExpr()
+                && LENGTH.equals(left.asMethodCallExpr().getNameAsString());
     }
 
     private boolean isUncheckedString(MethodCallExpr call, Expression scope) {

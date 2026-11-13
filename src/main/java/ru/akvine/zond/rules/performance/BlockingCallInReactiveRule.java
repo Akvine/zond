@@ -2,6 +2,9 @@ package ru.akvine.zond.rules.performance;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.LambdaExpr;
@@ -73,6 +76,12 @@ public class BlockingCallInReactiveRule extends AbstractRule {
     private static final Set<String> PUBLISHER_OPERATORS = Set.of(
             "flatMap", "flatMapMany", "concatMap", "switchMap", "filterWhen", "delayUntil", "zipWhen", "defer",
             "onErrorResume", "then");
+
+    // Операторы и фабрики, которым передают готовый Publisher: first.then(second), Mono.zip(a, b)
+    private static final Set<String> PUBLISHER_ARGUMENTS = Set.of(
+            "then", "thenMany", "thenEmpty", "switchIfEmpty", "zip", "zipWith", "concat", "concatWith", "merge",
+            "mergeWith", "when", "and", "or", "from", "fromDirect", "firstWithSignal", "firstWithValue",
+            "takeUntilOther");
 
     // Реактивные репозитории возвращают Mono / Flux и не блокируют
     private static final Set<String> REACTIVE_REPOSITORIES = Set.of(
@@ -146,11 +155,52 @@ public class BlockingCallInReactiveRule extends AbstractRule {
         if (isJdbcTemplate(scope.get())) {
             return Optional.of(MethodCalls.receiverName(scope.get()) + "." + name);
         }
-        if (Repositories.isRepositoryCall(call) && !isReactiveRepository(call)) {
+        if (Repositories.isRepositoryCall(call) && !isReactiveRepository(call) && !yieldsPublisher(call)) {
             return Optional.of(MethodCalls.receiverName(scope.get()) + "." + name);
         }
         // WebClient сам неблокирующий: блокирует его только block(), о котором выше
-        return HttpCalls.describeKnownClient(call).filter(described -> !isWebClientChain(call));
+        return HttpCalls.describeKnownClient(call).filter(described -> !isWebClientChain(call) && !yieldsPublisher(call));
+    }
+
+    /**
+     * Результат вызова - сам Mono или Flux: метод объявлен с таким типом, либо результат возвращают из реактивного
+     * метода, кладут в переменную такого типа, продолжают оператором цепочки или передают оператору, который
+     * принимает Publisher. Такой вызов ничего не ждет, чей бы он ни был: свой репозиторий на R2DBC или в памяти,
+     * клиент на WebClient. Mono.just(repository.findById(id)) сюда не относится: just принимает готовое значение
+     */
+    private boolean yieldsPublisher(MethodCallExpr call) {
+        boolean declaredAsPublisher = Types.declaration(call)
+                .filter(method -> PUBLISHERS.contains(LocalTypes.typeName(method.getType())))
+                .isPresent();
+        if (declaredAsPublisher) {
+            return true;
+        }
+        // repository.find(id).filter(...).switchIfEmpty(...): шаги цепочки после вызова
+        boolean continued = chain(call).stream()
+                .takeWhile(step -> step != call)
+                .anyMatch(step -> REACTOR_OPERATORS.contains(step.getNameAsString()));
+        if (continued) {
+            return true;
+        }
+        MethodCallExpr outermost = outermost(call);
+        Node parent = outermost.getParentNode().orElse(null);
+        while (parent instanceof EnclosedExpr) {
+            parent = parent.getParentNode().orElse(null);
+        }
+        if (parent instanceof ReturnStmt) {
+            return Nodes.enclosingCallable(outermost)
+                    .filter(callable -> callable instanceof MethodDeclaration method
+                            && PUBLISHERS.contains(LocalTypes.typeName(method.getType())))
+                    .isPresent();
+        }
+        if (parent instanceof VariableDeclarator variable) {
+            return PUBLISHERS.contains(LocalTypes.typeName(variable.getType()));
+        }
+        if (parent instanceof AssignExpr assignment && assignment.getValue() == outermost) {
+            return LocalTypes.typeOf(assignment.getTarget()).filter(PUBLISHERS::contains).isPresent();
+        }
+        return parent instanceof MethodCallExpr consumer && PUBLISHER_ARGUMENTS.contains(consumer.getNameAsString())
+                && consumer.getArguments().stream().anyMatch(argument -> Nodes.unwrap(argument) == outermost);
     }
 
     /**

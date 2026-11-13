@@ -7,6 +7,7 @@ import ru.akvine.zond.models.Violation;
 
 import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -90,7 +91,12 @@ public class MigrationHistory {
     private void add(Set<Path> files, Path repository, String names) {
         for (String name : names.split(NAMES_SEPARATOR)) {
             if (!name.isBlank()) {
-                files.add(repository.resolve(name.trim()).normalize());
+                try {
+                    files.add(repository.resolve(name.trim()).normalize());
+                } catch (InvalidPathException exception) {
+                    // Имя, которое не записать путем в этой системе: файл с нелатинским именем при локали C
+                    // в контейнере сборки. Миграцией такой файл здесь все равно не откроется - пропускаем
+                }
             }
         }
     }

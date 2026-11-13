@@ -38,6 +38,14 @@ import java.util.Set;
 @Component
 public class NullUnboxingRule extends AbstractRule {
     private static final String BOOLEAN = "Boolean";
+    // Вызовы с запасным значением последним аргументом: orElse(false), getOrDefault(key, true)
+    private static final Set<String> FALLBACK_METHODS =
+            Set.of("orElse", "getOrDefault", "defaultIfNull", "requireNonNullElse", "firstNonNull");
+    // Вызовы, которые возвращают примитив boolean либо Boolean, не бывающий null
+    private static final Set<String> PRIMITIVE_RESULTS = Set.of(
+            "parseBoolean", "booleanValue", "equals", "equalsIgnoreCase", "isEmpty", "isBlank", "contains", "containsKey",
+            "isPresent", "matches", "startsWith", "endsWith", "anyMatch", "allMatch", "noneMatch", "exists", "isTrue",
+            "isFalse", "toBoolean");
     private static final String VALUE = "Value";
     private static final String EMPTY_DEFAULT = ":}";
     private static final Set<BinaryExpr.Operator> COMPARISONS = Set.of(
@@ -62,6 +70,7 @@ public class NullUnboxingRule extends AbstractRule {
         return sourceFile.unit().findAll(NameExpr.class).stream()
                 .filter(this::isUsedAsCondition)
                 .filter(name -> isNullableBoolean(name) && !TestClasses.isInside(name) && !isAssignedNonNull(name))
+                .filter(name -> !isDefaultedWhenNull(name))
                 .filter(name -> !Guards.isGuarded(name, check -> Guards.isNullCheck(check, name.getNameAsString())))
                 .filter(name -> LocalTypes.findDeclaration(name).filter(reported::add).isPresent())
                 .map(name -> violation(sourceFile, name,
@@ -135,9 +144,31 @@ public class NullUnboxingRule extends AbstractRule {
         return value.map(Nodes::unwrap).filter(this::isPrimitiveBoolean).isPresent();
     }
 
+    // if (unique == null) { unique = UNIQUE; } ... if (unique): перед условием пустое значение заменили запасным
+    private boolean isDefaultedWhenNull(NameExpr name) {
+        String variable = name.getNameAsString();
+        int position = name.getBegin().map(begin -> begin.line).orElse(0);
+        return Nodes.enclosingCallable(name).stream()
+                .flatMap(callable -> callable.findAll(IfStmt.class).stream())
+                .filter(check -> check.getBegin().map(begin -> begin.line).orElse(Integer.MAX_VALUE) < position)
+                .filter(check -> check.getElseStmt().isEmpty()
+                        && Guards.isNullCheck(Nodes.unwrap(check.getCondition()), variable))
+                // Замена должна стоять на пути к условию, а не в соседней ветке
+                .filter(check -> check.getParentNode().filter(block -> Nodes.isInside(name, block)).isPresent())
+                .anyMatch(check -> check.getThenStmt().findAll(AssignExpr.class).stream()
+                        .anyMatch(assign -> assign.getTarget().toString().equals(variable)
+                                && !Nodes.unwrap(assign.getValue()).isNullLiteralExpr()));
+    }
+
     // flag = a > b, flag = !other, flag = isActive(ts) с результатом boolean
     private boolean isPrimitiveBoolean(Expression value) {
+        if (value.isCastExpr()) {
+            return isPrimitiveBoolean(Nodes.unwrap(value.asCastExpr().getExpression()));
+        }
         if (value.isBooleanLiteralExpr() || value.isInstanceOfExpr()) {
+            return true;
+        }
+        if (value.isMethodCallExpr() && hasNonNullResult(value.asMethodCallExpr())) {
             return true;
         }
         if (value.isUnaryExpr()) {
@@ -157,6 +188,17 @@ public class NullUnboxingRule extends AbstractRule {
             return declaration.filter(method -> method.getType().isPrimitiveType()).isPresent();
         }
         return false;
+    }
+
+    // optional.orElse(false), attributes.getOrDefault(KEY, false), Boolean.parseBoolean(text), a.equals(b):
+    // у такого вызова есть запасное значение либо результат - примитив
+    private boolean hasNonNullResult(MethodCallExpr call) {
+        String method = call.getNameAsString();
+        if (FALLBACK_METHODS.contains(method)) {
+            return !call.getArguments().isEmpty()
+                    && Nodes.unwrap(call.getArgument(call.getArguments().size() - 1)).isBooleanLiteralExpr();
+        }
+        return PRIMITIVE_RESULTS.contains(method);
     }
 
     // Параметр, поле или переменная, объявленные как Boolean; переменная, которой сразу задан литерал, не null

@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class PathTraversalRule extends AbstractTaintRule {
@@ -30,8 +31,18 @@ public class PathTraversalRule extends AbstractTaintRule {
     private static final Set<String> NAME_ONLY_METHODS = Set.of("getName", "getFileName");
 
     // Проверки, после которых путь не может выйти за пределы каталога
-    private static final Set<String> SANITIZERS =
-            Set.of("normalize", "cleanPath", "getCanonicalPath", "getCanonicalFile", "toRealPath", "startsWith");
+    private static final Set<String> SANITIZERS = Set.of(
+            "normalize", "cleanPath", "getCanonicalPath", "getCanonicalFile", "toRealPath", "startsWith", "checkSlip");
+    // FilenameUtils.getName(name), FileNameUtil.getName(name): от присланного пути остается одно имя файла
+    private static final Set<String> NAME_EXTRACTORS = Set.of("getName", "getBaseName", "mainName");
+    private static final Pattern FILE_NAME_UTILITIES = Pattern.compile(".*(FilenameUtils|FileNameUtil|FileNameUtils)$");
+    // if (name.contains("..")) - путь с выходом на каталог выше отклоняют явно
+    private static final Set<String> TEXT_SEARCHES = Set.of("contains", "indexOf", "matches");
+    private static final String PARENT_DIRECTORY = "..";
+    // Своя проверка имени файла в проекте: isIllegalFileName(name), checkAllowDownload(name), validateFilename(name)
+    private static final Pattern OWN_CHECKS = Pattern.compile(
+            "(?i)(is|check|assert|ensure|verify)\\w*(illegal|legal|valid|allow|safe|secure|slip|traversal)\\w*"
+                    + "|validate\\w*(file|path|name)\\w*");
 
     @Override
     public String code() {
@@ -116,7 +127,21 @@ public class PathTraversalRule extends AbstractTaintRule {
     private boolean isSanitized(Node node) {
         return Nodes.enclosingCallable(node)
                 .filter(callable -> callable.findAll(MethodCallExpr.class).stream()
-                        .anyMatch(call -> SANITIZERS.contains(call.getNameAsString())))
+                        .anyMatch(call -> SANITIZERS.contains(call.getNameAsString()) || takesNameOnly(call)
+                                || rejectsParentDirectory(call)
+                                || OWN_CHECKS.matcher(call.getNameAsString()).matches() && !call.getArguments().isEmpty()))
                 .isPresent();
+    }
+
+    private boolean takesNameOnly(MethodCallExpr call) {
+        return NAME_EXTRACTORS.contains(call.getNameAsString()) && call.getScope()
+                .filter(scope -> FILE_NAME_UTILITIES.matcher(scope.toString()).matches())
+                .isPresent();
+    }
+
+    private boolean rejectsParentDirectory(MethodCallExpr call) {
+        return TEXT_SEARCHES.contains(call.getNameAsString()) && call.getArguments().stream()
+                .anyMatch(argument -> argument.isStringLiteralExpr()
+                        && argument.asStringLiteralExpr().getValue().contains(PARENT_DIRECTORY));
     }
 }

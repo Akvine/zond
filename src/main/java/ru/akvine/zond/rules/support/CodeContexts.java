@@ -34,6 +34,7 @@ import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
+import com.github.javaparser.ast.type.Type;
 import lombok.experimental.UtilityClass;
 
 import java.util.ArrayList;
@@ -45,6 +46,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 /**
  * Обстоятельства, в которых выполняется код: запуск приложения, обработка ошибки, цикл повторных попыток,
@@ -248,6 +250,35 @@ public class CodeContexts {
      */
     public boolean isInCatch(Node node) {
         return findWithinCallable(node, CatchClause.class).isPresent();
+    }
+
+    /**
+     * @param exceptions простые имена исключений: само исключение и его предки
+     * @return true, если узел стоит в блоке try, у которого есть catch для одного из этих исключений: отказ
+     * в этом месте код уже ждет и обрабатывает. Блоки catch и finally того же try не считаются
+     */
+    public boolean isCaught(Node node, Set<String> exceptions) {
+        Node child = node;
+        Node current = node.getParentNode().orElse(null);
+        while (current != null && !(current instanceof BodyDeclaration<?>)) {
+            if (current instanceof TryStmt tryStatement && tryStatement.getTryBlock() == child
+                    && catchesAny(tryStatement, exceptions)) {
+                return true;
+            }
+            child = current;
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
+    }
+
+    private boolean catchesAny(TryStmt tryStatement, Set<String> exceptions) {
+        return tryStatement.getCatchClauses().stream()
+                .map(clause -> clause.getParameter().getType())
+                .flatMap(type -> type.isUnionType()
+                        ? type.asUnionType().getElements().stream().map(element -> (Type) element)
+                        : Stream.of(type))
+                .map(LocalTypes::typeName)
+                .anyMatch(exceptions::contains);
     }
 
     /**

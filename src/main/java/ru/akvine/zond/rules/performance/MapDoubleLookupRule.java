@@ -97,10 +97,25 @@ public class MapDoubleLookupRule extends AbstractRule {
         if (!inside.isEmpty() || !(guard.get() instanceof IfStmt)) {
             return inside;
         }
+        // if (map.containsKey(key)) { throw new AlreadyExistsException(...); } ... map.put(key, created):
+        // повтор ключа - отказ, а не замена значения. Одной операцией это не записать, не создав значение
+        // заранее, поэтому о put после такого отказа правило молчит
+        boolean rejectsKnownKey = !isNegated(check) && exits(guard.get().asIfStmt().getThenStmt());
         return guard.get().getParentNode()
                 .filter(parent -> parent instanceof BlockStmt)
-                .map(block -> repeatsIn(block, check).stream().filter(call -> !Nodes.isInside(call, guard.get())).toList())
+                .map(block -> repeatsIn(block, check).stream()
+                        .filter(call -> !Nodes.isInside(call, guard.get()))
+                        .filter(call -> !(rejectsKnownKey && PUT.equals(call.getNameAsString())))
+                        .toList())
                 .orElse(List.of());
+    }
+
+    private boolean exits(Statement statement) {
+        if (statement.isBlockStmt()) {
+            List<Statement> statements = statement.asBlockStmt().getStatements();
+            return !statements.isEmpty() && exits(statements.get(statements.size() - 1));
+        }
+        return statement.isThrowStmt() || statement.isReturnStmt() || statement.isContinueStmt() || statement.isBreakStmt();
     }
 
     private List<MethodCallExpr> repeatsIn(Node scope, MethodCallExpr check) {

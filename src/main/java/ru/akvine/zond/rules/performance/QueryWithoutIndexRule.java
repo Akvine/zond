@@ -72,7 +72,7 @@ public class QueryWithoutIndexRule extends AbstractContextRule {
                     continue;
                 }
                 Optional<DbSchema.Table> table = EntityMapping.tableName(entity.get(), classes)
-                        .flatMap(schema::find)
+                        .flatMap(schema.visibleFrom(entity.get())::find)
                         .filter(found -> !found.isOpaque());
                 List<EntityMapping.MappedField> fields = EntityMapping.fields(entity.get(), classes);
                 for (MethodDeclaration method : type.getMethods()) {

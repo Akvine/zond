@@ -48,7 +48,7 @@ public class SizeConstraintExceedsColumnRule extends AbstractContextRule {
         for (SourceFile sourceFile : context.sources()) {
             for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile.unit())) {
                 Optional<DbSchema.Table> table = EntityMapping.tableName(entity, classes)
-                        .flatMap(schema::find)
+                        .flatMap(schema.visibleFrom(entity)::find)
                         .filter(found -> !found.isOpaque());
                 for (EntityMapping.MappedField field : EntityMapping.fields(entity, classes)) {
                     check(sourceFile, entity, field, table, violations);

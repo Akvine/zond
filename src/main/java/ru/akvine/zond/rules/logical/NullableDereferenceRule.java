@@ -33,6 +33,8 @@ public class NullableDereferenceRule extends AbstractRule {
     private static final String OR_ELSE = "orElse";
     private static final String CONTAINS_KEY = "containsKey";
     private static final String KEY_SET = ".keySet()";
+    private static final String ITERATOR = ".iterator()";
+    private static final String NEXT = "next";
     private static final Set<String> MAP_TYPES =
             Set.of("Map", "HashMap", "LinkedHashMap", "TreeMap", "ConcurrentHashMap", "ConcurrentMap");
 
@@ -132,7 +134,10 @@ public class NullableDereferenceRule extends AbstractRule {
                 .filter(Expression::isMethodCallExpr)
                 .flatMap(call -> call.asMethodCallExpr().getScope())
                 .map(Expression::toString);
-        return map.isPresent() && Guards.isGuarded(variable, check -> check.isMethodCallExpr()
+        // if (map.get(key) == null) { ... } else { value = map.get(key); ... }: то же чтение уже сверили с null
+        String read = variable.getInitializer().map(Nodes::unwrap).map(Expression::toString).orElse("");
+        return map.isPresent() && Guards.isGuarded(variable, check -> Guards.isNullCheck(check, read)
+                || check.isMethodCallExpr()
                 && CONTAINS_KEY.equals(check.asMethodCallExpr().getNameAsString())
                 && check.asMethodCallExpr().getScope().filter(scope -> scope.toString().equals(map.get())).isPresent());
     }
@@ -150,17 +155,37 @@ public class NullableDereferenceRule extends AbstractRule {
         // Set<String> profiles = map.keySet(); for (String profile : profiles) map.get(profile)
         Predicate<Expression> isKeySet = iterable -> iterable.toString().equals(keys)
                 || LocalTypes.findInitializer(iterable).filter(initializer -> initializer.toString().equals(keys)).isPresent();
-        String key = get.get().getArgument(0).toString();
+        // for (Object key : map.keySet()) { String name = (String) key; map.get(name) }: ключ тот же, под другим именем
+        Expression argument = withoutCast(get.get().getArgument(0));
+        Optional<Expression> origin = LocalTypes.findInitializer(argument).map(this::withoutCast);
+        String key = argument.toString();
+        String alias = origin.filter(Expression::isNameExpr).map(Expression::toString).orElse(key);
+        // Iterator it = map.keySet().iterator(); while (it.hasNext()) { String name = (String) it.next(); map.get(name) }
+        boolean fromIterator = origin
+                .filter(value -> value.isMethodCallExpr() && NEXT.equals(value.asMethodCallExpr().getNameAsString()))
+                .flatMap(value -> value.asMethodCallExpr().getScope())
+                .flatMap(LocalTypes::findInitializer)
+                .filter(iterator -> iterator.toString().equals(keys + ITERATOR))
+                .isPresent();
+        if (fromIterator) {
+            return true;
+        }
         Node current = variable.getParentNode().orElse(null);
         while (current != null) {
-            if (current instanceof ForEachStmt loop
-                    && isKeySet.test(loop.getIterable())
-                    && loop.getVariable().getVariable(0).getNameAsString().equals(key)) {
-                return true;
+            if (current instanceof ForEachStmt loop && isKeySet.test(loop.getIterable())) {
+                String loopVariable = loop.getVariable().getVariable(0).getNameAsString();
+                if (loopVariable.equals(key) || loopVariable.equals(alias)) {
+                    return true;
+                }
             }
             current = current.getParentNode().orElse(null);
         }
         return false;
+    }
+
+    private Expression withoutCast(Expression expression) {
+        Expression value = Nodes.unwrap(expression);
+        return value.isCastExpr() ? Nodes.unwrap(value.asCastExpr().getExpression()) : value;
     }
 
     // if (lock != this) throw ...: после такой проверки lock - это this, а значит, не null

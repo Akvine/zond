@@ -430,7 +430,7 @@ public class NullableColumnInQueryRule extends AbstractContextRule {
             return Nullability.NOT_NULL;
         }
         Optional<DbSchema.Column> stored = EntityMapping.tableName(entity, project.classes())
-                .flatMap(project.schema()::find)
+                .flatMap(project.schema().visibleFrom(entity)::find)
                 .filter(table -> !table.isOpaque())
                 .flatMap(table -> EntityMapping.fields(declared.owner(), project.classes()).stream()
                         .filter(mapped -> mapped.variable().getNameAsString().equals(declared.property()))
