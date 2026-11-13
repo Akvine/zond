@@ -13,6 +13,7 @@ public enum ReportFormat {
     TXT(".txt", "Текстовый файл (.txt)"),
     XLSX(".xlsx", "Excel (.xlsx)"),
     HTML(".html", "Веб-страница (.html)"),
+    MD(".md", "Markdown (.md)"),
     SARIF(".sarif", "SARIF для GitHub, GitLab и IDE (.sarif)");
 
     // GitHub принимает и такое имя: report.sarif.json

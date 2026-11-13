@@ -2,6 +2,7 @@ package ru.akvine.zond.printers;
 
 import ru.akvine.zond.config.ZondVersion;
 import lombok.RequiredArgsConstructor;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.ScanResult;
@@ -17,7 +18,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Отчет одной веб-страницей: сводка, находки по файлам, отбор по уровню и типу правила, поиск по тексту.
+ * Отчет одной веб-страницей: сводка, находки по файлам, отбор по уровню, типу правила и уверенности,
+ * поиск по тексту.
  * Страница самодостаточна - стили и скрипт внутри, ее можно переслать или приложить к сборке.
  */
 @RequiredArgsConstructor
@@ -85,9 +87,10 @@ public class HtmlPrinter implements Printer {
             const rows = [...document.querySelectorAll('.row')];
             const files = [...document.querySelectorAll('details.file')];
             const levels = [...document.querySelectorAll('.level input')];
-            const types = [...document.querySelectorAll('.type')];
-            // Ни один тип не выбран - показываются все; нажатые кнопки сужают отбор до своих типов
-            const chosen = new Set();
+            // Отборы кнопками: по типу правила и по уверенности. Пока в отборе ни одна кнопка не нажата,
+            // он пропускает все; нажатые кнопки сужают его до своих значений
+            const groups = [...document.querySelectorAll('.types')].map(box => (
+                { key: box.dataset.key, chosen: new Set(), buttons: [...box.querySelectorAll('.type')] }));
             const search = document.getElementById('search');
             const shown = document.getElementById('shown');
             const none = document.getElementById('none');
@@ -97,7 +100,7 @@ public class HtmlPrinter implements Printer {
               let count = 0;
               for (const row of rows) {
                 const visible = enabled.has(row.dataset.level)
-                    && (chosen.size === 0 || chosen.has(row.dataset.type))
+                    && groups.every(group => group.chosen.size === 0 || group.chosen.has(row.dataset[group.key]))
                     && (!query || row.dataset.text.includes(query));
                 row.hidden = !visible;
                 if (visible) count++;
@@ -112,22 +115,23 @@ public class HtmlPrinter implements Printer {
               shown.textContent = 'Показано: ' + count + ' из ' + rows.length;
               none.hidden = count > 0;
             }
-            function choose(type) {
-              if (!type) {
-                chosen.clear();
-              } else if (chosen.has(type)) {
-                chosen.delete(type);
+            function choose(group, value) {
+              if (!value) {
+                group.chosen.clear();
+              } else if (group.chosen.has(value)) {
+                group.chosen.delete(value);
               } else {
-                chosen.add(type);
+                group.chosen.add(value);
               }
-              for (const button of types) {
-                const pressed = button.dataset.type ? chosen.has(button.dataset.type) : chosen.size === 0;
-                button.setAttribute('aria-pressed', String(pressed));
+              for (const button of group.buttons) {
+                const own = button.dataset[group.key];
+                button.setAttribute('aria-pressed', String(own ? group.chosen.has(own) : group.chosen.size === 0));
               }
               apply();
             }
             levels.forEach(box => box.addEventListener('change', apply));
-            types.forEach(button => button.addEventListener('click', () => choose(button.dataset.type)));
+            groups.forEach(group => group.buttons.forEach(button =>
+                button.addEventListener('click', () => choose(group, button.dataset[group.key]))));
             search.addEventListener('input', apply);
             apply();
             """;
@@ -205,6 +209,9 @@ public class HtmlPrinter implements Printer {
         html.append("<input id=\"search\" type=\"search\" placeholder=\"Поиск: файл, код правила, текст\">\n")
                 .append("<span id=\"shown\"></span>\n");
         appendTypes(html, result);
+        if (showConfidence) {
+            appendConfidence(html, result);
+        }
         html.append("</div>\n");
     }
 
@@ -216,7 +223,8 @@ public class HtmlPrinter implements Printer {
         Map<ErrorType, Long> counts = result.violations().stream()
                 .collect(Collectors.groupingBy(Violation::errorType, () -> new EnumMap<>(ErrorType.class),
                         Collectors.counting()));
-        html.append("<div class=\"types\" role=\"group\" aria-label=\"Тип правила\"><span class=\"label\">Тип:</span>\n")
+        html.append("<div class=\"types\" data-key=\"type\" role=\"group\" aria-label=\"Тип правила\">")
+                .append("<span class=\"label\">Тип:</span>\n")
                 .append("<button type=\"button\" class=\"type\" data-type=\"\" aria-pressed=\"true\">Все <b>")
                 .append(result.violations().size()).append("</b></button>\n");
         counts.entrySet().stream()
@@ -225,6 +233,28 @@ public class HtmlPrinter implements Printer {
                         .append(entry.getKey()).append("\" aria-pressed=\"false\">")
                         .append(escape(describe(entry.getKey()))).append(" <b>").append(entry.getValue())
                         .append("</b></button>\n"));
+        html.append("</div>\n");
+    }
+
+    /**
+     * Кнопки по уверенности: «Подтверждено», «Вероятно», «Подозрение» - от самой высокой к самой низкой.
+     * Уверенность без находок не показывается. Работают так же, как кнопки типов, и сочетаются с ними.
+     */
+    private void appendConfidence(StringBuilder html, ScanResult result) {
+        html.append("<div class=\"types\" data-key=\"confidence\" role=\"group\" aria-label=\"Уверенность\">")
+                .append("<span class=\"label\">Уверенность:</span>\n")
+                .append("<button type=\"button\" class=\"type\" data-confidence=\"\" aria-pressed=\"true\">Все <b>")
+                .append(result.violations().size()).append("</b></button>\n");
+        for (Confidence confidence : Confidence.values()) {
+            long count = result.violations().stream()
+                    .filter(violation -> violation.confidenceOrDefault() == confidence)
+                    .count();
+            if (count > 0) {
+                html.append("<button type=\"button\" class=\"type\" data-confidence=\"").append(confidence)
+                        .append("\" aria-pressed=\"false\">").append(escape(capitalize(confidence.getTitle())))
+                        .append(" <b>").append(count).append("</b></button>\n");
+            }
+        }
         html.append("</div>\n");
     }
 
@@ -254,6 +284,7 @@ public class HtmlPrinter implements Printer {
                 .toLowerCase(Locale.ROOT);
         html.append("<div class=\"row ").append(violation.errorLevel()).append("\" data-level=\"")
                 .append(violation.errorLevel()).append("\" data-type=\"").append(violation.errorType())
+                .append(showConfidence ? "\" data-confidence=\"" + violation.confidenceOrDefault() : "")
                 .append("\" data-text=\"").append(escape(searchText)).append("\">")
                 .append("<span class=\"badge\">").append(violation.errorLevel()).append("</span>")
                 .append("<span class=\"line\">").append(violation.line() > 0 ? ":" + violation.line() : "").append("</span>")
@@ -279,6 +310,11 @@ public class HtmlPrinter implements Printer {
 
     private String describe(ErrorType type) {
         return type.getDescription() == null ? type.name() : type.getDescription();
+    }
+
+    // «подтверждено» в строке находки и «Подтверждено» на кнопке
+    private String capitalize(String text) {
+        return text.isEmpty() ? text : text.substring(0, 1).toUpperCase(Locale.ROOT) + text.substring(1);
     }
 
     private String escape(String text) {

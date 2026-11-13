@@ -2,6 +2,7 @@ package ru.akvine.zond.printers;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.enums.ReportFormat;
@@ -25,11 +26,13 @@ class HtmlAndSarifPrinterTest {
         assertThat(ReportFormat.of("report.SARIF")).isEqualTo(ReportFormat.SARIF);
         assertThat(ReportFormat.of("report.sarif.json")).isEqualTo(ReportFormat.SARIF);
         assertThat(ReportFormat.of("report.xlsx")).isEqualTo(ReportFormat.XLSX);
+        assertThat(ReportFormat.of("report.md")).isEqualTo(ReportFormat.MD);
         assertThat(ReportFormat.of("report.log")).isEqualTo(ReportFormat.TXT);
 
         PrinterFactory factory = new PrinterFactory(new ReportFormatter());
         assertThat(factory.create(dir.resolve("report.html"))).isInstanceOf(HtmlPrinter.class);
         assertThat(factory.create(dir.resolve("report.sarif"))).isInstanceOf(SarifPrinter.class);
+        assertThat(factory.create(dir.resolve("report.md"))).isInstanceOf(MarkdownPrinter.class);
         assertThat(factory.create(dir.resolve("report.txt"))).isInstanceOf(FilePrinter.class);
         assertThat(factory.create(null)).isInstanceOf(ConsolePrinter.class);
     }
@@ -96,6 +99,38 @@ class HtmlAndSarifPrinterTest {
                 // Разметка из сообщения в страницу не попадает
                 .contains("&lt;script&gt;alert(1)&lt;/script&gt;")
                 .doesNotContain("<script>alert(1)</script>");
+    }
+
+    @Test
+    void htmlHasConfidenceFilter() throws IOException {
+        Path root = dir.resolve("project");
+        Path order = root.resolve("src/main/java/Order.java");
+        ScanResult result = new ScanResult(root, 1, 10, 0, List.of(
+                violation(ErrorLevel.CRITICAL, "jr:1", "FirstRule", order, 7, "Первая проблема")
+                        .withConfidence(Confidence.CONFIRMED),
+                violation(ErrorLevel.CRITICAL, "jr:1", "FirstRule", order, 8, "Вторая проблема")
+                        .withConfidence(Confidence.PROBABLE),
+                // Уверенность не задана правилом - находка считается вероятной
+                violation(ErrorLevel.CRITICAL, "jr:1", "FirstRule", order, 9, "Третья проблема")),
+                0, false, List.of());
+
+        Path shown = dir.resolve("confidence.html");
+        new HtmlPrinter(shown).print(result);
+        assertThat(Files.readString(shown))
+                // Кнопки только для уверенности, с которой есть находки; у каждой - число находок
+                .contains("data-confidence=\"\" aria-pressed=\"true\">Все <b>3</b>")
+                .contains("data-confidence=\"CONFIRMED\" aria-pressed=\"false\">Подтверждено <b>1</b>")
+                .contains("data-confidence=\"PROBABLE\" aria-pressed=\"false\">Вероятно <b>2</b>")
+                .doesNotContain("data-confidence=\"SUSPICION\"")
+                // По этому признаку строки отбирает скрипт страницы
+                .contains("data-type=\"LOGICAL\" data-confidence=\"PROBABLE\" data-text=");
+
+        // Уверенность выключена настройкой - отбора по ней на странице нет
+        Path hidden = dir.resolve("no-confidence.html");
+        new HtmlPrinter(hidden, false).print(result);
+        assertThat(Files.readString(hidden))
+                .doesNotContain("data-confidence")
+                .doesNotContain("Уверенность:");
     }
 
     @Test

@@ -13,7 +13,7 @@ public class PrinterFactory {
 
     /**
      * Формат отчета определяется расширением файла: .xlsx - таблица Excel, .html - веб-страница,
-     * .sarif - SARIF, любое другое - текст.
+     * .md - Markdown, .sarif - SARIF, любое другое - текст.
      *
      * @param reportFile файл отчета; если null - вывод в консоль
      */
@@ -24,6 +24,7 @@ public class PrinterFactory {
         return switch (ReportFormat.of(reportFile.getFileName().toString())) {
             case XLSX -> new XlsxPrinter(reportFile, formatter.showsConfidence());
             case HTML -> new HtmlPrinter(reportFile, formatter.showsConfidence());
+            case MD -> new MarkdownPrinter(reportFile, formatter.showsConfidence());
             case SARIF -> new SarifPrinter(reportFile, formatter.showsConfidence());
             default -> new FilePrinter(formatter, reportFile);
         };
