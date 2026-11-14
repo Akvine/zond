@@ -36,6 +36,10 @@ import java.util.stream.Stream;
  */
 public final class Lifecycle {
     private static final String PRE_DESTROY = "PreDestroy";
+    // @VisibleForTesting сюда не относится: так помечают и рабочие методы, которым лишь расширили видимость
+    private static final Set<String> TEST_ONLY = Set.of("TestOnly");
+    private static final Set<String> SERIALIZATION_HOOKS = Set.of(
+            "readObject", "writeObject", "readResolve", "writeReplace", "readObjectNoData");
     private static final String OVERRIDE = "Override";
     // Методы, которые контейнер вызывает сам: destroy() у DisposableBean и close() у AutoCloseable - при остановке,
     // start() и stop() у Lifecycle - при запуске и остановке контекста
@@ -140,7 +144,9 @@ public final class Lifecycle {
             called = true;
             lifecycleOnly = CodeContexts.isStartup(call) || isInLifecycleOnlyMethod(call, visiting);
         }
-        lifecycleOnly &= called;
+        // Закрытый метод без единого вызова (// only for test use: private void reset()) в приложении не выполняется
+        // вовсе: его дергают разве что тесты через рефлексию. Методы сериализации JVM вызывает сама
+        lifecycleOnly &= called || method.isPrivate() && !SERIALIZATION_HOOKS.contains(method.getNameAsString());
         visiting.remove(method);
         known.put(method, lifecycleOnly);
         return lifecycleOnly;
@@ -161,11 +167,15 @@ public final class Lifecycle {
         return Stream.concat(linked, guessed).filter(sites::add);
     }
 
+    // Тестовый файл, тестовый класс либо метод, оставленный только для тестов (@TestOnly void reset())
     private boolean isInTest(Node node) {
         return node.findCompilationUnit()
                 .flatMap(CompilationUnit::getStorage)
                 .map(storage -> TestPaths.isTest(storage.getPath()))
-                .orElse(false) || TestClasses.isInside(node);
+                .orElse(false) || TestClasses.isInside(node)
+                || node.findAncestor(MethodDeclaration.class)
+                .filter(method -> Annotations.hasAny(method, TEST_ONLY))
+                .isPresent();
     }
 
     // Вызов прямо в теле такого метода, а не в лямбде или анонимном классе: те выполнятся позже, во время работы

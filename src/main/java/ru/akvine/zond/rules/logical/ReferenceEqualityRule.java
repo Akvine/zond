@@ -4,6 +4,8 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.ConditionalExpr;
+import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
@@ -28,6 +30,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 @Component
 public class ReferenceEqualityRule extends AbstractRule {
@@ -35,10 +38,10 @@ public class ReferenceEqualityRule extends AbstractRule {
     // Boolean сюда не входит: упаковка всегда дает Boolean.TRUE либо Boolean.FALSE, и ссылки совпадают
     private static final Set<String> BOXED_TYPES = Set.of("Integer", "Long", "Short", "Byte", "Character", "Double", "Float");
     private static final String INTERN = "intern";
-    private static final String EQUALS = "equals";
-    private static final String OBJECTS = "Objects";
     private static final Set<String> STORING = Set.of("put", "putIfAbsent", "add", "set", "offer", "push");
     private static final Pattern CONSTANT_NAME = Pattern.compile("[A-Z][A-Z0-9_]*");
+    // equals, equalsIgnoreCase, contentEquals, compareTo, compare, regionMatches
+    private static final Pattern CONTENT_COMPARISON = Pattern.compile("(?i).*(equals|compare|matches).*");
     private static final Set<BinaryExpr.Operator> ARITHMETIC = Set.of(
             BinaryExpr.Operator.PLUS, BinaryExpr.Operator.MINUS, BinaryExpr.Operator.MULTIPLY, BinaryExpr.Operator.DIVIDE,
             BinaryExpr.Operator.REMAINDER, BinaryExpr.Operator.BINARY_AND, BinaryExpr.Operator.BINARY_OR,
@@ -96,8 +99,33 @@ public class ReferenceEqualityRule extends AbstractRule {
         return comparison.findAncestor(AssertStmt.class).isPresent()
                 || comparison.findAll(MethodCallExpr.class).stream().anyMatch(call -> INTERN.equals(call.getNameAsString()))
                 || isSameInstanceCheck(left, right) || isSameInstanceCheck(right, left)
-                || isFastPathBeforeEquals(comparison, left, right)
+                || isFastPathBeforeEquals(comparison, left, right) || isSameObjectShortcut(comparison)
                 || isSentinel(comparison, left) || isSentinel(comparison, right);
+    }
+
+    // return this.id == id ? this : new Category(id, name): та же ссылка - можно вернуть себя, иначе создается
+    // копия. Ошибиться здесь нельзя: на разные объекты с равным значением ответом будет просто лишняя копия
+    private boolean isSameObjectShortcut(BinaryExpr comparison) {
+        if (comparison.getOperator() != BinaryExpr.Operator.EQUALS) {
+            return false;
+        }
+        Node parent = comparison.getParentNode().orElse(null);
+        if (parent instanceof EnclosedExpr) {
+            parent = parent.getParentNode().orElse(null);
+        }
+        if (parent instanceof ConditionalExpr choice) {
+            return Nodes.unwrap(choice.getThenExpr()).isThisExpr();
+        }
+        return parent instanceof IfStmt branch && returned(branch.getThenStmt())
+                .filter(value -> Nodes.unwrap(value).isThisExpr())
+                .isPresent();
+    }
+
+    private Optional<Expression> returned(Statement statement) {
+        Statement single = statement instanceof BlockStmt block && block.getStatements().size() == 1
+                ? block.getStatement(0)
+                : statement;
+        return single instanceof ReturnStmt returnStatement ? returnStatement.getExpression() : Optional.empty();
     }
 
     // a == b || a.equals(b), if (s1 == s2) return true; ... s1.equals(s2): одна и та же ссылка - быстрый ответ,
@@ -107,29 +135,21 @@ public class ReferenceEqualityRule extends AbstractRule {
                 .filter(parent -> parent instanceof BinaryExpr either && either.getOperator() == BinaryExpr.Operator.OR)
                 .or(() -> comparison.getParentNode()
                         .filter(parent -> parent instanceof IfStmt branch && branch.getCondition() == comparison
-                                && returnsTrue(branch.getThenStmt()))
+                                && comparison.getOperator() == BinaryExpr.Operator.EQUALS
+                                && returned(branch.getThenStmt()).isPresent())
                         .flatMap(branch -> Nodes.enclosingCallable(comparison)));
         // Не Set.of: в 'supplier.get() == supplier.get()' тексты операндов совпадают, а он на повторе бросает исключение
         Set<String> operands = new HashSet<>(List.of(left.toString(), right.toString()));
+        // if (s1 == s2) return 0; ... return s1.compareTo(s2): содержимое сравнивает не только equals
         return scope.stream()
                 .flatMap(node -> node.findAll(MethodCallExpr.class).stream())
-                .filter(call -> EQUALS.equals(call.getNameAsString()))
+                .filter(call -> CONTENT_COMPARISON.matcher(call.getNameAsString()).matches())
                 .anyMatch(call -> call.getScope().map(Nodes::unwrap).map(Expression::toString)
                         .filter(operands::contains).isPresent()
                         && call.getArguments().stream().map(Nodes::unwrap).map(Expression::toString)
                         .anyMatch(operands::contains)
-                        || call.getScope().filter(owner -> OBJECTS.equals(owner.toString())).isPresent()
-                        && call.getArguments().stream().map(Nodes::unwrap).map(Expression::toString)
-                        .allMatch(operands::contains));
-    }
-
-    private boolean returnsTrue(Statement statement) {
-        Statement single = statement instanceof BlockStmt block && block.getStatements().size() == 1
-                ? block.getStatement(0)
-                : statement;
-        return single instanceof ReturnStmt returned && returned.getExpression()
-                .filter(value -> value.isBooleanLiteralExpr() && value.asBooleanLiteralExpr().getValue())
-                .isPresent();
+                        || operands.size() > 1 && call.getArguments().stream().map(Nodes::unwrap)
+                        .map(Expression::toString).collect(Collectors.toSet()).containsAll(operands));
     }
 
     // namespace == UNKNOWN_NAMESPACE, где сам класс кладет UNKNOWN_NAMESPACE как значение (namespaces.put(prefix,

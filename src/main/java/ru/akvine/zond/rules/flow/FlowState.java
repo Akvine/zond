@@ -25,6 +25,12 @@ public final class FlowState {
      * @param names переменные, от которых зависит условие: после их изменения связь теряет силу
      */
     public record Correlation(String variable, String condition, boolean truth, FlowValue value, Set<String> names) {
+        /**
+         * @return true, если это связь той же переменной с тем же условием, пусть и с другим описанием значения
+         */
+        public boolean isSameLink(Correlation other) {
+            return variable.equals(other.variable) && condition.equals(other.condition) && truth == other.truth;
+        }
     }
 
     /**
@@ -42,6 +48,12 @@ public final class FlowState {
      * @param whenNull true - связь действует, когда variable равна null (выражение истинно); false - наоборот
      */
     public record Implication(String variable, boolean whenNull, String target, FlowValue value) {
+        /**
+         * @return true, если это следствие для той же пары переменных и того же случая
+         */
+        public boolean isSameLink(Implication other) {
+            return variable.equals(other.variable) && whenNull == other.whenNull && target.equals(other.target);
+        }
     }
 
     // Связей между переменными одного метода много не бывает; предел - защита от разрастания
@@ -250,17 +262,103 @@ public final class FlowState {
             }
         });
         for (Correlation correlation : first.correlations) {
-            if (second.correlations.contains(correlation)) {
-                joined.correlations.add(correlation);
-            }
+            // Та же связь на обоих путях, пусть и найденная в разных местах кода, остается связью
+            second.correlations.stream()
+                    .filter(correlation::isSameLink)
+                    .findFirst()
+                    .ifPresent(other -> joined.keep(correlation.equals(other) ? correlation : new Correlation(
+                            correlation.variable(), correlation.condition(), correlation.truth(),
+                            correlation.value().join(other.value()), correlation.names())));
         }
         for (Implication implication : first.implications) {
-            if (second.implications.contains(implication)) {
-                joined.implications.add(implication);
+            // То же следствие на обоих путях остается следствием, даже если значение описано по-разному
+            second.implications.stream()
+                    .filter(implication::isSameLink)
+                    .findFirst()
+                    .ifPresent(other -> joined.implications.add(implication.equals(other) ? implication : new Implication(
+                            implication.variable(), implication.whenNull(), implication.target(),
+                            implication.value().join(other.value()))));
+        }
+        keepSettled(first, second, joined);
+        keepSettled(second, first, joined);
+        relate(first, second, joined);
+        relateFlags(first, second, joined);
+        relateFlags(second, first, joined);
+        return joined;
+    }
+
+    // На одном пути флаг равен false и переменная null, на другом переменная получила значение. Значит, там,
+    // где флаг истинен, пришли вторым путем и переменная не null: inLiteral = true; buffer = new StringBuilder()
+    // в одной ветке switch и нетронутые false и null в остальных
+    private static void relateFlags(FlowState unset, FlowState set, FlowState joined) {
+        for (Map.Entry<String, FlowValue> entry : unset.values.entrySet()) {
+            String flag = entry.getKey();
+            FlowValue here = entry.getValue();
+            FlowValue there = set.values.get(flag);
+            boolean isFlag = (here.isConstant(0) || here.isConstant(1)) && there != null && there.numeric()
+                    && there.min() >= 0 && there.max() <= 1 && !there.isConstant(here.min());
+            if (!isFlag) {
+                continue;
+            }
+            for (Map.Entry<String, FlowValue> other : unset.values.entrySet()) {
+                FlowValue assigned = set.values.get(other.getKey());
+                if (other.getValue().isNull() && assigned != null && !assigned.isNullish() && !assigned.numeric()) {
+                    joined.keep(new Correlation(other.getKey(), flag, here.isConstant(0), assigned, Set.of(flag)));
+                }
             }
         }
-        relate(first, second, joined);
-        return joined;
+    }
+
+    // Связь известна только на одном пути, но другому она не противоречит: там переменная и так не null
+    // либо условие связи заведомо не выполняется. Без этого связь, найденная в теле цикла, пропадала бы при
+    // слиянии с состоянием перед циклом: head = null; tail = null; while (...) { if (head == null) head = node;
+    // else tail.next = node; tail = node; } - во второй итерации tail уже не null, раз не null head
+    private static void keepSettled(FlowState source, FlowState other, FlowState joined) {
+        for (Correlation correlation : source.correlations) {
+            FlowValue there = other.values.get(correlation.variable());
+            if (there == null || other.correlations.stream().anyMatch(correlation::isSameLink)) {
+                continue;
+            }
+            if (!there.isNullish()) {
+                joined.keep(new Correlation(correlation.variable(), correlation.condition(),
+                        correlation.truth(), correlation.value().join(there), correlation.names()));
+            } else if (isFlagOpposite(correlation, other)) {
+                joined.keep(correlation);
+            }
+        }
+        for (Implication implication : source.implications) {
+            FlowValue target = other.values.get(implication.target());
+            if (target == null || other.implications.stream().anyMatch(implication::isSameLink)
+                    || joined.implications.size() >= MAX_IMPLICATIONS) {
+                continue;
+            }
+            Boolean subject = implication.variable().startsWith(FACT)
+                    ? definiteTruth(other.fact(implication.variable().substring(FACT.length())))
+                    : definiteSubject(other.values.get(implication.variable()));
+            Boolean expected = definiteNull(implication.value());
+            if (subject != null && subject != implication.whenNull()) {
+                joined.imply(implication);
+            } else if (expected != null && expected.equals(definiteNull(target))) {
+                joined.imply(new Implication(implication.variable(), implication.whenNull(), implication.target(),
+                        implication.value().join(target)));
+            }
+        }
+    }
+
+    private void keep(Correlation correlation) {
+        correlations.removeIf(correlation::isSameLink);
+        correlations.add(correlation);
+    }
+
+    // Условие связи - флаг, и на этом пути он имеет обратное значение: связь здесь ни к чему не обязывает
+    private static boolean isFlagOpposite(Correlation correlation, FlowState state) {
+        FlowValue flag = state.values.get(correlation.condition());
+        return flag != null && (flag.isConstant(0) || flag.isConstant(1))
+                && flag.isConstant(1) != correlation.truth();
+    }
+
+    private static Boolean definiteSubject(FlowValue value) {
+        return value == null ? null : definiteNull(value);
     }
 
     // Два пути сошлись, и на одном переменная точно null, а на другом точно нет. Значит, проверив ее ниже,
@@ -347,9 +445,14 @@ public final class FlowState {
     }
 
     private void imply(Implication implication) {
-        // Прежнее следствие для той же пары и того же случая заменяется новым
-        implications.removeIf(known -> known.variable().equals(implication.variable())
-                && known.whenNull() == implication.whenNull() && known.target().equals(implication.target()));
+        // Прежнее следствие для той же пары и того же случая заменяется новым. Но точное следствие (значение
+        // null либо не null), верное на обоих путях, не уступает догадке "может быть null", собранной из их слияния
+        boolean isWeaker = !isDefinite(implication.value()) && implications.stream()
+                .anyMatch(known -> known.isSameLink(implication) && isDefinite(known.value()));
+        if (isWeaker) {
+            return;
+        }
+        implications.removeIf(implication::isSameLink);
         implications.add(implication);
     }
 }

@@ -1,10 +1,16 @@
 package ru.akvine.zond.rules.concurrency;
 
+import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.InitializerDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.stmt.SynchronizedStmt;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -39,10 +45,19 @@ public class SynchronizedOnBadLockRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         for (SynchronizedStmt block : sourceFile.unit().findAll(SynchronizedStmt.class)) {
-            describeProblem(Nodes.unwrap(block.getExpression())).ifPresent(problem -> violations.add(violation(
-                    sourceFile, block,
-                    "synchronized (" + block.getExpression() + "): " + problem
-                            + "; используйте отдельное поле private final Object lock = new Object()")));
+            Expression lock = Nodes.unwrap(block.getExpression());
+            Optional<String> problem = describeProblem(lock);
+            if (problem.isPresent()) {
+                violations.add(violation(sourceFile, block, "synchronized (" + block.getExpression() + "): "
+                        + problem.get() + "; используйте отдельное поле private final Object lock = new Object()"));
+            } else if (mutableField(lock).isPresent()) {
+                // Закрытое поле, которому после создания объекта ничего не присваивают: замок один на всех.
+                // Не хватает только слова final, которое не даст заменить поле позже
+                violations.add(violation(sourceFile, block, "synchronized (" + block.getExpression()
+                        + "): поле не объявлено final. Сейчас его нигде не заменяют, и замок один на все потоки,"
+                        + " поэтому это подозрение; объявите поле final, чтобы так и осталось")
+                        .withConfidence(Confidence.SUSPICION));
+            }
         }
         return violations;
     }
@@ -69,13 +84,37 @@ public class SynchronizedOnBadLockRule extends AbstractRule {
         }
 
         // Поле можно переприсвоить - тогда потоки синхронизируются по разным объектам
-        boolean isMutableField = LocalTypes.findDeclaration(lock)
+        return mutableField(lock)
+                .filter(field -> !isNeverReplaced(field, lock))
+                .map(field -> "поле не final, после его замены потоки будут синхронизироваться по разным объектам");
+    }
+
+    private Optional<FieldDeclaration> mutableField(Expression lock) {
+        return LocalTypes.findDeclaration(lock)
                 .filter(declaration -> declaration instanceof VariableDeclarator)
-                .flatMap(declaration -> declaration.getParentNode())
+                .flatMap(Node::getParentNode)
                 .filter(parent -> parent instanceof FieldDeclaration field && !field.isFinal())
-                .isPresent();
-        return isMutableField
-                ? Optional.of("поле не final, после его замены потоки будут синхронизироваться по разным объектам")
-                : Optional.empty();
+                .map(parent -> (FieldDeclaration) parent);
+    }
+
+    // Закрытое поле с присваиваниями только в конструкторе и блоке инициализации своего класса
+    private boolean isNeverReplaced(FieldDeclaration field, Expression lock) {
+        String name = lock.isFieldAccessExpr() ? lock.asFieldAccessExpr().getNameAsString() : lock.toString();
+        Optional<CompilationUnit> unit = field.findCompilationUnit();
+        if (!field.isPrivate() || unit.isEmpty()) {
+            return false;
+        }
+        return unit.get().findAll(AssignExpr.class).stream()
+                .filter(assignment -> isTarget(Nodes.unwrap(assignment.getTarget()), name))
+                .allMatch(assignment -> Nodes.enclosingCallable(assignment)
+                        .filter(callable -> callable instanceof ConstructorDeclaration
+                                || callable instanceof InitializerDeclaration)
+                        .filter(callable -> !Nodes.isInNestedScope(assignment, callable))
+                        .isPresent());
+    }
+
+    private boolean isTarget(Expression target, String name) {
+        return target.isNameExpr() && target.asNameExpr().getNameAsString().equals(name)
+                || target.isFieldAccessExpr() && target.asFieldAccessExpr().getNameAsString().equals(name);
     }
 }

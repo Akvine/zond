@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules.performance;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -70,7 +71,8 @@ public class ListContainsInLoopRule extends AbstractRule {
                     && Loops.isDeclaredOutside(iteration.get(), declaration.get());
             // О проверке на повтор перед добавлением сообщает ContainsBeforeAddRule: там совет точнее -
             // проверять результат Set.add
-            if (isOuterList && CheckThenAdd.addAfter(call).isEmpty() && !isSmallLiteralList(declaration.get())) {
+            if (isOuterList && CheckThenAdd.addAfter(call).isEmpty() && !isSmallLiteralList(declaration.get())
+                    && !isBuiltFromVarargs(declaration.get())) {
                 violations.add(violation(sourceFile, call,
                         "'" + call + "' в цикле: поиск по списку линейный, вместе с циклом выходит O(N²);"
                                 + " сложите элементы в HashSet перед циклом"));
@@ -113,6 +115,26 @@ public class ListContainsInLoopRule extends AbstractRule {
                 && initializer.asMethodCallExpr().getArguments().size() <= SMALL_LIST
                 && initializer.asMethodCallExpr().getArguments().stream().allMatch(argument -> argument.isLiteralExpr()
                 || argument.isFieldAccessExpr() || argument.isNameExpr());
+    }
+
+    // void copy(Object bean, String... ignored) { List<String> skip = new ArrayList<>(Arrays.asList(ignored)); ... }:
+    // элементы перечисляют прямо в вызове метода, их единицы
+    private boolean isBuiltFromVarargs(Node declaration) {
+        if (!(declaration instanceof VariableDeclarator variable) || variable.getInitializer().isEmpty()) {
+            return false;
+        }
+        Expression initializer = Nodes.unwrap(variable.getInitializer().get());
+        if (initializer.isObjectCreationExpr() && initializer.asObjectCreationExpr().getArguments().size() == 1) {
+            initializer = Nodes.unwrap(initializer.asObjectCreationExpr().getArgument(0));
+        }
+        if (!initializer.isMethodCallExpr() || initializer.asMethodCallExpr().getArguments().size() != 1
+                || !LITERAL_FACTORIES.contains(initializer.asMethodCallExpr().getNameAsString())) {
+            return false;
+        }
+        Expression source = Nodes.unwrap(initializer.asMethodCallExpr().getArgument(0));
+        return source.isNameExpr() && LocalTypes.findDeclaration(source)
+                .filter(found -> found instanceof Parameter parameter && parameter.isVarArgs())
+                .isPresent();
     }
 
     @Override

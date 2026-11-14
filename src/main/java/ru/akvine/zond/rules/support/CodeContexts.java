@@ -57,6 +57,8 @@ import java.util.stream.Stream;
 @UtilityClass
 public class CodeContexts {
     // Методы, которые контейнер вызывает один раз, пока приложение запускается
+    // lock.unlock(), stampedLock.unlockWrite(stamp), stampedLock.unlockRead(stamp)
+    private static final Pattern UNLOCK = Pattern.compile("unlock(Write|Read)?");
     private static final Set<String> STARTUP_ANNOTATIONS = Set.of("PostConstruct", "Bean", "Autowired", "Inject");
     private static final String EVENT_LISTENER = "EventListener";
     // Аннотации методов из библиотек: свое объявление в исходниках проекта бывает только у аннотаций проекта
@@ -269,6 +271,30 @@ public class CodeContexts {
             current = current.getParentNode().orElse(null);
         }
         return false;
+    }
+
+    /**
+     * @return true, если узел стоит в блоке try, в finally которого замок отпускают: lock.unlock(),
+     * lock.unlockWrite(stamp). Такой код выполняется под явным замком из java.util.concurrent.locks - это та же
+     * защита, что и synchronized
+     */
+    public boolean isUnderExplicitLock(Node node) {
+        Node child = node;
+        Node current = node.getParentNode().orElse(null);
+        while (current != null && !(current instanceof BodyDeclaration<?>)) {
+            if (current instanceof TryStmt tryStatement && tryStatement.getTryBlock() == child
+                    && tryStatement.getFinallyBlock().filter(CodeContexts::releasesLock).isPresent()) {
+                return true;
+            }
+            child = current;
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
+    }
+
+    private boolean releasesLock(BlockStmt finallyBlock) {
+        return finallyBlock.findAll(MethodCallExpr.class).stream()
+                .anyMatch(call -> UNLOCK.matcher(call.getNameAsString()).matches());
     }
 
     private boolean catchesAny(TryStmt tryStatement, Set<String> exceptions) {

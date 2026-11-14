@@ -5,6 +5,7 @@ import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.RuleParameter;
@@ -15,6 +16,7 @@ import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.CallChains;
 import ru.akvine.zond.rules.support.CallGraph;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.Repositories;
 import ru.akvine.zond.rules.support.SpringBeans;
 import ru.akvine.zond.rules.support.TestClasses;
@@ -63,10 +65,15 @@ public class MultipleWritesWithoutTransactionRule extends AbstractRule implement
                 for (MethodDeclaration method : type.getMethods()) {
                     Set<String> writes = isCandidate(method, graph) ? findWrites(method, graph) : Set.of();
                     if (writes.size() >= MIN_WRITES) {
-                        violations.add(violation(sourceFile, method,
-                                "Метод '" + method.getNameAsString() + "' делает несколько записей в БД без общей"
-                                        + " транзакции (" + String.join(", ", writes) + "): если вторая не удастся,"
-                                        + " первая останется; объедините их одним @Transactional"));
+                        String text = "Метод '" + method.getNameAsString() + "' делает несколько записей в БД без общей"
+                                + " транзакции (" + String.join(", ", writes) + "): если вторая не удастся,"
+                                + " первая останется; объедините их одним @Transactional";
+                        // CommandLineRunner.run, @PostConstruct, @EventListener(ApplicationReadyEvent.class): начальные
+                        // данные заливают один раз при запуске, и сбой виден сразу - приложение не поднимется
+                        violations.add(CodeContexts.isStartupMethod(method)
+                                ? violation(sourceFile, method, text + ". Метод выполняется один раз при запуске"
+                                + " приложения, поэтому это подозрение").withConfidence(Confidence.SUSPICION)
+                                : violation(sourceFile, method, text));
                     }
                 }
             }

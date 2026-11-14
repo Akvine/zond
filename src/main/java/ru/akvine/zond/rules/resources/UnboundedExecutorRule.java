@@ -1,13 +1,17 @@
 package ru.akvine.zond.rules.resources;
 
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.nodeTypes.NodeWithArguments;
+import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.TryStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -16,6 +20,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
 
@@ -125,7 +130,47 @@ public class UnboundedExecutorRule extends AbstractRule {
     }
 
     private boolean isQueueGrowing(MethodCallExpr creation, String factory) {
-        return !(SCHEDULED_FACTORIES.contains(factory) && isOnlyPeriodic(creation)) && !isBatchPool(creation);
+        return !(SCHEDULED_FACTORIES.contains(factory) && isOnlyPeriodic(creation)) && !isBatchPool(creation)
+                && !isFedOnlyAtStartup(creation);
+    }
+
+    /**
+     * watcher = Executors.newSingleThreadExecutor(); @PostConstruct void init() { watcher.submit(this::watchFiles); }
+     * Пулу отдают работу только при запуске: это выделенный поток под вечный цикл, и очередь у него не растет
+     */
+    private boolean isFedOnlyAtStartup(MethodCallExpr creation) {
+        Optional<String> name = creation.getParentNode()
+                .flatMap(parent -> parent instanceof VariableDeclarator variable
+                        ? Optional.of(variable.getNameAsString())
+                        : parent instanceof AssignExpr assign ? Optional.of(MethodCalls.receiverName(assign.getTarget()))
+                        : Optional.empty());
+        Optional<CompilationUnit> unit = creation.findCompilationUnit();
+        if (name.isEmpty() || unit.isEmpty()) {
+            return false;
+        }
+        List<MethodCallExpr> tasks = unit.get().findAll(MethodCallExpr.class).stream()
+                .filter(call -> ONE_SHOT.contains(call.getNameAsString()) || PERIODIC.contains(call.getNameAsString()))
+                .filter(call -> call.getScope().filter(scope -> MethodCalls.receiverName(scope).equals(name.get())).isPresent())
+                .toList();
+        // Пул, который отдают другим объектам (return executor, new Worker(executor)), наполняют уже не здесь
+        boolean isHandedOver = unit.get().findAll(NameExpr.class).stream()
+                .filter(usage -> usage.getNameAsString().equals(name.get()))
+                .anyMatch(usage -> usage.getParentNode()
+                        .filter(parent -> parent instanceof ReturnStmt
+                                || parent instanceof NodeWithArguments<?> call && call.getArguments().contains(usage))
+                        .isPresent());
+        return !tasks.isEmpty() && !isHandedOver && tasks.stream().allMatch(this::isInStartupEntry);
+    }
+
+    // Прямо в конструкторе либо в методе, который вызывает контейнер (@PostConstruct, afterPropertiesSet), а не
+    // в закрытом методе по цепочке от него: тот может оказаться вечным циклом, который ставит задачи все время
+    private boolean isInStartupEntry(MethodCallExpr task) {
+        Optional<Node> callable = Nodes.enclosingCallable(task);
+        if (callable.isEmpty() || Nodes.isInNestedScope(task, callable.get()) || !CodeContexts.isStartup(task)) {
+            return false;
+        }
+        return !(callable.get() instanceof MethodDeclaration method)
+                || !method.isPrivate() || !method.getAnnotations().isEmpty();
     }
 
     /**

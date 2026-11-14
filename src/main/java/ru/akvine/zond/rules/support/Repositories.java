@@ -25,6 +25,10 @@ public class Repositories {
     // Имя объекта либо типа: userRepository, orderDao, JpaRepository
     private final static Pattern REPOSITORY = Pattern.compile(".*(repository|repo|dao)$", Pattern.CASE_INSENSITIVE);
 
+    private final static Pattern REPOSITORY_ACTION = Pattern.compile(
+            "(clone|create|open|init|build|delete|remove|add|register|update|fork|sync|scan|import|export|configure)"
+                    + "\\w*(Repository|Repo)");
+
     // USER_REPOSITORY - константа, а не внедренный бин
     private final static Pattern CONSTANT_NAME = Pattern.compile("^[A-Z][A-Z0-9_]*$");
     private final static String PACKAGE_SEPARATOR = ".";
@@ -96,7 +100,16 @@ public class Repositories {
                         && !isDeclaredAsOtherType(scope)
                         && (!Nodes.unwrap(scope).isMethodCallExpr() || isPersistenceFile(scope)));
         // Дорогие проверки - только для того, что уже похоже на репозиторий
-        return looksLikeRepository && !isTypeReference(scope) && !isOwnNonStorageType(scope);
+        return looksLikeRepository && !isRepositoryAction(scope) && !isTypeReference(scope)
+                && !isOwnNonStorageType(scope);
+    }
+
+    // Git.cloneRepository().setURI(url), github.createRepository(name).setPrivate(true): метод не отдает бин
+    // с запросами к БД, а делает что-то с хранилищем кода или артефактов
+    private boolean isRepositoryAction(Expression scope) {
+        Expression unwrapped = Nodes.unwrap(scope);
+        return unwrapped.isMethodCallExpr()
+                && REPOSITORY_ACTION.matcher(unwrapped.asMethodCallExpr().getNameAsString()).matches();
     }
 
     // Repository.assertSnapshotMetaThread(): статический метод типа, а не обращение к бину

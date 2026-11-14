@@ -2,6 +2,7 @@ package ru.akvine.zond.rules.concurrency;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.BodyDeclaration;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
@@ -12,7 +13,9 @@ import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.expr.ThisExpr;
+import com.github.javaparser.ast.nodeTypes.NodeWithArguments;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -44,6 +47,10 @@ public class ThisEscapeInConstructorRule extends AbstractRule {
             "verifyNotNull", "requireNonNull", "format", "valueOf", "append", "trace", "debug", "info", "warn", "error",
             "println", "print", "printf");
     private static final int SNIPPET_LENGTH = 80;
+    // Объект, созданный с this, начнет работать в другом потоке
+    private static final Set<String> THREAD_TYPES = Set.of("Thread", "Timer");
+    private static final String BUILD = "build";
+    private static final Set<String> CONSTRUCT_TYPES = Set.of("Construct", "Stack", "NestedStack", "Stage", "Chart");
 
     @Override
     public String code() {
@@ -68,13 +75,19 @@ public class ThisEscapeInConstructorRule extends AbstractRule {
                     continue;
                 }
 
-                findEscape(thisExpr, constructor)
-                        .filter(reported::add)
-                        .ifPresent(escape -> violations.add(violation(sourceFile, escape,
-                                "Утечка this из конструктора '" + constructor.getNameAsString() + "' в '"
-                                        + snippet(escape) + "': объект уходит наружу до завершения конструктора,"
-                                        + " другой поток может увидеть его недостроенным; публикуйте объект"
-                                        + " после создания, например через фабричный метод")));
+                Optional<Node> escape = findEscape(thisExpr, constructor).filter(reported::add);
+                if (escape.isEmpty() || isScopeOfConstructTree(escape.get(), constructor)) {
+                    continue;
+                }
+                String text = "Утечка this из конструктора '" + constructor.getNameAsString() + "' в '"
+                        + snippet(escape.get()) + "': объект уходит наружу до завершения конструктора,"
+                        + " другой поток может увидеть его недостроенным; публикуйте объект"
+                        + " после создания, например через фабричный метод";
+                violations.add(staysInside(escape.get(), constructor)
+                        ? violation(sourceFile, escape.get(), text + ". Здесь ссылку получает объект-помощник, который"
+                        + " остается в самом объекте, либо свой же метод: наружу она уйдет, только если тот сам ее"
+                        + " опубликует, поэтому это подозрение").withConfidence(Confidence.SUSPICION)
+                        : violation(sourceFile, escape.get(), text));
             }
         }
         return violations;
@@ -118,6 +131,66 @@ public class ThisEscapeInConstructorRule extends AbstractRule {
         return findEnclosingLambda(thisExpr, constructor)
                 .filter(lambda -> isPassedOutside(lambda, lambda.getParentNode().orElse(null)))
                 .map(lambda -> lambda);
+    }
+
+    /**
+     * Ссылка остается внутри объекта: ее получает помощник, которого кладут в свое поле или в локальную переменную
+     * (changes = new PropertyChangeSupport(this)), свой же метод (setMatcher(this::matches)) либо строитель,
+     * результат которого кладут в свое поле (routes = route().GET(PATH, this::get).build())
+     */
+    private boolean staysInside(Node escape, ConstructorDeclaration constructor) {
+        Node holder = escape.getParentNode().orElse(null);
+        if (holder instanceof ObjectCreationExpr creation) {
+            return !THREAD_TYPES.contains(creation.getType().getNameAsString()) && isKept(creation);
+        }
+        if (!(holder instanceof MethodCallExpr call)) {
+            return false;
+        }
+        boolean isOwnCall = call.getScope().map(scope -> scope.isThisExpr() || scope.isSuperExpr()).orElse(true);
+        if (isOwnCall) {
+            return isOwnMethod(call, constructor);
+        }
+        MethodCallExpr outermost = call;
+        while (outermost.getParentNode().orElse(null) instanceof MethodCallExpr outer
+                && outer.getScope().orElse(null) == outermost) {
+            outermost = outer;
+        }
+        return outermost != call && BUILD.equals(outermost.getNameAsString()) && isKept(outermost);
+    }
+
+    // Результат выражения кладут в свое поле либо в локальную переменную
+    private boolean isKept(Expression created) {
+        Node target = created.getParentNode().orElse(null);
+        return target instanceof VariableDeclarator
+                || target instanceof AssignExpr assign && assign.getValue() == created && isOwnState(assign.getTarget(), true);
+    }
+
+    // Метод объявлен в самом классе либо достался от предка; имя из статического импорта - чужой метод
+    private boolean isOwnMethod(MethodCallExpr call, ConstructorDeclaration constructor) {
+        String name = call.getNameAsString();
+        Optional<ClassOrInterfaceDeclaration> type = constructor.findAncestor(ClassOrInterfaceDeclaration.class);
+        if (type.isEmpty()) {
+            return false;
+        }
+        boolean isDeclared = type.get().getMethodsByName(name).stream().anyMatch(method -> !method.isStatic());
+        boolean isImported = constructor.findCompilationUnit().stream()
+                .flatMap(unit -> unit.getImports().stream())
+                .anyMatch(imported -> imported.isStatic()
+                        && (imported.isAsterisk() || imported.getNameAsString().endsWith("." + name)));
+        return isDeclared || !type.get().getExtendedTypes().isEmpty() && !isImported;
+    }
+
+    // class Storage extends Construct { Storage(Construct scope, String id) { super(scope, id); new Bucket(this, "files"); } }:
+    // в AWS CDK и cdk8s дерево ресурсов так и строят - в одном потоке, передавая родителя первым аргументом
+    private boolean isScopeOfConstructTree(Node escape, ConstructorDeclaration constructor) {
+        boolean isConstruct = constructor.findAncestor(ClassOrInterfaceDeclaration.class)
+                .filter(type -> type.getExtendedTypes().stream()
+                        .anyMatch(parent -> CONSTRUCT_TYPES.contains(parent.getNameAsString())))
+                .isPresent();
+        return isConstruct && escape.getParentNode()
+                .filter(holder -> holder instanceof NodeWithArguments<?> call && !call.getArguments().isEmpty()
+                        && call.getArgument(0) == escape)
+                .isPresent();
     }
 
     private boolean isPassedOutside(Expression value, Node parent) {

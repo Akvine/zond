@@ -18,6 +18,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.SpringBeans;
@@ -133,7 +134,10 @@ public class UnsynchronizedLazyInitRule extends AbstractRule {
                 return true;
             }
             if (current instanceof MethodDeclaration method) {
-                return method.isSynchronized() || Annotations.has(method, POST_CONSTRUCT);
+                // Метод запуска (onApplicationEvent(ApplicationStartedEvent), afterPropertiesSet) выполняется один
+                // раз, пока объект еще никто не делит; явный замок защищает так же, как synchronized
+                return method.isSynchronized() || Annotations.has(method, POST_CONSTRUCT)
+                        || CodeContexts.isStartupMethod(method) || CodeContexts.isUnderExplicitLock(ifStmt);
             }
             current = current.getParentNode().orElse(null);
         }

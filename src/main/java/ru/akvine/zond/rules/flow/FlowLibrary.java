@@ -31,6 +31,8 @@ public final class FlowLibrary {
     private static final String TRUE_FOR_NULL = "true-for-null";
     private static final String FALSE_FOR_NULL = "false-for-null";
     private static final String NEVER_RETURNS = "never-returns";
+    private static final String ALWAYS_THROWS = "always-throws";
+    private static final String ASSERTION_PREFIXES = "assertion-prefixes";
     private static final String ADDS = "adds-element";
     private static final String QUERY_PREFIXES = "query-prefixes";
     private static final String COLLECTIONS = "collections";
@@ -98,6 +100,22 @@ public final class FlowLibrary {
      */
     public static boolean neverReturns(String method) {
         return has(NEVER_RETURNS, method);
+    }
+
+    /**
+     * @return true, если метод объекта всегда бросает исключение, у какого бы объекта его ни вызвали:
+     * ctxt.reportBadDefinition(...), context.reportInputMismatch(...) в Jackson
+     */
+    public static boolean alwaysThrows(String method) {
+        return has(ALWAYS_THROWS, method);
+    }
+
+    /**
+     * @return true, если имя похоже на проверку, которая бросает исключение, когда условие в аргументе ложно:
+     * checkArguments(dto != null, "..."), requireResponse(...), ensureOpen(...). Определяется по началу имени
+     */
+    public static boolean looksLikeAssertion(String method) {
+        return ENTRIES.getOrDefault(ASSERTION_PREFIXES, Set.of()).stream().anyMatch(method::startsWith);
     }
 
     /**

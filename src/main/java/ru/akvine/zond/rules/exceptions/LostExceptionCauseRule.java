@@ -33,8 +33,13 @@ public class LostExceptionCauseRule extends AbstractRule {
             "NumberFormatException", "DateTimeParseException", "ParseException", "InputMismatchException",
             // Невозможная ситуация: класс клонируемый, кодировка UTF-8 есть всегда
             "CloneNotSupportedException", "UnsupportedEncodingException",
-            // В стеке таймаута только место ожидания - его видно и по стеку нового исключения
-            "TimeoutException");
+            // В стеке таймаута и прерывания только место ожидания - его видно и по стеку нового исключения
+            "TimeoutException", "InterruptedException",
+            // Неверная строка: адрес, шаблон. Причина - сама строка, ее называет новое исключение
+            "MalformedURLException", "URISyntaxException", "PatternSyntaxException",
+            // Поиск по имени ничего не нашел: в стеке одна строка самого поиска
+            "NoSuchMethodException", "NoSuchFieldException", "ClassNotFoundException", "NoSuchAlgorithmException",
+            "NoSuchElementException");
     // У нового исключения нет конструктора с причиной: ParseException и NumberFormatException сообщают о неверном
     // вводе (throw new ParseException("A numeric value between 1 and 5 must follow the '#' option", i)),
     // InterruptedException передает прерывание дальше

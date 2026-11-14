@@ -16,6 +16,7 @@ import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import com.github.javaparser.ast.stmt.DoStmt;
 import com.github.javaparser.ast.stmt.ForStmt;
 import com.github.javaparser.ast.stmt.IfStmt;
+import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.SynchronizedStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import org.springframework.stereotype.Component;
@@ -32,6 +33,8 @@ import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Lifecycle;
 import ru.akvine.zond.rules.support.Lombok;
+import ru.akvine.zond.rules.support.Nodes;
+import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -60,6 +63,8 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
     private static final String PRE_DESTROY = "PreDestroy";
     private static final Pattern STOP_METHOD = Pattern.compile("(close|stop|shutdown|destroy|dispose|terminate).*");
     private static final String SETTER = "set";
+    // @VisibleForTesting сюда не относится: так помечают и рабочие методы, которым лишь расширили видимость
+    private static final Set<String> TEST_ONLY_ANNOTATIONS = Set.of("TestOnly");
 
     @Override
     public String name() {
@@ -106,7 +111,7 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
 
                 for (VariableDeclarator variable : field.getVariables()) {
                     boolean loopFlag = isLoopFlag(type, variable.getNameAsString());
-                    Set<String> writers = findWriters(type, variable.getNameAsString(), loopFlag, lifecycle);
+                    Set<String> writers = findWriters(type, variable.getNameAsString(), loopFlag, lifecycle, setterCalls);
                     // Сеттера в коде нет, но Lombok его создаст - и поле сможет поменять любой, у кого есть бин.
                     // Если его вызывают только при запуске (из @PostConstruct другого бина) либо не вызывают
                     // вовсе, поле во время работы не меняется
@@ -178,7 +183,14 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
                         .orElseGet(() -> call.findAncestor(ClassOrInterfaceDeclaration.class)
                                 .filter(owner -> owner == type)
                                 .isPresent()))
+                .filter(call -> !TestClasses.isInside(call) && !isInTestOnlyMethod(call))
                 .anyMatch(call -> !lifecycle.isAtStartupOrShutdown(call));
+    }
+
+    private boolean isInTestOnlyMethod(Node node) {
+        return node.findAncestor(MethodDeclaration.class)
+                .filter(method -> Annotations.hasAny(method, TEST_ONLY_ANNOTATIONS))
+                .isPresent();
     }
 
     private boolean isStopMethod(MethodDeclaration method) {
@@ -212,8 +224,29 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
         return SETTER + Character.toUpperCase(fieldName.charAt(0)) + fieldName.substring(1);
     }
 
+    // Тело из одного присваивания полю значения параметра; проверка аргумента перед ним (Assert.notNull) не мешает
+    private boolean isPlainSetter(MethodDeclaration method, String fieldName) {
+        if (!method.getNameAsString().equals(setterName(fieldName)) || method.getParameters().size() != 1
+                || method.getBody().isEmpty()) {
+            return false;
+        }
+        String parameter = method.getParameter(0).getNameAsString();
+        List<Statement> statements = method.getBody().get().getStatements();
+        if (statements.isEmpty()) {
+            return false;
+        }
+        boolean checksOnly = statements.subList(0, statements.size() - 1).stream()
+                .allMatch(statement -> statement.isExpressionStmt()
+                        && statement.asExpressionStmt().getExpression().isMethodCallExpr());
+        Statement last = statements.get(statements.size() - 1);
+        return checksOnly && last.isExpressionStmt()
+                && last.asExpressionStmt().getExpression() instanceof AssignExpr assignment
+                && assignment.getOperator() == AssignExpr.Operator.ASSIGN
+                && Nodes.unwrap(assignment.getValue()).toString().equals(parameter);
+    }
+
     private Set<String> findWriters(ClassOrInterfaceDeclaration type, String fieldName, boolean loopFlag,
-                                    Lifecycle lifecycle) {
+                                    Lifecycle lifecycle, Map<String, List<MethodCallExpr>> setterCalls) {
         Set<String> writers = new LinkedHashSet<>();
         for (MethodDeclaration method : type.getMethods()) {
             // Методы запуска (@EventListener(ApplicationReadyEvent.class), CommandLineRunner.run, setApplicationContext)
@@ -223,11 +256,22 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
                 continue;
             }
 
+            // Метод только для тестов: в рабочем приложении его никто не вызывает
+            if (Annotations.hasAny(method, TEST_ONLY_ANNOTATIONS)) {
+                continue;
+            }
             boolean shadowed = isShadowed(method, fieldName);
             boolean writes = writeTargets(method)
                     .filter(target -> !isInsideSynchronizedBlock(target, method))
+                    .filter(target -> !CodeContexts.isUnderExplicitLock(target))
                     .filter(target -> !isLazyInitialization(target, fieldName))
                     .anyMatch(target -> isField(target, fieldName, shadowed));
+            // void setClock(Clock clock) { this.clock = clock; } - простой сеттер зависимости или настройки. Как и
+            // сеттер от Lombok, он опасен, только если его вызывают во время работы, а не в тестах и не при запуске
+            if (writes && isPlainSetter(method, fieldName)
+                    && !isCalledAtRuntime(type, method.getNameAsString(), setterCalls, lifecycle)) {
+                continue;
+            }
             // Запись при запуске и остановке не страшна. Кроме флага цикла: его сбрасывают как раз при остановке,
             // пока цикл еще крутится в другом потоке
             boolean skipped = writes && lifecycle.isLifecycleOnly(method)

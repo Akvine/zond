@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules.concurrency;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
@@ -60,7 +61,8 @@ public class WaitWithoutTimeoutRule extends AbstractRule {
                                 + " используйте await(timeout, unit) и обработайте истечение времени"));
             }
 
-            if (FUTURE_WAIT_METHODS.contains(method) && isFuture(scope, type) && !isCheckedForCompletion(scope, call)) {
+            if (FUTURE_WAIT_METHODS.contains(method) && isFuture(scope, type) && !isCheckedForCompletion(scope, call)
+                    && !isDelegation(scope, call)) {
                 violations.add(violation(sourceFile, call,
                         "'" + call + "' без таймаута: если задача зависнет, поток будет ждать вечно;"
                                 + " используйте get(timeout, unit) или orTimeout(...)"));
@@ -84,6 +86,17 @@ public class WaitWithoutTimeoutRule extends AbstractRule {
             return FUTURE_SOURCES.contains(scope.asMethodCallExpr().getNameAsString());
         }
         return type.filter(FUTURE_TYPES::contains).isPresent();
+    }
+
+    // public V get() { return future.get(); } у обертки над Future, static <T> T join(CompletableFuture<T> future)
+    // { return future.join(); }: метод сам и есть ожидание без предела, предел задает тот, кто его вызывает
+    private boolean isDelegation(Expression scope, MethodCallExpr call) {
+        return Nodes.enclosingCallable(call)
+                .filter(callable -> callable instanceof MethodDeclaration method
+                        && method.getNameAsString().equals(call.getNameAsString())
+                        && (method.getParameters().isEmpty() || method.getParameters().stream()
+                        .anyMatch(parameter -> parameter.getNameAsString().equals(scope.toString()))))
+                .isPresent();
     }
 
     // if (future.isDone()) future.get() - результат уже готов, ожидания не будет

@@ -32,6 +32,7 @@ import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.expr.NullLiteralExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.ast.expr.StringLiteralExpr;
 import com.github.javaparser.ast.expr.SwitchExpr;
 import com.github.javaparser.ast.expr.TypePatternExpr;
 import com.github.javaparser.ast.expr.UnaryExpr;
@@ -59,6 +60,7 @@ import com.github.javaparser.ast.stmt.WhileStmt;
 import com.github.javaparser.ast.stmt.YieldStmt;
 import com.github.javaparser.ast.type.Type;
 import ru.akvine.zond.enums.Confidence;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
@@ -109,9 +111,28 @@ public final class FlowInterpreter {
             Pattern.compile("(List|Set|Map|Queue|Deque|Collection|\\[])$");
     private static final Set<String> INDEX_CONSUMERS = Set.of("charAt", "substring");
     private static final List<String> SEARCH_GUARDS = List.of(".contains(", ".startsWith(", ".endsWith(", ".matches(");
+    private static final Set<String> SEARCH_CHECKS = Set.of("contains", "startsWith", "endsWith", "matches");
+    // pos == INDEX_NOT_FOUND, idx != NOT_FOUND: константа, с которой сверяют результат поиска, равна -1
+    private static final Pattern NOT_FOUND_CONSTANT = Pattern.compile(
+            "(?i).*(not_?found|missing|absent|none|no_?index|no_?match|minus_?one|npos).*");
     private static final String OR_ELSE = "orElse";
     private static final String FILTER = "filter";
     private static final Set<BinaryExpr.Operator> LOGICAL = Set.of(BinaryExpr.Operator.AND, BinaryExpr.Operator.OR);
+    private static final Set<BinaryExpr.Operator> CHECK_OPERATORS = Set.of(
+            BinaryExpr.Operator.AND, BinaryExpr.Operator.OR, BinaryExpr.Operator.EQUALS, BinaryExpr.Operator.NOT_EQUALS,
+            BinaryExpr.Operator.LESS, BinaryExpr.Operator.LESS_EQUALS, BinaryExpr.Operator.GREATER,
+            BinaryExpr.Operator.GREATER_EQUALS);
+    // assertFalse(x == null), assertEquals(a != null, b), checkNotNull(...): условие в аргументе значит другое
+    private static final Pattern ASSERTION_OF_OTHER_KIND = Pattern.compile(
+            "False|Not|Equal|Same|Null|Throw|That|Timeout|Unless|Fail|Empty|Blank");
+    // throwNotFound(id), rethrow(e), sneakyThrow(e): метод только бросает исключение (но не throwIfInvalid(x))
+    private static final Pattern THROWING_HELPER = Pattern.compile(
+            "(re)?throw(?!If|When|Unless|On)[A-Z]\\w*|rethrow|sneakyThrow");
+    private static final Set<String> NULL_POINTER = Set.of("NullPointerException");
+    // Вызовы, после которых тот же метод вернет другое значение: iterator.next(), queue.poll(), reader.readLine()
+    private static final Pattern ADVANCING_CALL = Pattern.compile(
+            "(next|poll|pop|read|take|remove|pull|advance|skip|generate|random|increment|decrement|getAnd|peek)\\w*"
+                    + "|\\w+AndGet");
     // orderBy >= 0, index > -1, position != -1
     private static final Pattern INDEX_COMPARISON = Pattern.compile("\\w+\\s*(>=\\s*0|>\\s*-1|!=\\s*-1)");
     private static final String INDEX_SEARCH_REASON = "результат поиска";
@@ -445,15 +466,41 @@ public final class FlowInterpreter {
     // checkState(x != null), Assert.isTrue(!items.isEmpty(), "..."): первый аргумент - условие, а не значение
     // (verify(mock) у Mockito под это не подходит)
     private Optional<Expression> assertedCondition(Expression expression) {
-        if (!(expression instanceof MethodCallExpr call) || !FlowLibrary.assertsTrue(call.getNameAsString())
-                || call.getArguments().isEmpty()) {
+        if (!(expression instanceof MethodCallExpr call) || call.getArguments().isEmpty()) {
             return Optional.empty();
         }
-        Expression condition = unwrap(call.getArgument(0));
-        boolean isCondition = condition.isBinaryExpr() || condition.isInstanceOfExpr()
-                || condition.isUnaryExpr()
-                && condition.asUnaryExpr().getOperator() == UnaryExpr.Operator.LOGICAL_COMPLEMENT;
-        return isCondition ? Optional.of(condition) : Optional.empty();
+        String method = call.getNameAsString();
+        if (FlowLibrary.assertsTrue(method)) {
+            Expression condition = unwrap(call.getArgument(0));
+            boolean isCondition = condition.isBinaryExpr() || condition.isInstanceOfExpr() || isNegation(condition);
+            return isCondition ? Optional.of(condition) : Optional.empty();
+        }
+        // RequestPrecondition.checkArguments(dto != null, "..."), requireResponse(data != null && data.isObject(), "..."),
+        // assertTrue("...", user != null): проверка своя, но по имени и по условию в аргументе видно, что это она
+        if (!FlowLibrary.looksLikeAssertion(method) || ASSERTION_OF_OTHER_KIND.matcher(method).find()) {
+            return Optional.empty();
+        }
+        Expression first = unwrap(call.getArgument(0));
+        if (isCheck(first)) {
+            return Optional.of(first);
+        }
+        boolean isMessageFirst = call.getArguments().size() > 1
+                && (first.isStringLiteralExpr() || first.isBinaryExpr() && first.findFirst(StringLiteralExpr.class).isPresent());
+        return isMessageFirst && isCheck(unwrap(call.getArgument(1)))
+                ? Optional.of(unwrap(call.getArgument(1)))
+                : Optional.empty();
+    }
+
+    private boolean isNegation(Expression expression) {
+        return expression instanceof UnaryExpr unary && unary.getOperator() == UnaryExpr.Operator.LOGICAL_COMPLEMENT;
+    }
+
+    // Условие, а не число и не строка: сравнение, instanceof, отрицание либо их сочетание через && и ||
+    private boolean isCheck(Expression expression) {
+        if (expression instanceof BinaryExpr binary) {
+            return CHECK_OPERATORS.contains(binary.getOperator());
+        }
+        return expression.isInstanceOfExpr() || isNegation(expression);
     }
 
     private FlowState executeAll(List<Statement> statements, FlowState state) {
@@ -529,6 +576,17 @@ public final class FlowInterpreter {
                 if (isFlag && !flag.equals(name)) {
                     boolean flagWhenSet = (isSetInThen ? thenFlag : elseFlag).min() == 1;
                     joined.correlate(new FlowState.Correlation(name, flag, flagWhenSet, value, Set.of(flag)));
+                    continue;
+                }
+                // useActual = parts.length == size: в ветке, где переменная получила значение, флаг вычислен,
+                // а в другой он остался false. Значит, флаг истинен только там, где переменная уже не null
+                FlowValue setFlag = isSetInThen ? thenFlag : elseFlag;
+                FlowValue unsetFlag = isSetInThen ? elseFlag : thenFlag;
+                boolean isComputedFlag = setFlag != null && unsetFlag != null && !flag.equals(name)
+                        && booleans.contains(flag) && (unsetFlag.isConstant(0) || unsetFlag.isConstant(1))
+                        && !setFlag.isConstant(unsetFlag.min());
+                if (isComputedFlag) {
+                    joined.correlate(new FlowState.Correlation(name, flag, unsetFlag.isConstant(0), value, Set.of(flag)));
                 }
             }
         }
@@ -841,6 +899,7 @@ public final class FlowInterpreter {
             FlowState catchState = before.copy();
             catchState.forget(assigned, true, primitives);
             forgetTouched(statement.getTryBlock(), catchState);
+            correlateGuardedStart(statement, catchState);
             catchState.assign(clause.getParameter().getNameAsString(),
                     FlowValue.notNull("пойманное исключение", clause.getParameter()));
             normal = FlowState.join(normal, execute(clause.getBody(), catchState));
@@ -851,6 +910,7 @@ public final class FlowInterpreter {
             FlowState finallyState = before.copy();
             forgetTouched(statement, finallyState);
             finallyState.forget(assigned, true, primitives);
+            correlateGuardedStart(statement, finallyState);
             FlowState finallyEnd = execute(finallyBlock, finallyState);
             if (finallyEnd == null) {
                 normal = null;
@@ -860,6 +920,41 @@ public final class FlowInterpreter {
         }
         conditionDepth--;
         return normal;
+    }
+
+    // StopWatch timer = null; try { if (measured) { timer = new StopWatch(); ... } ... } finally { if (measured && timer.isRunning()) ... }
+    // Переменная создается первым же действием try и только под условием: в catch и finally под тем же условием
+    // она не null. Исключение раньше присваивания здесь возможно разве что из самого конструктора
+    private void correlateGuardedStart(TryStmt statement, FlowState handler) {
+        BlockStmt block = statement.getTryBlock();
+        if (block.getStatements().isEmpty() || !(block.getStatement(0) instanceof IfStmt guard)
+                || guard.getElseStmt().isPresent()) {
+            return;
+        }
+        Statement start = guard.getThenStmt() instanceof BlockStmt then
+                ? then.getStatements().getFirst().orElse(null)
+                : guard.getThenStmt();
+        boolean isCreation = start instanceof ExpressionStmt expression
+                && expression.getExpression() instanceof AssignExpr assignment
+                && assignment.getOperator() == AssignExpr.Operator.ASSIGN
+                && assignment.getTarget() instanceof NameExpr
+                && unwrap(assignment.getValue()) instanceof ObjectCreationExpr;
+        if (!isCreation) {
+            return;
+        }
+        AssignExpr assignment = ((ExpressionStmt) start).getExpression().asAssignExpr();
+        String name = assignment.getTarget().asNameExpr().getNameAsString();
+        Expression condition = unwrap(guard.getCondition());
+        Set<String> conditionNames = namesIn(condition);
+        Set<String> changed = assignedIn(block);
+        long assignments = block.findAll(AssignExpr.class).stream()
+                .filter(other -> other.getTarget() instanceof NameExpr target && target.getNameAsString().equals(name))
+                .count();
+        if (assignments != 1 || !handler.has(name) || conditionNames.stream().anyMatch(changed::contains)) {
+            return;
+        }
+        handler.correlate(new FlowState.Correlation(name, condition.toString(), true,
+                FlowValue.notNull("значение создано в начале try под тем же условием", assignment), conditionNames));
     }
 
     // -------------------------------------------------------------------------------------------- выражения
@@ -1325,7 +1420,8 @@ public final class FlowInterpreter {
             report(FlowAnalysis.Kind.INDEX_OUT_OF_BOUNDS, place,
                     "Индекс здесь всегда отрицательный (" + range(index) + "): обращение завершится исключением",
                     Confidence.CONFIRMED);
-        } else if (index.min() == -1 && INDEX_SEARCH_REASON.equals(index.reason()) && !isSearchGuarded(place, searchedText(index))) {
+        } else if (index.min() == -1 && INDEX_SEARCH_REASON.equals(index.reason())
+                && !isSearchGuarded(place, searchedText(index)) && !isFoundEarlier(place, index)) {
             report(FlowAnalysis.Kind.INDEX_OUT_OF_BOUNDS, place,
                     "Индекс - " + INDEX_SEARCH_REASON + " (indexOf), а он равен -1, когда ничего не найдено:"
                             + " обращение завершится исключением; сначала проверьте, что индекс не отрицательный");
@@ -1354,6 +1450,31 @@ public final class FlowInterpreter {
             current = current.getParentNode().orElse(null);
         }
         return searched.filter(text -> isFilteredEarlier(place, text)).isPresent();
+    }
+
+    // if (name == null || !name.contains(".")) { return false; } ... name.substring(0, name.lastIndexOf('.')):
+    // то же самое искомое в той же строке проверено раньше, и без него метод уже вышел. Проверка другого
+    // искомого (wkt.startsWith("POLYGON") перед wkt.indexOf(")")) о позиции ничего не говорит
+    private boolean isFoundEarlier(Node place, FlowValue index) {
+        if (!(index.origin() instanceof MethodCallExpr search) || search.getScope().isEmpty()
+                || search.getArguments().isEmpty()) {
+            return false;
+        }
+        String text = search.getScope().get().toString();
+        String needle = needleOf(search.getArgument(0));
+        return Guards.isGuarded(place, check -> check instanceof MethodCallExpr call
+                && SEARCH_CHECKS.contains(call.getNameAsString()) && call.getArguments().size() == 1
+                && call.getScope().filter(scope -> scope.toString().equals(text)).isPresent()
+                && needleOf(call.getArgument(0)).equals(needle));
+    }
+
+    // "." и '.' - одно и то же искомое
+    private String needleOf(Expression argument) {
+        Expression value = unwrap(argument);
+        if (value instanceof StringLiteralExpr string) {
+            return string.getValue();
+        }
+        return value instanceof CharLiteralExpr character ? character.getValue() : value.toString();
     }
 
     // Условие, под которым выполняется место: if, ?: либо левая часть && и ||
@@ -1503,6 +1624,10 @@ public final class FlowInterpreter {
 
     private FlowValue evaluateCall(MethodCallExpr call, FlowState state) {
         String method = call.getNameAsString();
+        // if (context.tracer().getSpan() == null) return; context.tracer().getSpan().id(): значение цепочки уже
+        // проверено, а ее повторное вычисление (вызов tracer()) само стерло бы этот факт
+        String chain = isRepeatableChain(call) ? call.toString() : null;
+        FlowValue checkedEarlier = chain == null ? null : state.fact(chain);
         if (call.getScope().isPresent()) {
             Expression scope = call.getScope().get();
             dereference(scope, evaluate(scope, state), call, state);
@@ -1527,7 +1652,25 @@ public final class FlowInterpreter {
         }
         checkOptionalAccess(call, state);
         trackObjectState(call, arguments, state);
+        if (checkedEarlier != null && state.fact(chain) == null) {
+            state.learn(chain, checkedEarlier, namesIn(call));
+        }
         return known(call, result, state);
+    }
+
+    // Цепочка вызовов без аргументов от переменной либо this, которая при повторе дает то же значение
+    private boolean isRepeatableChain(MethodCallExpr call) {
+        Expression current = call;
+        int calls = 0;
+        while (current instanceof MethodCallExpr link) {
+            if (!link.getArguments().isEmpty() || ADVANCING_CALL.matcher(link.getNameAsString()).matches()
+                    || link.getScope().isEmpty()) {
+                return false;
+            }
+            calls++;
+            current = unwrap(link.getScope().get());
+        }
+        return calls > 1 && (current.isNameExpr() || current.isThisExpr() || current.isFieldAccessExpr());
     }
 
     // optional.get() там, где известно, что значения нет
@@ -1753,6 +1896,15 @@ public final class FlowInterpreter {
             terminate("вызов '" + method + "' на строке " + lineOf(call) + " не возвращает управление");
             return FlowValue.unknown();
         }
+        // ctxt.reportBadDefinition(...) в Jackson, throwNotFound(id) без видимого тела: выполнение дальше не идет.
+        // Это догадка по имени, поэтому о недостижимом коде после такого вызова не сообщаем
+        boolean isThrowingHelper = THROWING_HELPER.matcher(method).matches() && isStaticStyle(call, state)
+                && call.getParentNode().filter(ExpressionStmt.class::isInstance).isPresent();
+        if (FlowLibrary.alwaysThrows(method) || isThrowingHelper) {
+            terminated = true;
+            deathReason = "";
+            return FlowValue.unknown();
+        }
         if (OR_ELSE.equals(method) && arguments.size() == 1 && arguments.get(0).isNull()) {
             return FlowValue.maybeNull("orElse(null) возвращает null, когда значения нет", call);
         }
@@ -1817,7 +1969,7 @@ public final class FlowInterpreter {
                                 + snippet(place) + "' завершится NullPointerException");
             }
         } else if (value.nullness() == FlowValue.Nullness.MAYBE_NULL && !isAssertedAway(value)
-                && place.findAncestor(AssertStmt.class).isEmpty()) {
+                && place.findAncestor(AssertStmt.class).isEmpty() && !CodeContexts.isCaught(place, NULL_POINTER)) {
             // Внутри assert обращение выполняется только с -ea, то есть в тестах, и опирается на инварианты автора
             report(FlowAnalysis.Kind.POSSIBLE_NULL_DEREFERENCE, place,
                     "'" + snippet(unwrapped) + "' может быть null (" + describe(unwrapped, value) + "), а обращение '"
@@ -1983,6 +2135,11 @@ public final class FlowInterpreter {
         Expression rightExpression = unwrap(comparison.getRight());
         FlowValue left = evaluate(leftExpression, state);
         FlowValue right = evaluate(rightExpression, state);
+        if (isNotFoundConstant(rightExpression, right, left)) {
+            right = FlowValue.number(-1, -1);
+        } else if (isNotFoundConstant(leftExpression, left, right)) {
+            left = FlowValue.number(-1, -1);
+        }
         if (!left.numeric() || !right.numeric()) {
             return new Branches(state.copy(), state);
         }
@@ -1999,6 +2156,17 @@ public final class FlowInterpreter {
         narrow(trueState, subject(leftExpression), left, subject(rightExpression), right, whenTrue);
         narrow(falseState, subject(leftExpression), left, subject(rightExpression), right, whenFalse);
         return new Branches(trueState, falseState);
+    }
+
+    // final int pos = str.indexOf(find); if (pos == INDEX_NOT_FOUND) { return str; }: значение константы из другого
+    // класса неизвестно, но результат indexOf сравнивают на равенство только с -1
+    private boolean isNotFoundConstant(Expression expression, FlowValue value, FlowValue other) {
+        if (value.numeric() || !other.numeric() || other.min() != -1 || !INDEX_SEARCH_REASON.equals(other.reason())) {
+            return false;
+        }
+        String name = expression instanceof NameExpr constant ? constant.getNameAsString()
+                : expression instanceof FieldAccessExpr access ? access.getNameAsString() : "";
+        return NOT_FOUND_CONSTANT.matcher(name).matches();
     }
 
     // if ((pos = line.indexOf(':')) < 0), while ((line = reader.readLine()) != null): сравнивают значение, которое
@@ -2184,9 +2352,12 @@ public final class FlowInterpreter {
             if (variable == null) {
                 continue;
             }
-            Boolean resultForNull = summary.isPresent()
-                    ? summary.get().resultForNullParam().get(index)
-                    : libraryResultForNull(call, method, index, state);
+            Boolean resultForNull = summary.isPresent() ? summary.get().resultForNullParam().get(index) : null;
+            // Свой isNotEmpty(array), который проверяет null через два других метода: сводка этого не видит,
+            // а имя говорит то же, что и у библиотечного
+            if (resultForNull == null && !(summary.isPresent() && summary.get().dereferencedParams().contains(index))) {
+                resultForNull = libraryResultForNull(call, method, index, state);
+            }
             if (resultForNull == null) {
                 continue;
             }

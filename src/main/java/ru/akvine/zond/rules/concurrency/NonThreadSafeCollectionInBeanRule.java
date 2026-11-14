@@ -115,7 +115,7 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
             boolean writes = method.findAll(MethodCallExpr.class).stream()
                     .filter(call -> MUTATING_METHODS.contains(call.getNameAsString()))
                     .filter(call -> call.getScope().filter(scope -> isOwnCollection(scope, collection)).isPresent())
-                    .anyMatch(call -> !isInsideSynchronized(call, method));
+                    .anyMatch(call -> !isInsideSynchronized(call, method) && !CodeContexts.isUnderExplicitLock(call));
             if (writes) {
                 writers.add("'" + method.getNameAsString() + "'");
             }

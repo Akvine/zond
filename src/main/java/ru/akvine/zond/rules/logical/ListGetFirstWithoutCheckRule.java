@@ -1,9 +1,12 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.NameExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -30,6 +33,7 @@ public class ListGetFirstWithoutCheckRule extends AbstractRule {
 
     // list.isEmpty(), list.size(), CollectionUtils.isEmpty(list)
     private static final Set<String> SIZE_CHECKS = Set.of("isEmpty", "size", "isNotEmpty");
+    private static final String THIS_PREFIX = "this.";
     // Фабрики, которые возвращают список ровно из переданных элементов
     private static final Set<String> FILLED_FACTORIES = Set.of("of", "asList", "listOf");
 
@@ -106,6 +110,22 @@ public class ListGetFirstWithoutCheckRule extends AbstractRule {
         }
         MethodCallExpr check = expression.asMethodCallExpr();
         return check.getScope().filter(scope -> scope.toString().equals(list)).isPresent()
-                || check.getArguments().stream().anyMatch(argument -> argument.toString().equals(list));
+                || check.getArguments().stream().anyMatch(argument -> argument.toString().equals(list))
+                || isOwnCheckOf(check, list);
+    }
+
+    // if (!isEmpty()) { return references.get(0); } - свой isEmpty() без объекта, который смотрит в тот же список
+    private boolean isOwnCheckOf(MethodCallExpr check, String list) {
+        if (!check.getArguments().isEmpty() || check.getScope().filter(scope -> !scope.isThisExpr()).isPresent()) {
+            return false;
+        }
+        String field = list.startsWith(THIS_PREFIX) ? list.substring(THIS_PREFIX.length()) : list;
+        return check.findAncestor(ClassOrInterfaceDeclaration.class).stream()
+                .flatMap(type -> type.getMethodsByName(check.getNameAsString()).stream())
+                .filter(method -> method.getParameters().isEmpty())
+                .anyMatch(method -> method.findAll(NameExpr.class).stream()
+                        .anyMatch(name -> name.getNameAsString().equals(field))
+                        || method.findAll(FieldAccessExpr.class).stream()
+                        .anyMatch(access -> access.getNameAsString().equals(field)));
     }
 }
