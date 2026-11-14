@@ -11,17 +11,20 @@ import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.SynchronizedStmt;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
+import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.SpringBeans;
+import ru.akvine.zond.rules.support.ThreadReach;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -29,7 +32,10 @@ import java.util.Optional;
 import java.util.Set;
 
 @Component
-public class UnsynchronizedLazyInitRule extends AbstractRule {
+public class UnsynchronizedLazyInitRule extends AbstractRule implements ProjectRule {
+    // Гонки нет, пока метод вызывает один поток; находка остается подозрением на случай, если это изменится
+    private static final String SINGLE_THREAD_NOTE = ". Сейчас до этого кода доходит только один поток (запуск,"
+            + " служебная операция или обработчик интерфейса): гонка появится, если его начнут вызывать из нескольких";
     private static final String POST_CONSTRUCT = "PostConstruct";
     private static final Set<String> IMMUTABLE_TYPES = Set.of(
             "String", "Boolean", "Integer", "Long", "Short", "Byte", "Character", "Double", "Float", "BigDecimal",
@@ -46,7 +52,16 @@ public class UnsynchronizedLazyInitRule extends AbstractRule {
     }
 
     @Override
-    public List<Violation> check(SourceFile sourceFile) {
+    public List<Violation> checkProject(List<SourceFile> sourceFiles) {
+        ThreadReach reach = ThreadReach.of(sourceFiles);
+        List<Violation> violations = new ArrayList<>();
+        for (SourceFile sourceFile : sourceFiles) {
+            violations.addAll(checkFile(sourceFile, reach));
+        }
+        return violations;
+    }
+
+    private List<Violation> checkFile(SourceFile sourceFile, ThreadReach reach) {
         List<Violation> violations = new ArrayList<>();
         for (IfStmt ifStmt : sourceFile.unit().findAll(IfStmt.class)) {
             Optional<String> checked = nullCheckedName(ifStmt.getCondition());
@@ -65,10 +80,13 @@ public class UnsynchronizedLazyInitRule extends AbstractRule {
             boolean immutableValue = field.filter(declaration -> IMMUTABLE_TYPES.contains(
                     LocalTypes.typeName(declaration.getElementType()))).isPresent();
             if (isShared && !immutableValue && !field.get().isVolatile() && !isLocalVariable(ifStmt, checked.get())) {
-                violations.add(violation(sourceFile, ifStmt,
+                boolean singleThread = reach.of(ifStmt) == ThreadReach.Reach.SINGLE;
+                Violation violation = violation(sourceFile, ifStmt,
                         "Ленивая инициализация поля '" + checked.get() + "' без синхронизации: два потока"
                                 + " одновременно увидят null и создадут два объекта, а третий может получить"
-                                + " недостроенный; инициализируйте поле при создании либо под синхронизацией"));
+                                + " недостроенный; инициализируйте поле при создании либо под синхронизацией"
+                                + (singleThread ? SINGLE_THREAD_NOTE : ""));
+                violations.add(singleThread ? violation.withConfidence(Confidence.SUSPICION) : violation);
             }
         }
         return violations;

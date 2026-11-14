@@ -90,6 +90,9 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
     private final CallGraph callGraph;
     private final Map<MethodDeclaration, FlowSummary> summaries = new IdentityHashMap<>();
     private final Set<MethodDeclaration> inProgress = new HashSet<>();
+    // Глубина разбора методов для конкретного места вызова: вложенные вызовы уточняются не глубже этого
+    private static final int MAX_SPECIALIZATION_DEPTH = 2;
+    private int specializing;
     // Имя и число параметров -> сколько таких методов в проекте
     private final Map<String, Integer> signatures = new HashMap<>();
     private final List<Located> findings = new ArrayList<>();
@@ -234,6 +237,36 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
             }
         }
         return null;
+    }
+
+    @Override
+    public Optional<FlowValue> returnedAt(MethodCallExpr call, Map<Integer, FlowValue> overrides, FlowState ownState) {
+        List<MethodDeclaration> targets = callGraph.targetsOf(call);
+        if (targets.size() != 1 || specializing >= MAX_SPECIALIZATION_DEPTH) {
+            return Optional.empty();
+        }
+        MethodDeclaration target = targets.get(0);
+        boolean isSameArity = target.getParameters().size() == call.getArguments().size()
+                && target.getParameters().stream().noneMatch(Parameter::isVarArgs);
+        if (!isSameArity || target.getBody().isEmpty() || !isFinalBehavior(target, call) || !inProgress.add(target)) {
+            return Optional.empty();
+        }
+        // Знания о полях переносятся только внутри одного класса: у вложенного и внешнего классов поля разные
+        Optional<TypeDeclaration> callerType = call.findAncestor(TypeDeclaration.class);
+        Optional<TypeDeclaration> targetType = target.findAncestor(TypeDeclaration.class);
+        boolean isSameObject = callerType.isPresent() && targetType.isPresent() && callerType.get() == targetType.get()
+                && (target.isStatic() || call.findAncestor(MethodDeclaration.class).filter(MethodDeclaration::isStatic).isEmpty());
+        specializing++;
+        try {
+            return Optional.of(new FlowInterpreter(this, false)
+                    .run(target, overrides, isSameObject ? ownState : null)
+                    .returned());
+        } catch (RuntimeException exception) {
+            return Optional.empty();
+        } finally {
+            specializing--;
+            inProgress.remove(target);
+        }
     }
 
     private Optional<FlowSummary> bodySummary(MethodCallExpr call) {

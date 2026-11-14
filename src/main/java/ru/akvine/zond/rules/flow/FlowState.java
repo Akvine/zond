@@ -89,6 +89,31 @@ public final class FlowState {
     }
 
     /**
+     * Перенимает то, что вызывающий метод знает о полях своего объекта: значения полей и факты, которые
+     * зависят только от полей ({@code legs.isEmpty()}). Нужно, когда метод того же объекта разбирается
+     * для конкретного места вызова: проверка, сделанная вызывающим, действует и внутри вызванного.
+     *
+     * @param hidden имена параметров вызванного метода: они перекрывают одноименные поля
+     */
+    public void adoptFields(FlowState caller, Set<String> hidden) {
+        caller.values.forEach((name, value) -> {
+            if (name.startsWith(THIS) && values.containsKey(name)) {
+                values.put(name, value);
+            }
+        });
+        caller.facts.forEach((expression, fact) -> {
+            // Факт о локальной переменной вызывающего (она перекрывает поле) вызванному методу ничего не говорит
+            boolean fieldsOnly = !fact.names().isEmpty() && fact.names().stream().allMatch(name -> {
+                String bare = name.startsWith(THIS) ? name.substring(THIS.length()) : name;
+                return !hidden.contains(bare) && !caller.values.containsKey(bare) && values.containsKey(THIS + bare);
+            });
+            if (fieldsOnly) {
+                facts.put(expression, fact);
+            }
+        });
+    }
+
+    /**
      * @return значение переменной либо null, если такой локальной переменной нет
      */
     public FlowValue get(String name) {

@@ -169,6 +169,19 @@ public final class FlowInterpreter {
         default boolean isUsuallyUnchecked(MethodCallExpr call) {
             return false;
         }
+
+        /**
+         * Что вернет метод именно в этом месте вызова: с такими аргументами и, если это метод того же объекта,
+         * с тем, что вызывающий уже знает о полях. {@code data(true)} не вернет null, хотя {@code data(false)}
+         * может; {@code lastLeg()} после проверки {@code legs.isEmpty()} тоже.
+         *
+         * @param overrides значения параметров, известные в месте вызова
+         * @param ownState  состояние вызывающего метода, если вызов обращен к своему объекту, иначе null
+         * @return пусто, если тело метода недоступно либо метод уже разбирается
+         */
+        default Optional<FlowValue> returnedAt(MethodCallExpr call, Map<Integer, FlowValue> overrides, FlowState ownState) {
+            return Optional.empty();
+        }
     }
 
     /**
@@ -234,6 +247,13 @@ public final class FlowInterpreter {
      * @param overrides значения параметров, заданные заранее: так проверяется, что вернет метод, получив null
      */
     public FlowSummary run(CallableDeclaration<?> callable, Map<Integer, FlowValue> overrides) {
+        return run(callable, overrides, null);
+    }
+
+    /**
+     * @param ownState что вызывающий метод того же объекта знает о его полях, либо null
+     */
+    public FlowSummary run(CallableDeclaration<?> callable, Map<Integer, FlowValue> overrides, FlowState ownState) {
         Optional<BlockStmt> body = callable instanceof MethodDeclaration method
                 ? method.getBody()
                 : Optional.of(((ConstructorDeclaration) callable).getBody());
@@ -252,6 +272,9 @@ public final class FlowInterpreter {
         }
 
         initFields(callable, state);
+        if (ownState != null) {
+            state.adoptFields(ownState, Set.copyOf(parameterNames));
+        }
 
         FlowState end = execute(body.get(), state);
         exitState = FlowState.join(exitState, end);
@@ -1807,6 +1830,10 @@ public final class FlowInterpreter {
             if (returned.origin() instanceof MethodDeclaration) {
                 return FlowValue.maybeNull("метод '" + method + "' помечен @Nullable", call);
             }
+            // null возможен не при всяком вызове: смотрим, что метод вернет именно здесь
+            if (isNotNullHere(call, arguments, state)) {
+                return FlowValue.unknown();
+            }
             // tb.currentElement() в Jsoup: null возможен лишь в краевом случае, и десятки вызовов его не проверяют
             if (host.isUsuallyUnchecked(call)) {
                 return FlowValue.unknown();
@@ -1819,6 +1846,34 @@ public final class FlowInterpreter {
             return returned.isBounded() ? FlowValue.number(returned.min(), returned.max()) : FlowValue.anyNumber();
         }
         return returned.isNotNull() ? FlowValue.notNull("метод '" + method + "' не возвращает null", call) : FlowValue.unknown();
+    }
+
+    /**
+     * Разбирает вызванный метод заново для этого места вызова: с известными здесь аргументами (константа,
+     * точно не null) и, для метода своего объекта, с тем, что уже проверено у полей.
+     * <pre>
+     *   if (legs.isEmpty()) { return UNKNOWN; }
+     *   return lastLeg().unloadLocation();      // lastLeg() возвращает null, только если legs пуст
+     * </pre>
+     */
+    private boolean isNotNullHere(MethodCallExpr call, List<FlowValue> arguments, FlowState state) {
+        Map<Integer, FlowValue> overrides = new HashMap<>();
+        for (int index = 0; index < arguments.size(); index++) {
+            FlowValue argument = arguments.get(index);
+            if (argument.isConstant()) {
+                overrides.put(index, FlowValue.number(argument.min(), argument.min()));
+            } else if (argument.isNotNull() && !argument.numeric()) {
+                overrides.put(index, FlowValue.parameter(index)
+                        .withNullness(FlowValue.Nullness.NOT_NULL, "аргумент не null", call.getArgument(index)));
+            }
+        }
+        boolean isOwn = call.getScope().map(Expression::isThisExpr).orElse(true);
+        if (overrides.isEmpty() && !isOwn) {
+            return false;
+        }
+        return host.returnedAt(call, overrides, isOwn ? state : null)
+                .filter(value -> !value.isNullish())
+                .isPresent();
     }
 
     /**

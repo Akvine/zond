@@ -527,4 +527,15 @@ public class RuleCodes {
     public final static String EXCEPTION_AS_BRANCH_IN_LOOP_RULE_CODE = "jr:521";
     public final static String FILTER_AFTER_SORT_RULE_CODE = "jr:522";
     public final static String DUPLICATE_SETTER_CALL_RULE_CODE = "jr:523";
+
+    public final static String UNTYPED_BATCH_PARAMETERS_RULE_CODE = "jr:524";
+    public final static String JDBC_URL_WITHOUT_BATCH_REWRITE_RULE_CODE = "jr:525";
+    public final static String IDENTITY_INSERT_PER_STATEMENT_RULE_CODE = "jr:526";
+    public final static String BATCH_OUTSIDE_TRANSACTION_RULE_CODE = "jr:527";
+    public final static String KEY_DERIVED_VALUE_PER_ROW_RULE_CODE = "jr:528";
+    public final static String CONNECTION_BYPASSES_TRANSACTION_RULE_CODE = "jr:529";
+    public final static String WORK_BEFORE_CACHE_LOOKUP_UNDER_LOCK_RULE_CODE = "jr:530";
+    public final static String REPEATED_QUERY_ACROSS_CALLS_RULE_CODE = "jr:531";
+    public final static String ENUM_LOOKUP_BY_VALUES_SCAN_RULE_CODE = "jr:532";
+    public final static String HIDDEN_REFLECTION_IN_HOT_METHOD_RULE_CODE = "jr:533";
 }

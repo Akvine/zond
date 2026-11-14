@@ -4,6 +4,7 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.CallableDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -19,6 +20,7 @@ import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
+import ru.akvine.zond.rules.support.ReachingDefinitions;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -30,6 +32,7 @@ import java.util.Set;
 public class OptionalMisuseRule extends AbstractRule {
     private static final String OPTIONAL = "Optional";
     private static final String GET = "get";
+    private static final String OPTIONAL_OF = "of";
     private static final Set<String> PRESENCE_CHECKS = Set.of("isPresent", "isEmpty");
 
     // Методы, которые возвращают Optional: вызов get() сразу после них ничем не защищен
@@ -198,10 +201,36 @@ public class OptionalMisuseRule extends AbstractRule {
         // Проверка производного значения - это и проверка исходного: column = table.flatMap(...) не пуст,
         // только когда не пуст table
         Set<String> names = withDerived(variable, call);
-        if (isInsideOwnChain(call, names)) {
+        if (isInsideOwnChain(call, names) || isAlwaysPresent(scope, call)) {
             return false;
         }
         return !Guards.isGuarded(call, check -> isPresenceCheckOfAny(check, names));
+    }
+
+    // resource = Optional.of(acquire()); use(resource.get()): до get() доходит только заведомо не пустой Optional
+    private boolean isAlwaysPresent(Expression scope, MethodCallExpr call) {
+        Optional<Node> callable = Nodes.enclosingCallable(call);
+        if (!scope.isNameExpr() || callable.isEmpty()) {
+            return false;
+        }
+        return ReachingDefinitions.of(callable.get()).definitionsOf(scope.asNameExpr())
+                .filter(definitions -> !definitions.isEmpty() && definitions.stream().allMatch(this::isOptionalOf))
+                .isPresent();
+    }
+
+    private boolean isOptionalOf(Node definition) {
+        Optional<Expression> value = Optional.empty();
+        if (definition instanceof VariableDeclarator declarator) {
+            value = declarator.getInitializer();
+        } else if (definition instanceof AssignExpr assignment) {
+            value = Optional.of(assignment.getValue());
+        }
+        return value.map(Nodes::unwrap)
+                .filter(Expression::isMethodCallExpr)
+                .map(Expression::asMethodCallExpr)
+                .filter(created -> OPTIONAL_OF.equals(created.getNameAsString())
+                        && created.getScope().filter(owner -> OPTIONAL.equals(owner.toString())).isPresent())
+                .isPresent();
     }
 
     private boolean isPresenceCheckOfAny(Expression check, Set<String> names) {

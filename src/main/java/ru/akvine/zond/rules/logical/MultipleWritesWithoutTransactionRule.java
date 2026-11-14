@@ -23,6 +23,7 @@ import ru.akvine.zond.rules.support.TestClasses;
 import ru.akvine.zond.rules.support.TransactionalAnnotations;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -37,6 +38,8 @@ public class MultipleWritesWithoutTransactionRule extends AbstractRule implement
     private static final List<String> WRITE_PREFIXES =
             List.of("save", "delete", "update", "insert", "remove", "persist", "merge");
     private static final int MIN_WRITES = 2;
+    // На столько вызовов вверх ищется метод, начавший транзакцию
+    private static final int CALLER_DEPTH = 4;
 
     @Override
     public List<RuleParameter> parameters() {
@@ -97,8 +100,24 @@ public class MultipleWritesWithoutTransactionRule extends AbstractRule implement
         if (method.isPrivate() || method.getBody().isEmpty() || isTransactional(method)) {
             return false;
         }
+        return !isAlwaysInTransaction(method, graph, CALLER_DEPTH, new HashSet<>());
+    }
+
+    /**
+     * Транзакция действует на всю цепочку вызовов, а не только на прямого вызывающего:
+     * {@code OrderFacade.@Transactional place() -> orderService.create() -> stockService.reserve()} -
+     * reserve() выполняется в транзакции, хотя ни он, ни create() не помечены
+     *
+     * @return true, если каждая цепочка вызовов метода проходит через транзакционный метод
+     */
+    private boolean isAlwaysInTransaction(MethodDeclaration method, CallGraph graph, int depth, Set<MethodDeclaration> seen) {
         List<CallGraph.Call> callers = graph.callsTo(method);
-        return callers.isEmpty() || !callers.stream().allMatch(call -> isTransactional(call.caller()));
+        // Метод без вызовов в проекте вызывает кто-то снаружи; замкнутая цепочка транзакцию не начинает
+        if (callers.isEmpty() || depth == 0 || !seen.add(method)) {
+            return false;
+        }
+        return callers.stream().allMatch(call -> isTransactional(call.caller())
+                || isAlwaysInTransaction(call.caller(), graph, depth - 1, seen));
     }
 
     private Set<String> findWrites(MethodDeclaration method, CallGraph graph) {

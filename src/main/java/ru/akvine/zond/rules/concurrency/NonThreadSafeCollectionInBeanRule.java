@@ -9,13 +9,16 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.SimpleName;
 import com.github.javaparser.ast.stmt.SynchronizedStmt;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
+import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.BeanScopes;
@@ -23,6 +26,7 @@ import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.SpringBeans;
+import ru.akvine.zond.rules.support.ThreadReach;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -30,7 +34,11 @@ import java.util.List;
 import java.util.Set;
 
 @Component
-public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
+public class NonThreadSafeCollectionInBeanRule extends AbstractRule implements ProjectRule {
+    // Гонки нет, пока метод вызывает один поток; находка остается подозрением на случай, если это изменится
+    private static final String SINGLE_THREAD_NOTE = ". Сейчас все методы, которые обращаются к коллекции, выполняет"
+            + " один поток (запуск, служебная операция или обработчик интерфейса): гонка появится, если к ней"
+            + " обратятся из нескольких";
     private static final String POST_CONSTRUCT = "PostConstruct";
 
     private static final Set<String> NOT_THREAD_SAFE_TYPES = Set.of(
@@ -52,7 +60,16 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
     }
 
     @Override
-    public List<Violation> check(SourceFile sourceFile) {
+    public List<Violation> checkProject(List<SourceFile> sourceFiles) {
+        ThreadReach reach = ThreadReach.of(sourceFiles);
+        List<Violation> violations = new ArrayList<>();
+        for (SourceFile sourceFile : sourceFiles) {
+            violations.addAll(checkFile(sourceFile, reach));
+        }
+        return violations;
+    }
+
+    private List<Violation> checkFile(SourceFile sourceFile, ThreadReach reach) {
         List<Violation> violations = new ArrayList<>();
         for (ClassOrInterfaceDeclaration bean : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
             // @Scope("prototype"), @StepScope, @ServerEndpoint: у каждого потребителя свой экземпляр, но статическое
@@ -71,12 +88,23 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule {
                     }
                     Set<String> writers = findWriters(bean, variable.getNameAsString());
                     if (!writers.isEmpty()) {
-                        violations.add(violation(sourceFile, variable,
+                        // Коллекцию портит и чтение во время записи, поэтому один поток должен выполнять все
+                        // методы, которые к ней обращаются, а не только пишущие
+                        String collection = variable.getNameAsString();
+                        List<MethodDeclaration> methods = bean.getMethods().stream()
+                                .filter(method -> method.findAll(SimpleName.class).stream()
+                                        .anyMatch(name -> name.getIdentifier().equals(collection)))
+                                .toList();
+                        boolean singleThread = !methods.isEmpty()
+                                && methods.stream().allMatch(method -> reach.of(method) == ThreadReach.Reach.SINGLE);
+                        Violation violation = violation(sourceFile, variable,
                                 "Коллекция '" + variable.getNameAsString() + "' в бине '" + bean.getNameAsString()
                                         + "' не потокобезопасна, а меняется в методе " + String.join(", ", writers)
                                         + (singleton ? ": бин один на все потоки" : ": статическое поле одно на все экземпляры")
                                         + ", одновременная запись портит коллекцию вплоть до"
-                                        + " зависания HashMap; используйте ConcurrentHashMap / CopyOnWriteArrayList"));
+                                        + " зависания HashMap; используйте ConcurrentHashMap / CopyOnWriteArrayList"
+                                        + (singleThread ? SINGLE_THREAD_NOTE : ""));
+                        violations.add(singleThread ? violation.withConfidence(Confidence.SUSPICION) : violation);
                     }
                 }
             }

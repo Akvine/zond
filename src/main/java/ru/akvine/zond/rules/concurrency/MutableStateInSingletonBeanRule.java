@@ -20,6 +20,7 @@ import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.SynchronizedStmt;
 import com.github.javaparser.ast.stmt.WhileStmt;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -32,6 +33,7 @@ import ru.akvine.zond.rules.support.BeanScopes;
 import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Lifecycle;
+import ru.akvine.zond.rules.support.ThreadReach;
 import ru.akvine.zond.rules.support.Lombok;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
@@ -65,6 +67,11 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
     private static final String SETTER = "set";
     // @VisibleForTesting сюда не относится: так помечают и рабочие методы, которым лишь расширили видимость
     private static final Set<String> TEST_ONLY_ANNOTATIONS = Set.of("TestOnly");
+    private static final String LOMBOK_SETTER = "(сеттер от Lombok)";
+    // Запросы друг другу значение не перебьют, пока пишет один поток; остается видимость нового значения
+    private static final String SINGLE_THREAD_NOTE = ". Сейчас в поле пишет только один поток (запуск, служебная"
+            + " операция или обработчик интерфейса): запросы значение друг другу не перебьют, но без volatile"
+            + " другие потоки могут не сразу увидеть новое";
 
     @Override
     public String name() {
@@ -90,15 +97,16 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         Map<String, List<MethodCallExpr>> setterCalls = setterCalls(sourceFiles);
         Lifecycle lifecycle = Lifecycle.of(sourceFiles);
+        ThreadReach reach = ThreadReach.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            checkFile(sourceFile, setterCalls, lifecycle, violations);
+            checkFile(sourceFile, setterCalls, lifecycle, reach, violations);
         }
         return violations;
     }
 
     private void checkFile(SourceFile sourceFile, Map<String, List<MethodCallExpr>> setterCalls, Lifecycle lifecycle,
-                           List<Violation> violations) {
+                           ThreadReach reach, List<Violation> violations) {
         for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
             if (!isSingletonBean(type)) {
                 continue;
@@ -117,7 +125,7 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
                     // вовсе, поле во время работы не меняется
                     if (Lombok.hasSetter(type, field) && isCalledAtRuntime(
                             type, setterName(variable.getNameAsString()), setterCalls, lifecycle)) {
-                        writers.add("'" + setterName(variable.getNameAsString()) + "' (сеттер от Lombok)");
+                        writers.add("'" + setterName(variable.getNameAsString()) + "' " + LOMBOK_SETTER);
                     }
                     if (writers.isEmpty()) {
                         continue;
@@ -126,7 +134,9 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
                             ? ": поле - условие цикла, а без volatile поток с циклом может так и не увидеть"
                             + " нового значения и не остановиться; объявите поле volatile либо используйте AtomicBoolean"
                             : ": экземпляр один на все потоки, возможны гонки и утечка данных между запросами";
-                    violations.add(new Violation(
+                    // Флаг цикла читает другой поток, даже если пишет его один: для него оговорки нет
+                    boolean singleThread = !loopFlag && isWrittenBySingleThread(type, writers, reach);
+                    Violation violation = new Violation(
                             errorLevel(),
                             errorType(),
                             code(),
@@ -135,7 +145,8 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
                             variable.getBegin().map(position -> position.line).orElse(0),
                             "Поле '" + variable.getNameAsString() + "' singleton-бина '" + type.getNameAsString()
                                     + "' изменяется без синхронизации в методе " + String.join(", ", writers)
-                                    + problem));
+                                    + problem + (singleThread ? SINGLE_THREAD_NOTE : ""));
+                    violations.add(singleThread ? violation.withConfidence(Confidence.SUSPICION) : violation);
                 }
             }
         }
@@ -152,6 +163,17 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
     }
 
     // @Scope("prototype"), @RequestScope, @StepScope - у каждого запроса или шага свой экземпляр
+    // Все методы, которые пишут в поле, вызываются только из однопоточного кода: main, запуск, операция JMX
+    private boolean isWrittenBySingleThread(ClassOrInterfaceDeclaration type, Set<String> writers, ThreadReach reach) {
+        if (writers.stream().anyMatch(writer -> writer.endsWith(LOMBOK_SETTER))) {
+            return false;
+        }
+        List<MethodDeclaration> methods = type.getMethods().stream()
+                .filter(method -> writers.contains("'" + method.getNameAsString() + "'"))
+                .toList();
+        return !methods.isEmpty() && methods.stream().allMatch(method -> reach.of(method) == ThreadReach.Reach.SINGLE);
+    }
+
     private boolean isSingletonBean(ClassOrInterfaceDeclaration type) {
         Set<String> annotations = annotationNames(type);
         return annotations.stream().anyMatch(BEAN_ANNOTATIONS::contains)

@@ -167,6 +167,15 @@ public class LocalTypes {
     }
 
     /**
+     * @return true, если имя объявлено в самом методе - параметром или локальной переменной, а не полем класса
+     */
+    public boolean isLocal(Node usage, String name) {
+        return findDeclaration(usage, name)
+                .filter(declaration -> declaration.getParentNode().filter(FieldDeclaration.class::isInstance).isEmpty())
+                .isPresent();
+    }
+
+    /**
      * @return объявление переменной, на которую ссылается выражение: x либо this.x
      */
     public Optional<Node> findDeclaration(Expression expression) {
