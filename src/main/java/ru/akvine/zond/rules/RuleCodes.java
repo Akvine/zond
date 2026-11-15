@@ -538,4 +538,12 @@ public class RuleCodes {
     public final static String REPEATED_QUERY_ACROSS_CALLS_RULE_CODE = "jr:531";
     public final static String ENUM_LOOKUP_BY_VALUES_SCAN_RULE_CODE = "jr:532";
     public final static String HIDDEN_REFLECTION_IN_HOT_METHOD_RULE_CODE = "jr:533";
+
+    public final static String VALUE_BOUNDED_LOOP_RULE_CODE = "jr:534";
+    public final static String VALUE_DEEP_RECURSION_RULE_CODE = "jr:535";
+    public final static String PRODUCT_OVERFLOW_RULE_CODE = "jr:536";
+    public final static String TIMEOUT_WITHOUT_CANCEL_RULE_CODE = "jr:537";
+    public final static String UNBOUNDED_ALLOCATION_SIZE_RULE_CODE = "jr:538";
+    public final static String REGEX_FROM_ARGUMENT_RULE_CODE = "jr:539";
+    public final static String JVM_WITHOUT_EXIT_ON_OUT_OF_MEMORY_RULE_CODE = "jr:540";
 }
