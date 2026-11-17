@@ -51,7 +51,7 @@ public class UseAfterCloseRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (BlockStmt block : sourceFile.unit().findAll(BlockStmt.class)) {
+        for (BlockStmt block : sourceFile.findAll(BlockStmt.class)) {
             List<Statement> statements = block.getStatements();
             for (int index = 0; index < statements.size(); index++) {
                 Optional<String> closed = closedVariable(statements.get(index));

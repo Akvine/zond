@@ -34,7 +34,7 @@ public class SleepInTestRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Thread.sleep(...), TimeUnit.SECONDS.sleep(...)
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> SLEEP.equals(call.getNameAsString()) && call.getScope().isPresent())
                 .filter(call -> !isVirtualClock(call.getScope().get()))
                 .filter(TestClasses::isInside)

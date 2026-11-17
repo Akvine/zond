@@ -37,7 +37,7 @@ public class CheckThenActRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (IfStmt ifStmt : sourceFile.unit().findAll(IfStmt.class)) {
+        for (IfStmt ifStmt : sourceFile.findAll(IfStmt.class)) {
             Optional<Expression> map = findCheckedMap(ifStmt.getCondition());
             if (map.isEmpty() || !CollectionKinds.isConcurrentMap(map.get())) {
                 continue;

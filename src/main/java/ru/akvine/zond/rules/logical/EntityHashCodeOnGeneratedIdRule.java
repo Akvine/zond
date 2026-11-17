@@ -48,7 +48,7 @@ public class EntityHashCodeOnGeneratedIdRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration entity : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration entity : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             if (!Annotations.has(entity, ENTITY)) {
                 continue;
             }

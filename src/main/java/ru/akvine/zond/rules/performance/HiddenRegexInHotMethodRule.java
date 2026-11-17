@@ -65,7 +65,7 @@ public class HiddenRegexInHotMethodRule extends AbstractRule implements ProjectR
             // поэтому таблица различает операторы по ссылке
             Map<Node, List<MethodCallExpr>> byStatement = new IdentityHashMap<>();
             List<List<MethodCallExpr>> groups = new ArrayList<>();
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 // Шаблон прямо в цикле - находка jr:239
                 if (RegexCalls.compilesConstantRegex(call) && !Loops.isRepeated(call) && !CodeContexts.isStartup(call)
                         && !TestClasses.isInside(call)) {
@@ -122,7 +122,7 @@ public class HiddenRegexInHotMethodRule extends AbstractRule implements ProjectR
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         Map<MethodDeclaration, HotSite> referenced = new IdentityHashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodReferenceExpr reference : sourceFile.unit().findAll(MethodReferenceExpr.class)) {
+            for (MethodReferenceExpr reference : sourceFile.findAll(MethodReferenceExpr.class)) {
                 if (MethodReferences.perElementOperation(reference).isEmpty() || CodeContexts.isStartup(reference)
                         || TestClasses.isInside(reference)) {
                     continue;

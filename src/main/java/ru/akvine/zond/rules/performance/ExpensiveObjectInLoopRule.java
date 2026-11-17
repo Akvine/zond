@@ -117,11 +117,11 @@ public class ExpensiveObjectInLoopRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             kind(call).filter(kind -> isRepeatedInvariant(call))
                     .ifPresent(kind -> violations.add(violation(sourceFile, call.getName(), message(call, kind))));
         }
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             Optional.ofNullable(CREATIONS.get(creation.getType().getNameAsString()))
                     .filter(kind -> isRepeatedInvariant(creation))
                     .ifPresent(kind -> violations.add(violation(sourceFile, creation, message(creation, kind))));

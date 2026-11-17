@@ -37,7 +37,7 @@ public class LoggerWrongClassRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             boolean createsLogger = GET_LOGGER.equals(call.getNameAsString())
                     && call.getScope().map(MethodCalls::receiverName).filter(LOGGER_FACTORIES::contains).isPresent();
             if (!createsLogger) {

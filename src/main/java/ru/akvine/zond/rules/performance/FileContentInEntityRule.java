@@ -63,7 +63,7 @@ public class FileContentInEntityRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile.unit())) {
+        for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile)) {
             for (FieldDeclaration field : entity.getFields()) {
                 if (field.isStatic() || field.isTransient() || Annotations.has(field, TRANSIENT) || isLazy(field)) {
                     continue;

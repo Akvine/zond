@@ -48,7 +48,7 @@ public final class ProtectedProperties {
 
     private ProtectedProperties(List<SourceFile> sources) {
         for (SourceFile source : sources) {
-            for (MethodCallExpr call : source.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : source.findAll(MethodCallExpr.class)) {
                 // user.setPassword(...), User.builder().password(...)
                 if (call.getArguments().size() == 1 && !TestClasses.isInside(call)) {
                     String property = PropertyAccess.writtenProperty(call.getNameAsString());
@@ -57,7 +57,7 @@ public final class ProtectedProperties {
                     }
                 }
             }
-            for (AssignExpr assignment : source.unit().findAll(AssignExpr.class)) {
+            for (AssignExpr assignment : source.findAll(AssignExpr.class)) {
                 // this.password = ... в конструкторе или методе
                 String property = MethodCalls.receiverName(assignment.getTarget());
                 boolean isOwnField = assignment.getTarget().isNameExpr() || assignment.getTarget().isFieldAccessExpr()

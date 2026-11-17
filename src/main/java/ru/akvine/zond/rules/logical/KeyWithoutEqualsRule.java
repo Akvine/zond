@@ -64,7 +64,7 @@ public class KeyWithoutEqualsRule extends AbstractRule implements ProjectRule {
         Map<ClassOrInterfaceDeclaration, String> usages = new LinkedHashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
             Set<Integer> reportedLines = new HashSet<>();
-            for (ClassOrInterfaceType type : sourceFile.unit().findAll(ClassOrInterfaceType.class)) {
+            for (ClassOrInterfaceType type : sourceFile.findAll(ClassOrInterfaceType.class)) {
                 Optional<Type> key = keyType(type);
                 if (key.isEmpty() || TestClasses.isInside(type)) {
                     continue;
@@ -125,7 +125,7 @@ public class KeyWithoutEqualsRule extends AbstractRule implements ProjectRule {
     private Map<String, String> lookupsWithNewKey(List<SourceFile> sourceFiles) {
         Map<String, String> lookups = new LinkedHashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (!KEY_CALLS.contains(call.getNameAsString()) || call.getArguments().isEmpty() || call.getScope().isEmpty()) {
                     continue;
                 }

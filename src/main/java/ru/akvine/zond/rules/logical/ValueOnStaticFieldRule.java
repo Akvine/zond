@@ -28,7 +28,7 @@ public class ValueOnStaticFieldRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(FieldDeclaration.class).stream()
+        return sourceFile.findAll(FieldDeclaration.class).stream()
                 .filter(field -> field.isStatic() && Annotations.has(field, VALUE))
                 .map(field -> violation(sourceFile, field,
                         "@Value на static-поле '" + field.getVariable(0).getNameAsString() + "': Spring заполняет"

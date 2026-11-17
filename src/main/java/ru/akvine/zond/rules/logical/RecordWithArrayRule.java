@@ -35,7 +35,7 @@ public class RecordWithArrayRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (RecordDeclaration record : sourceFile.unit().findAll(RecordDeclaration.class)) {
+        for (RecordDeclaration record : sourceFile.findAll(RecordDeclaration.class)) {
             boolean ownEquals = record.getMethodsByName(EQUALS).stream()
                     .anyMatch(method -> method.getParameters().size() == 1);
             if (ownEquals) {

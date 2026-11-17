@@ -42,7 +42,7 @@ public class GenericExceptionRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (ThrowStmt throwStmt : sourceFile.unit().findAll(ThrowStmt.class)) {
+        for (ThrowStmt throwStmt : sourceFile.findAll(ThrowStmt.class)) {
             if (throwStmt.getExpression().isObjectCreationExpr() && !TestClasses.isInside(throwStmt)) {
                 String type = throwStmt.getExpression().asObjectCreationExpr().getType().getNameAsString();
                 if (GENERIC_THROWN.contains(type)) {
@@ -54,7 +54,7 @@ public class GenericExceptionRule extends AbstractRule {
         }
 
         // У переопределенного метода и у main сигнатуру диктует не автор; в тестах throws Exception - норма
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (Annotations.has(method, OVERRIDE) || MAIN.equals(method.getNameAsString()) || TestClasses.isInside(method)) {
                 continue;
             }

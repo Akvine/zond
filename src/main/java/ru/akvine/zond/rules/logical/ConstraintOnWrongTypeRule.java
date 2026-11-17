@@ -61,10 +61,10 @@ public class ConstraintOnWrongTypeRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             report(sourceFile, field, field.getVariable(0).getType(), field.getVariable(0).getNameAsString(), violations);
         }
-        for (Parameter parameter : sourceFile.unit().findAll(Parameter.class)) {
+        for (Parameter parameter : sourceFile.findAll(Parameter.class)) {
             // @NotNull boolean... flags - это массив boolean[], и он может прийти как null
             if (!parameter.isVarArgs()) {
                 report(sourceFile, parameter, parameter.getType(), parameter.getNameAsString(), violations);

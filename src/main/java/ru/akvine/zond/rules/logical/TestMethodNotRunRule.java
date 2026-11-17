@@ -41,7 +41,7 @@ public class TestMethodNotRunRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             boolean junit3 = type.getExtendedTypes().stream()
                     .anyMatch(parent -> JUNIT3_BASE.equals(parent.getNameAsString()));
             if (type.isInterface() || junit3 || !TestClasses.isTestClass(type)) {

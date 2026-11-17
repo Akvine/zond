@@ -34,7 +34,7 @@ public class EmptyStatementRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (Statement statement : sourceFile.unit().findAll(Statement.class)) {
+        for (Statement statement : sourceFile.findAll(Statement.class)) {
             findBody(statement)
                     .filter(Statement::isEmptyStmt)
                     .ifPresent(body -> violations.add(violation(sourceFile, statement,

@@ -47,7 +47,7 @@ public class CalendarForCurrentTimeRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             String replacement = REPLACEMENTS.get(call.getNameAsString());
             if (replacement == null || !call.getArguments().isEmpty() || TestClasses.isInside(call)
                     || call.getScope().filter(this::isNewCalendar).isEmpty()) {

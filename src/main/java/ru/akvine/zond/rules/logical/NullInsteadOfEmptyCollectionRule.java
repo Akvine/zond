@@ -48,7 +48,7 @@ public class NullInsteadOfEmptyCollectionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             String type = LocalTypes.typeName(method.getType());
             boolean returnsCollection = COLLECTION_TYPES.contains(type) || type.endsWith(ARRAY_SUFFIX);
             if (!returnsCollection || documentsNull(method) || TestClasses.isInside(method)) {

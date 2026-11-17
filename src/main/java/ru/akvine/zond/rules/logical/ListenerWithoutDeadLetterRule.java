@@ -107,7 +107,7 @@ public class ListenerWithoutDeadLetterRule extends AbstractContextRule {
     private List<Listener> listeners(ScanContext context, Predicate<MethodDeclaration> ofBroker) {
         List<Listener> listeners = new ArrayList<>();
         for (SourceFile source : context.sources()) {
-            for (MethodDeclaration method : Messaging.listeners(source.unit())) {
+            for (MethodDeclaration method : Messaging.listeners(source)) {
                 if (ofBroker.test(method) && !TestClasses.isInside(method) && !Messaging.swallowsEverything(method)) {
                     listeners.add(new Listener(source, method));
                 }

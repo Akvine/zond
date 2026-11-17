@@ -54,7 +54,7 @@ public class ByteBufLeakRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(VariableDeclarator.class).stream()
+        return sourceFile.findAll(VariableDeclarator.class).stream()
                 .filter(variable -> variable.getType().asString().startsWith(BYTE_BUF))
                 .filter(variable -> variable.getInitializer().filter(this::allocates).isPresent())
                 .filter(variable -> !TestClasses.isInside(variable))

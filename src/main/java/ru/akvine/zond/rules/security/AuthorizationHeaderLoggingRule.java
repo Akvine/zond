@@ -40,7 +40,7 @@ public class AuthorizationHeaderLoggingRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!Loggers.isLogCall(call)) {
                 continue;
             }

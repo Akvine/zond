@@ -73,7 +73,7 @@ public class UnboundedAllocationSizeRule extends AbstractRule {
             return violations;
         }
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             sizeOf(call)
                     .flatMap(size -> check(sourceFile, call, size, ANY_DATA, "Сколько раз повторить или сколько"
                             + " выделить в '" + shorten(call) + "'"))
@@ -84,7 +84,7 @@ public class UnboundedAllocationSizeRule extends AbstractRule {
                         .ifPresent(violations::add);
             }
         }
-        for (ArrayCreationExpr array : sourceFile.unit().findAll(ArrayCreationExpr.class)) {
+        for (ArrayCreationExpr array : sourceFile.findAll(ArrayCreationExpr.class)) {
             for (ArrayCreationLevel level : array.getLevels()) {
                 Optional<Violation> violation = level.getDimension()
                         .flatMap(size -> check(sourceFile, array, size, ANY_DATA, "Размер массива '" + array + "'"));
@@ -94,7 +94,7 @@ public class UnboundedAllocationSizeRule extends AbstractRule {
                 }
             }
         }
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (SIZED_TYPES.contains(creation.getType().getNameAsString()) && creation.getArguments().size() == 1) {
                 check(sourceFile, creation, creation.getArgument(0), NUMBERS_ONLY,
                         "Начальный размер '" + creation + "'")

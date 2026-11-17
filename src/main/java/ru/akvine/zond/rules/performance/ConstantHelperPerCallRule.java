@@ -59,7 +59,7 @@ public class ConstantHelperPerCallRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             boolean pattern = MethodCalls.isCallOn(call, PATTERN, COMPILE);
             boolean formatter = MethodCalls.isCallOn(call, FORMATTER, OF_PATTERN);
             if (!pattern && !formatter || !hasConstantTemplate(call.getArguments()) || !isCreatedOnEveryCall(call)) {
@@ -81,7 +81,7 @@ public class ConstantHelperPerCallRule extends AbstractRule {
     }
 
     private void checkLegacyFormats(SourceFile sourceFile, List<Violation> violations) {
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             // В цикле дорогой объект показывает отдельное правило
             if (LEGACY_FORMAT.equals(creation.getType().getNameAsString())
                     && hasConstantTemplate(creation.getArguments())

@@ -47,7 +47,7 @@ public class EarlySemaphoreReleaseRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr release : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr release : sourceFile.findAll(MethodCallExpr.class)) {
             if (!RELEASE.equals(release.getNameAsString())
                     || release.getScope().filter(this::isSemaphore).isEmpty()) {
                 continue;

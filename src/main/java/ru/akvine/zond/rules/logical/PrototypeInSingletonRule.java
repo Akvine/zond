@@ -43,7 +43,7 @@ public class PrototypeInSingletonRule extends AbstractRule implements ProjectRul
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         Set<String> prototypes = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (scopeOf(type).filter(scope -> scope.contains(PROTOTYPE) && !scope.contains(PROXY_MODE)).isPresent()) {
                     prototypes.add(type.getNameAsString());
                 }
@@ -52,7 +52,7 @@ public class PrototypeInSingletonRule extends AbstractRule implements ProjectRul
 
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!SpringBeans.isBean(type) || !isSingleton(type)) {
                     continue;
                 }

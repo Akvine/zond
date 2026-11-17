@@ -46,7 +46,7 @@ public class FormatArgumentsMismatchRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<Integer> formatIndex = formatIndex(call);
             Optional<String> format = formatIndex.flatMap(index -> formatText(call, index));
             Optional<Integer> expected = format.flatMap(this::countArguments);

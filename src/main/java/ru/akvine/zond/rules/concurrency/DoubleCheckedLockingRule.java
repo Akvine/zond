@@ -36,7 +36,7 @@ public class DoubleCheckedLockingRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (IfStmt outer : sourceFile.unit().findAll(IfStmt.class)) {
+        for (IfStmt outer : sourceFile.findAll(IfStmt.class)) {
             Optional<String> checked = nullCheckedName(outer.getCondition());
             if (checked.isEmpty() || !hasSecondCheckUnderLock(outer, checked.get())) {
                 continue;

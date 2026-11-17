@@ -59,7 +59,7 @@ public class ComputeIfAbsentMisuseRule extends AbstractRule implements ProjectRu
         CallGraph graph = CallGraph.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (!COMPUTING.contains(call.getNameAsString()) || call.getArguments().size() < 2 || call.getScope().isEmpty()) {
                     continue;
                 }

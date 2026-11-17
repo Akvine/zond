@@ -1,7 +1,10 @@
 package ru.akvine.zond.rules.support;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.BodyDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import lombok.experimental.UtilityClass;
 
@@ -29,11 +32,29 @@ public class TestClasses {
     }
 
     // @SpringBootTest, @WebMvcTest, @DataJpaTest и т.п., @ExtendWith / @RunWith либо тестовые методы внутри
+    // Вопрос задают о каждом проверяемом узле, поэтому здесь нет ни стримов, ни промежуточных коллекций
     public boolean isTestClass(TypeDeclaration<?> type) {
-        boolean annotatedAsTest = annotationNames(type).stream()
-                .anyMatch(name -> name.endsWith(TEST_SUFFIX) || TEST_CLASS_ANNOTATIONS.contains(name));
-        return annotatedAsTest || type.getMethods().stream()
-                .anyMatch(method -> annotationNames(method).stream().anyMatch(TEST_METHOD_ANNOTATIONS::contains));
+        for (AnnotationExpr annotation : type.getAnnotations()) {
+            String name = annotation.getName().getIdentifier();
+            if (name.endsWith(TEST_SUFFIX) || TEST_CLASS_ANNOTATIONS.contains(name)) {
+                return true;
+            }
+        }
+        for (BodyDeclaration<?> member : type.getMembers()) {
+            if (member instanceof MethodDeclaration method && isTestMethod(method)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isTestMethod(MethodDeclaration method) {
+        for (AnnotationExpr annotation : method.getAnnotations()) {
+            if (TEST_METHOD_ANNOTATIONS.contains(annotation.getName().getIdentifier())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // Сравниваем по простому имени, чтобы поймать и короткую, и полную запись аннотации

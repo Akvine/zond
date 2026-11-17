@@ -80,7 +80,7 @@ public class SecurityContextInAsyncRule extends AbstractRule implements ProjectR
         Set<Node> reported = Collections.newSetFromMap(new IdentityHashMap<>());
         Search search = new Search(CallGraph.of(sourceFiles), files, reported, violations);
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr read : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr read : sourceFile.findAll(MethodCallExpr.class)) {
                 if (!isHolderRead(read) || TestClasses.isInside(read) || isContextSetUp(read)) {
                     continue;
                 }
@@ -118,7 +118,7 @@ public class SecurityContextInAsyncRule extends AbstractRule implements ProjectR
     }
 
     private boolean configuresPropagation(SourceFile sourceFile) {
-        String text = sourceFile.unit().toString();
+        String text = sourceFile.text();
         return PROPAGATION.stream().anyMatch(text::contains);
     }
 

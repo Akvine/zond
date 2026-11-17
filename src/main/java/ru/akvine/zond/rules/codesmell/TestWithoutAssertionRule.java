@@ -70,7 +70,7 @@ public class TestWithoutAssertionRule extends AbstractRule implements ProjectRul
     }
 
     private List<Violation> check(SourceFile sourceFile, ProjectClasses classes) {
-        List<MethodDeclaration> tests = sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        List<MethodDeclaration> tests = sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(method -> Annotations.hasAny(method, TEST_ANNOTATIONS))
                 // contextLoads() проверяет сам факт запуска контекста Spring - пустое тело там уместно
                 .filter(method -> !CONTEXT_LOADS.equals(method.getNameAsString()))
@@ -85,7 +85,7 @@ public class TestWithoutAssertionRule extends AbstractRule implements ProjectRul
                 .toList();
         // Набор на сотни тестов в одном файле создан генератором (ClientCompatibilityTest_2_9 в Hazelcast на 985
         // тестов): его пустые тесты - одна находка на файл. В обычном классе тестов каждая находка своя
-        long allTests = sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        long allTests = sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(method -> Annotations.hasAny(method, TEST_ANNOTATIONS))
                 .count();
         if (tests.size() > MAX_REPORTED_PER_FILE && allTests >= GENERATED_SUITE_SIZE) {

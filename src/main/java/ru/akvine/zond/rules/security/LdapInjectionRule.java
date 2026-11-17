@@ -53,7 +53,7 @@ public class LdapInjectionRule extends AbstractTaintRule {
     @Override
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!SEARCH_METHODS.contains(call.getNameAsString()) || !isLdap(call) || isEscaped(call)) {
                 continue;
             }

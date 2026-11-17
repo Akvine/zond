@@ -119,7 +119,7 @@ public class JdbcUrlWithoutBatchRewriteRule extends AbstractContextRule {
         boolean inTextFiles = context.textFiles().stream()
                 .anyMatch(file -> file.lines().stream().anyMatch(line -> contains(line, expected)));
         return inConfigs || inTextFiles || context.sources().stream()
-                .anyMatch(source -> source.unit().findAll(LiteralStringValueExpr.class).stream()
+                .anyMatch(source -> source.findAll(LiteralStringValueExpr.class).stream()
                         .anyMatch(literal -> contains(literal.getValue(), expected)));
     }
 

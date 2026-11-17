@@ -31,7 +31,7 @@ public class FindByIdIsPresentRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> PRESENCE_CHECKS.contains(call.getNameAsString()) && call.getArguments().isEmpty())
                 .filter(call -> call.getScope()
                         .map(Nodes::unwrap)

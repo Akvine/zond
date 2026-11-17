@@ -36,7 +36,7 @@ public class ResponseWriteWithoutEscapingRule extends AbstractTaintRule {
     @Override
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!WRITE_METHODS.contains(call.getNameAsString())
                     || call.getScope().filter(this::isResponseOutput).isEmpty()) {
                 continue;

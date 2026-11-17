@@ -44,7 +44,7 @@ public class HeaderInjectionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!HEADER_METHODS.contains(call.getNameAsString()) || call.getArguments().size() < HEADER_ARGUMENTS) {
                 continue;
             }

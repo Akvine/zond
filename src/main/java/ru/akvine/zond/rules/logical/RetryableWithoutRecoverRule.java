@@ -36,7 +36,7 @@ public class RetryableWithoutRecoverRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             boolean hasRecover = type.getMethods().stream().anyMatch(method -> Annotations.has(method, RECOVER));
             for (MethodDeclaration method : type.getMethods()) {
                 if (!Annotations.has(method, RETRYABLE)) {

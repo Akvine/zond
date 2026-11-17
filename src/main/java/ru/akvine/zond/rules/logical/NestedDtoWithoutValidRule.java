@@ -48,12 +48,12 @@ public class NestedDtoWithoutValidRule extends AbstractRule implements ProjectRu
         Set<String> constrained = new HashSet<>();
         Set<String> validated = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (type.getFields().stream().anyMatch(Constraints::hasAny)) {
                     constrained.add(type.getNameAsString());
                 }
             }
-            for (Parameter parameter : sourceFile.unit().findAll(Parameter.class)) {
+            for (Parameter parameter : sourceFile.findAll(Parameter.class)) {
                 if (Annotations.has(parameter, Constraints.VALID) || Annotations.has(parameter, Constraints.VALIDATED)) {
                     // List<OrderLine> lines: проверяется и сам список, и его элементы
                     parameter.getType().findAll(ClassOrInterfaceType.class)
@@ -69,7 +69,7 @@ public class NestedDtoWithoutValidRule extends AbstractRule implements ProjectRu
 
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 // Проверяют сам класс - значит, ждут, что проверится и вложенное. Сущности JPA проверяет Hibernate.
                 // Если параметров с @Valid в проверке нет вовсе, судим по самим ограничениям, как раньше
                 boolean isChecked = validated.isEmpty()
@@ -96,7 +96,7 @@ public class NestedDtoWithoutValidRule extends AbstractRule implements ProjectRu
     private Set<String> reachableFrom(Set<String> roots, List<SourceFile> sourceFiles) {
         Map<String, Set<String>> fieldTypes = new HashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 Set<String> names = fieldTypes.computeIfAbsent(type.getNameAsString(), name -> new HashSet<>());
                 type.getFields().forEach(field -> field.findAll(ClassOrInterfaceType.class)
                         .forEach(used -> names.add(used.getNameAsString())));

@@ -63,7 +63,7 @@ public class FileAssembledInMemoryRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (VariableDeclarator buffer : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator buffer : sourceFile.findAll(VariableDeclarator.class)) {
             if (!InMemoryFiles.isByteBuffer(buffer) || TestClasses.isInside(buffer) || CodeContexts.isStartup(buffer)) {
                 continue;
             }

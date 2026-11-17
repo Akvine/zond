@@ -30,7 +30,7 @@ public class NativePagingWithoutCountQueryRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        return sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(method -> PAGE.equals(LocalTypes.typeName(method.getType())))
                 .filter(method -> Queries.find(method)
                         .filter(query -> Queries.isNative(query) && Queries.member(query, COUNT_QUERY).isEmpty())

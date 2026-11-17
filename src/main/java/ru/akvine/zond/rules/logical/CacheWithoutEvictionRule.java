@@ -97,7 +97,7 @@ public class CacheWithoutEvictionRule extends AbstractContextRule {
      */
     private boolean collect(List<SourceFile> sources, Map<String, Place> cached, Set<String> evicted) {
         for (SourceFile source : sources) {
-            for (ClassOrInterfaceDeclaration type : source.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : source.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (TestClasses.isInside(type)) {
                     continue;
                 }
@@ -113,7 +113,7 @@ public class CacheWithoutEvictionRule extends AbstractContextRule {
                             .forEach(annotation -> evicted.addAll(namesOf(annotation, defaults)));
                 }
             }
-            for (MethodCallExpr call : source.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : source.findAll(MethodCallExpr.class)) {
                 if (GET_CACHE_NAMES.equals(call.getNameAsString())) {
                     return false;
                 }

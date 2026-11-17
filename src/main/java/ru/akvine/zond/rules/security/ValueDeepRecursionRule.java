@@ -57,7 +57,7 @@ public class ValueDeepRecursionRule extends AbstractRule {
             return violations;
         }
 
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (method.getBody().isEmpty() || method.getParameters().isEmpty() || !isNumeric(method)) {
                 continue;
             }
@@ -70,10 +70,12 @@ public class ValueDeepRecursionRule extends AbstractRule {
                 List<MethodCallExpr> descents = selfCalls.stream()
                         .filter(call -> isDecreased(call.getArgument(position), parameter.getNameAsString()))
                         .toList();
-                if (descents.isEmpty() || isLimited(sourceFile, method, parameter, position, descents.get(0))) {
+                if (descents.isEmpty() || isLimited(parameter, descents.get(0))) {
                     continue;
                 }
-                violations.add(violation(sourceFile, descents.get(0), message(method, parameter, descents)));
+                MethodCallExpr first = descents.get(0);
+                violations.add(violation(sourceFile, first,
+                        message(method, parameter, first.getArgument(position), descents.size())));
                 break;
             }
         }
@@ -90,14 +92,17 @@ public class ValueDeepRecursionRule extends AbstractRule {
         return ErrorType.SECURITY;
     }
 
-    private String message(MethodDeclaration method, Parameter parameter, List<MethodCallExpr> descents) {
+    /**
+     * @param descent аргумент первого рекурсивного вызова: n - 1
+     * @param calls   сколько рекурсивных вызовов в методе
+     */
+    private String message(MethodDeclaration method, Parameter parameter, Expression descent, int calls) {
         String name = parameter.getNameAsString();
-        String start = "Метод '" + method.getNameAsString() + "' вызывает сам себя с '"
-                + descents.get(0).getArgument(method.getParameters().indexOf(parameter)) + "': глубина рекурсии"
-                + " равна значению '" + name + "', и сверху его никто не ограничил. На значении в десятки тысяч"
-                + " это StackOverflowError";
-        String time = descents.size() >= EXPONENTIAL_CALLS
-                ? ", а рекурсивных вызовов здесь " + descents.size() + ", поэтому время растет экспоненциально:"
+        String start = "Метод '" + method.getNameAsString() + "' вызывает сам себя с '" + descent
+                + "': глубина рекурсии равна значению '" + name + "', и сверху его никто не ограничил."
+                + " На значении в десятки тысяч это StackOverflowError";
+        String time = calls >= EXPONENTIAL_CALLS
+                ? ", а рекурсивных вызовов здесь " + calls + ", поэтому время растет экспоненциально:"
                         + " уже на значении около 50 поток занят часами"
                 : "";
         return start + time + "; проверьте верхнюю границу значения либо замените рекурсию циклом";
@@ -135,24 +140,15 @@ public class ValueDeepRecursionRule extends AbstractRule {
                 && Nodes.unwrap(value.asUnaryExpr().getExpression()).toString().equals(name);
     }
 
-    private boolean isLimited(SourceFile sourceFile, MethodDeclaration method, Parameter parameter, int position,
-                              MethodCallExpr descent) {
+    private boolean isLimited(Parameter parameter, MethodCallExpr descent) {
         String name = parameter.getNameAsString();
         if (COUNTER_NAMES.contains(name) || Annotations.hasAny(parameter, BOUND_ANNOTATIONS)) {
             return true;
         }
+        // Границу проверяет сам метод либо, если он закрытый, все, кто его вызывает: там константа
+        // или уже ограниченное значение
         DataValues.DataValue value =
                 new DataValues.DataValue(name, DataValues.Origin.LONG_PARAMETER, List.of(name));
-        if (DataValues.isBoundedAbove(descent, value, null)) {
-            return true;
-        }
-        // Метод вызывают только с константами: глубину задает код
-        List<MethodCallExpr> outerCalls = sourceFile.unit().findAll(MethodCallExpr.class).stream()
-                .filter(call -> call.getNameAsString().equals(method.getNameAsString())
-                        && call.getArguments().size() == method.getParameters().size()
-                        && !Nodes.isInside(call, method))
-                .toList();
-        return method.isPrivate() && !outerCalls.isEmpty()
-                && outerCalls.stream().allMatch(call -> DataValues.isConstant(call.getArgument(position)));
+        return DataValues.isBoundedAbove(descent, value, null);
     }
 }

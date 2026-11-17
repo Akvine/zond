@@ -34,7 +34,7 @@ public class SynchronizedCollectionIterationRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(ForEachStmt.class).stream()
+        return sourceFile.findAll(ForEachStmt.class).stream()
                 .filter(loop -> isSynchronizedWrapper(loop.getIterable()) && !isInsideSynchronized(loop))
                 .map(loop -> violation(sourceFile, loop,
                         "Обход '" + loop.getIterable() + "' без synchronized: обертка Collections.synchronized..."

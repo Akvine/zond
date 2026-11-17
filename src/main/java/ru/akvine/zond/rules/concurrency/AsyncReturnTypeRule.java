@@ -35,7 +35,7 @@ public class AsyncReturnTypeRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // void ловит отдельное правило
-        return sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        return sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(method -> Annotations.has(method, ASYNC))
                 .filter(method -> !method.getType().isVoidType())
                 .filter(method -> !FUTURE_TYPES.contains(LocalTypes.typeName(method.getType())))

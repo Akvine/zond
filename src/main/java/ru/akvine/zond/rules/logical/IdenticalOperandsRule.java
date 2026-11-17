@@ -41,7 +41,7 @@ public class IdenticalOperandsRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(BinaryExpr.class).stream()
+        return sourceFile.findAll(BinaryExpr.class).stream()
                 .filter(binary -> OPERATORS.contains(binary.getOperator()))
                 .filter(binary -> !Nodes.unwrap(binary.getLeft()).isLiteralExpr())
                 .filter(binary -> !hasSideEffects(binary.getLeft()))

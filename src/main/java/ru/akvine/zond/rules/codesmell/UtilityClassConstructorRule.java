@@ -30,7 +30,7 @@ public class UtilityClassConstructorRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class).stream()
+        return sourceFile.findAll(ClassOrInterfaceDeclaration.class).stream()
                 .filter(this::isUtilityClass)
                 .filter(type -> type.getConstructors().isEmpty() && !TestClasses.isInside(type))
                 .map(type -> violation(sourceFile, type,

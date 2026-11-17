@@ -45,7 +45,7 @@ public class DuplicateSetterCallRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (BlockStmt block : sourceFile.unit().findAll(BlockStmt.class)) {
+        for (BlockStmt block : sourceFile.findAll(BlockStmt.class)) {
             if (TestClasses.isInside(block)) {
                 continue;
             }

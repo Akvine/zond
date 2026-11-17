@@ -36,7 +36,7 @@ public class RequiresNewInLoopRule extends AbstractRule implements ProjectRule {
         CallGraph graph = CallGraph.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (Loops.isRepeated(call) && graph.targetsOf(call).stream().anyMatch(this::opensNewTransaction)) {
                     violations.add(violation(sourceFile, call,
                             "Вызов '" + call.getNameAsString() + "(...)' с REQUIRES_NEW в цикле: на каждый элемент"

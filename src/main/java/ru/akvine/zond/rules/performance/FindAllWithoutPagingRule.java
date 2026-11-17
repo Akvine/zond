@@ -51,7 +51,7 @@ public class FindAllWithoutPagingRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // findAll(pageable), findAll(specification) и т.п. не трогаем: там выборка ограничена
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> FIND_ALL.equals(call.getNameAsString()) && call.getArguments().isEmpty())
                 .filter(Repositories::isRepositoryCall)
                 .filter(call -> !TestClasses.isInside(call) && !isStreamed(call))

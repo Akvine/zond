@@ -53,7 +53,7 @@ public class IgnoredBooleanResultRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ExpressionStmt statement : sourceFile.unit().findAll(ExpressionStmt.class)) {
+        for (ExpressionStmt statement : sourceFile.findAll(ExpressionStmt.class)) {
             // Тело лямбды-выражения хранится как оператор, но его результат возвращается
             boolean isLambdaBody = statement.getParentNode().filter(parent -> parent instanceof LambdaExpr).isPresent();
             if (isLambdaBody || !statement.getExpression().isMethodCallExpr()) {

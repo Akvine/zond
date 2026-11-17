@@ -295,14 +295,14 @@ public final class Taint {
         this.graph = CallGraph.of(sources);
         this.classes = ProjectClasses.of(sources);
         for (SourceFile source : sources) {
-            for (TypeDeclaration<?> type : source.unit().findAll(TypeDeclaration.class).stream()
+            for (TypeDeclaration<?> type : source.findAll(TypeDeclaration.class).stream()
                     .map(found -> (TypeDeclaration<?>) found).toList()) {
                 types.putIfAbsent(type.getNameAsString(), type);
             }
         }
         for (SourceFile source : sources) {
             // new Order(comment), new OrderRecord(comment): аргумент конструктора попадает в свойство
-            for (ObjectCreationExpr creation : source.unit().findAll(ObjectCreationExpr.class)) {
+            for (ObjectCreationExpr creation : source.findAll(ObjectCreationExpr.class)) {
                 String type = creation.getType().getNameAsString();
                 List<String> properties = constructorProperties(type, creation.getArguments().size());
                 for (int index = 0; index < properties.size(); index++) {
@@ -310,7 +310,7 @@ public final class Taint {
                             .add(creation.getArgument(index));
                 }
             }
-            for (MethodCallExpr call : source.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : source.findAll(MethodCallExpr.class)) {
                 if (call.getArguments().size() != 1 || call.getScope().isEmpty()) {
                     continue;
                 }

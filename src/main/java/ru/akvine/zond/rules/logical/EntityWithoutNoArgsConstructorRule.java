@@ -32,7 +32,7 @@ public class EntityWithoutNoArgsConstructorRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return JpaEntities.findEntities(sourceFile.unit()).stream()
+        return JpaEntities.findEntities(sourceFile).stream()
                 .filter(entity -> !hasNoArgsConstructor(entity))
                 .map(entity -> violation(sourceFile, entity,
                         "Сущность '" + entity.getNameAsString() + "' без конструктора без аргументов: JPA создает"

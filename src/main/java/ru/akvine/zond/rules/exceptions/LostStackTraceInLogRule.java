@@ -56,7 +56,7 @@ public class LostStackTraceInLogRule extends AbstractRule implements ProjectRule
         Set<String> created = new HashSet<>();
         Set<String> wrapping = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+            for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
                 String name = creation.getType().getNameAsString();
                 if (!classes.isDeclared(name)) {
                     continue;
@@ -75,7 +75,7 @@ public class LostStackTraceInLogRule extends AbstractRule implements ProjectRule
     }
 
     private void check(SourceFile sourceFile, Predicate<CatchClause> isPlainFailure, List<Violation> violations) {
-        for (CatchClause clause : sourceFile.unit().findAll(CatchClause.class)) {
+        for (CatchClause clause : sourceFile.findAll(CatchClause.class)) {
             String caught = clause.getParameter().getNameAsString();
             // Исключение выбрасывается дальше - стек уходит с ним и будет записан там, где его обработают.
             // У InterruptedException стек ничего не говорит: это просьба остановиться, а не ошибка

@@ -136,19 +136,19 @@ public class TrustAllSslRule extends AbstractContextRule {
 
     private List<Disabling> findDisablings(SourceFile sourceFile) {
         List<Disabling> found = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             boolean isEmptyCheck = TRUST_CHECKS.contains(method.getNameAsString())
                     && method.getBody().filter(body -> body.getStatements().isEmpty()).isPresent();
             if (isEmptyCheck) {
                 found.add(new Disabling(method, "пустой " + method.getNameAsString() + "(...)"));
             }
         }
-        for (SimpleName name : sourceFile.unit().findAll(SimpleName.class)) {
+        for (SimpleName name : sourceFile.findAll(SimpleName.class)) {
             if (TRUST_ALL_NAMES.contains(name.getIdentifier())) {
                 found.add(new Disabling(name, name.getIdentifier()));
             }
         }
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (VERIFIER_SETTERS.contains(call.getNameAsString())
                     && call.getArguments().stream().anyMatch(argument ->
                     argument.isLambdaExpr() && alwaysTrue(argument.asLambdaExpr()))) {

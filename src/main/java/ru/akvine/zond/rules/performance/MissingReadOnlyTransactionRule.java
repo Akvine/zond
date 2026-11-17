@@ -117,7 +117,7 @@ public class MissingReadOnlyTransactionRule extends AbstractRule implements Proj
             if (jta) {
                 continue;
             }
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 Optional<AnnotationExpr> transactional = writableTransaction(method);
                 if (transactional.isEmpty()) {
                     continue;

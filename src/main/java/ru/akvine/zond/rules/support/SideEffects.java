@@ -83,7 +83,7 @@ public final class SideEffects {
     private SideEffects(List<SourceFile> sources) {
         this.graph = CallGraph.of(sources);
         for (SourceFile source : sources) {
-            for (TypeDeclaration<?> type : source.unit().findAll(TypeDeclaration.class).stream()
+            for (TypeDeclaration<?> type : source.findAll(TypeDeclaration.class).stream()
                     .map(found -> (TypeDeclaration<?>) found).toList()) {
                 types.putIfAbsent(type.getNameAsString(), type);
                 List<ClassOrInterfaceType> parents = new ArrayList<>();

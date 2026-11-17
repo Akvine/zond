@@ -36,7 +36,7 @@ public class ListenerSwallowsExceptionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration listener : Messaging.listeners(sourceFile.unit())) {
+        for (MethodDeclaration listener : Messaging.listeners(sourceFile)) {
             // При ручном подтверждении проглоченная ошибка дает другую беду - сообщение зависает; о ней отдельное правило
             if (listener.getBody().isEmpty() || Messaging.acknowledgment(listener).isPresent()) {
                 continue;

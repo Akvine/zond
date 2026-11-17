@@ -56,7 +56,7 @@ public class NullInImmutableCollectionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (isFactory(call) && call.getArguments().stream().map(Nodes::unwrap).anyMatch(Expression::isNullLiteralExpr)) {
                 violations.add(violation(sourceFile, call,
                         "null в '" + describe(call) + "': такие коллекции null не допускают, вызов закончится"

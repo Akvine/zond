@@ -57,7 +57,7 @@ public class InsecureRandomRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (Expression expression : sourceFile.unit().findAll(Expression.class)) {
+        for (Expression expression : sourceFile.findAll(Expression.class)) {
             if (!isPredictableRandom(expression)) {
                 continue;
             }

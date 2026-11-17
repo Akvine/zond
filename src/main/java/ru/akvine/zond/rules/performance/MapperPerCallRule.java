@@ -48,7 +48,7 @@ public class MapperPerCallRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        List<Violation> violations = new ArrayList<>(sourceFile.unit().findAll(ObjectCreationExpr.class).stream()
+        List<Violation> violations = new ArrayList<>(sourceFile.findAll(ObjectCreationExpr.class).stream()
                 .filter(creation -> HEAVY_TYPES.contains(creation.getType().getNameAsString()))
                 .filter(creation -> isCreatedOnEveryCall(creation) && !TestClasses.isInside(creation))
                 .map(creation -> violation(sourceFile, creation,
@@ -56,7 +56,7 @@ public class MapperPerCallRule extends AbstractRule {
                                 + " и потокобезопасен после настройки; создайте его один раз - полем, константой"
                                 + " или бином"))
                 .toList());
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!FACTORY_METHODS.contains(call.getNameAsString()) || call.getScope().isEmpty()
                     || !isCreatedOnEveryCall(call) || TestClasses.isInside(call)) {
                 continue;

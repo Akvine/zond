@@ -33,7 +33,7 @@ public class RegexInLoopRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(this::compilesConstantRegex)
                 .filter(call -> Loops.isRepeated(call) && !TestClasses.isInside(call))
                 .map(call -> violation(sourceFile, call,

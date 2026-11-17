@@ -56,7 +56,7 @@ public class SingleByteIoRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
         // Один цикл с одним потоком - одна находка, сколько бы раз в нем ни читали
         Set<String> reported = new HashSet<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<Node> loop = Loops.enclosingIteration(call);
             if (loop.isEmpty() || call.getScope().filter(Expression::isNameExpr).isEmpty()
                     || TestClasses.isInside(call)) {

@@ -45,7 +45,7 @@ public class CastWithoutInstanceofRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(CastExpr.class).stream()
+        return sourceFile.findAll(CastExpr.class).stream()
                 .filter(cast -> cast.getType().isClassOrInterfaceType()
                         && !TYPE_PARAMETER.matcher(cast.getType().asClassOrInterfaceType().getNameAsString()).matches())
                 .filter(cast -> Nodes.unwrap(cast.getExpression()).isNameExpr())

@@ -47,7 +47,7 @@ public class MissingEnableAnnotationRule extends AbstractRule implements Project
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         Set<String> typeAnnotations = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (Node node : sourceFile.unit().findAll(Node.class)) {
+            for (Node node : sourceFile.findAll(Node.class)) {
                 if (node instanceof TypeDeclaration<?> type) {
                     type.getAnnotations().forEach(annotation -> typeAnnotations.add(nameOf(annotation)));
                 }
@@ -62,7 +62,7 @@ public class MissingEnableAnnotationRule extends AbstractRule implements Project
         // Об одной недостающей @Enable... сообщаем один раз, на первом методе
         Set<String> reported = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 for (AnnotationExpr annotation : method.getAnnotations()) {
                     String enable = REQUIRED.get(nameOf(annotation));
                     if (enable != null && !typeAnnotations.contains(enable) && reported.add(enable)) {

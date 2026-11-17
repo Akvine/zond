@@ -69,7 +69,7 @@ public class PageCountWithJoinsRule extends AbstractRule implements ProjectRule 
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 if (PAGE.equals(LocalTypes.typeName(method.getType()))) {
                     check(sourceFile, method, classes, violations);
                 }

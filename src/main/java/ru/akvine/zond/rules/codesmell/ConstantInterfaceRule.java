@@ -25,7 +25,7 @@ public class ConstantInterfaceRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class).stream()
+        return sourceFile.findAll(ClassOrInterfaceDeclaration.class).stream()
                 .filter(type -> type.isInterface() && !type.getFields().isEmpty())
                 .filter(type -> type.getMembers().stream().allMatch(member -> member.isFieldDeclaration()))
                 .map(type -> violation(sourceFile, type,

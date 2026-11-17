@@ -50,7 +50,7 @@ public class CollectUnboundedStreamRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr terminal : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr terminal : sourceFile.findAll(MethodCallExpr.class)) {
             if (!isMaterializing(terminal)) {
                 continue;
             }

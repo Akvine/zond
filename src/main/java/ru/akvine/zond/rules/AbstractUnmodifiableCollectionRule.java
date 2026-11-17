@@ -36,7 +36,7 @@ public abstract class AbstractUnmodifiableCollectionRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> modifyingMethods().contains(call.getNameAsString()))
                 .flatMap(call -> call.getScope()
                         .flatMap(this::findSource)

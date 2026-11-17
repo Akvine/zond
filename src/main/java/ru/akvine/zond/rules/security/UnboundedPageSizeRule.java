@@ -68,7 +68,7 @@ public class UnboundedPageSizeRule extends AbstractRule implements ProjectRule {
         sourceFiles.forEach(sourceFile -> files.put(sourceFile.unit(), sourceFile));
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr page : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr page : sourceFile.findAll(MethodCallExpr.class)) {
                 Optional<Expression> size = sizeOf(page);
                 Optional<MethodDeclaration> method = page.findAncestor(MethodDeclaration.class);
                 if (size.isPresent() && method.isPresent()) {

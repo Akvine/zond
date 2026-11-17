@@ -61,14 +61,14 @@ public class WeakHashRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (StringLiteralExpr literal : sourceFile.unit().findAll(StringLiteralExpr.class)) {
+        for (StringLiteralExpr literal : sourceFile.findAll(StringLiteralExpr.class)) {
             boolean isArgument = literal.getParentNode().filter(parent -> parent instanceof MethodCallExpr).isPresent();
             if (isArgument && WEAK_ALGORITHM.matcher(literal.asString()).matches()) {
                 report(sourceFile, literal, literal.asString()).ifPresent(violations::add);
             }
         }
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (call.getScope().isPresent() && WEAK_HASH_METHODS.contains(call.getNameAsString())) {
                 report(sourceFile, call, call.getNameAsString() + "(...)").ifPresent(violations::add);
             }

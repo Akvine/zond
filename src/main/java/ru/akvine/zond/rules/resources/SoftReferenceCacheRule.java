@@ -61,7 +61,7 @@ public class SoftReferenceCacheRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             if (TestClasses.isInside(variable)) {
                 continue;
             }
@@ -80,7 +80,7 @@ public class SoftReferenceCacheRule extends AbstractRule {
             }
         }
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             // CacheBuilder.newBuilder().softValues(), Caffeine.newBuilder().softValues()
             boolean builder = SOFT_VALUES.equals(call.getNameAsString()) && call.getArguments().isEmpty()
                     && StreamChains.callsBefore(call).stream()
@@ -93,7 +93,7 @@ public class SoftReferenceCacheRule extends AbstractRule {
             }
         }
 
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             // У ConcurrentReferenceHashMap ссылки мягкие, если явно не задан ReferenceType.WEAK
             boolean soft = REFERENCE_MAP.equals(creation.getType().getNameAsString())
                     && creation.getArguments().stream().noneMatch(argument -> argument.toString().contains(WEAK));

@@ -53,7 +53,7 @@ public class MapperMissesFieldRule extends AbstractRule implements ProjectRule {
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 Set<String> available = sourceProperties(method, classes);
                 if (available.isEmpty()) {
                     continue;

@@ -79,7 +79,7 @@ public class ManualBeanLookupRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> LOOKUPS.containsKey(call.getNameAsString()))
                 .filter(call -> call.getScope().filter(this::isContainer).isPresent())
                 .filter(call -> !TestClasses.isInside(call) && !SpringContainer.isInsideInfrastructure(call)

@@ -63,7 +63,7 @@ public class NullableDereferenceRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             Optional<String> source = variable.getInitializer().flatMap(this::describeNullableSource);
             Optional<Node> callable = Nodes.enclosingCallable(variable);
             if (source.isEmpty() || callable.isEmpty() || TestClasses.isInside(variable)

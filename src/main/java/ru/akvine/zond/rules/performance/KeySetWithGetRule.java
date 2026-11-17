@@ -32,7 +32,7 @@ public class KeySetWithGetRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(ForEachStmt.class).stream()
+        return sourceFile.findAll(ForEachStmt.class).stream()
                 .filter(this::getsValueByEachKey)
                 .map(loop -> violation(sourceFile, loop,
                         "Обход '" + loop.getIterable() + "' с get() по каждому ключу: значение ищется в Map"

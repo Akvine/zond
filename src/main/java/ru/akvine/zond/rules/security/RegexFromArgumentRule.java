@@ -65,7 +65,7 @@ public class RegexFromArgumentRule extends AbstractTaintRule {
             return violations;
         }
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!takesRegex(call)) {
                 continue;
             }

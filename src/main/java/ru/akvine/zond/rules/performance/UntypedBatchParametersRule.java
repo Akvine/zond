@@ -88,7 +88,7 @@ public class UntypedBatchParametersRule extends AbstractContextRule {
             if (TestPaths.isTest(source.path())) {
                 continue;
             }
-            for (MethodCallExpr call : source.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : source.findAll(MethodCallExpr.class)) {
                 if (!JdbcBatches.isBatchUpdate(call) || call.getArguments().size() < 2) {
                     continue;
                 }
@@ -127,7 +127,7 @@ public class UntypedBatchParametersRule extends AbstractContextRule {
         boolean inTextFiles = context.textFiles().stream()
                 .anyMatch(file -> file.lines().stream().anyMatch(line -> line.contains(IGNORE_PROPERTY)));
         return inConfigs || inTextFiles || context.sources().stream()
-                .anyMatch(source -> source.unit().findAll(LiteralStringValueExpr.class).stream()
+                .anyMatch(source -> source.findAll(LiteralStringValueExpr.class).stream()
                         .anyMatch(literal -> literal.getValue().contains(IGNORE_PROPERTY)));
     }
 

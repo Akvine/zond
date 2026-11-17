@@ -75,12 +75,12 @@ public class WorkBeforeCacheLookupUnderLockRule extends AbstractRule implements 
                 continue;
             }
             List<NodeList<Statement>> regions = new ArrayList<>();
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 if (method.isSynchronized() && !method.isStatic()) {
                     method.getBody().ifPresent(body -> regions.add(body.getStatements()));
                 }
             }
-            for (SynchronizedStmt block : sourceFile.unit().findAll(SynchronizedStmt.class)) {
+            for (SynchronizedStmt block : sourceFile.findAll(SynchronizedStmt.class)) {
                 regions.add(block.getBody().getStatements());
             }
             for (NodeList<Statement> region : regions) {

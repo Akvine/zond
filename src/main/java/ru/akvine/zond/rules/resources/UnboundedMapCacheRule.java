@@ -74,11 +74,11 @@ public class UnboundedMapCacheRule extends AbstractRule implements ProjectRule {
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         Set<String> enums = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            sourceFile.unit().findAll(EnumDeclaration.class).forEach(found -> enums.add(found.getNameAsString()));
+            sourceFile.findAll(EnumDeclaration.class).forEach(found -> enums.add(found.getNameAsString()));
         }
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!type.isInterface()) {
                     check(sourceFile, type, enums, violations);
                 }

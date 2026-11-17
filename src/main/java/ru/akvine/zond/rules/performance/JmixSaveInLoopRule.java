@@ -35,7 +35,7 @@ public class JmixSaveInLoopRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> Jmix.isDataManagerCall(call, WRITE_METHODS) && !savesContext(call))
                 .filter(CodeContexts::isRepeatedOverData)
                 .filter(call -> !CodeContexts.isStartup(call) && !Jmix.isBatchOrSingleStep(call))

@@ -42,7 +42,7 @@ public abstract class AbstractManualBeanCreationRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(ObjectCreationExpr.class).stream()
+        return sourceFile.findAll(ObjectCreationExpr.class).stream()
                 .filter(creation -> isBeanType(creation.getType().getNameAsString()))
                 .filter(creation -> !isPlainClass(sourceFile, creation))
                 .filter(creation -> !isInsideBeanDefinition(creation))
@@ -71,7 +71,7 @@ public abstract class AbstractManualBeanCreationRule extends AbstractRule {
 
     // Класс объявлен в этом же файле без стереотипа - это обычный класс, а не бин
     private boolean isDeclaredHereAsPlainClass(SourceFile sourceFile, String typeName) {
-        for (Node node : sourceFile.unit().findAll(Node.class)) {
+        for (Node node : sourceFile.findAll(Node.class)) {
             if (node instanceof TypeDeclaration<?> type && type.getNameAsString().equals(typeName)) {
                 return !Annotations.hasAny(type, STEREOTYPE_ANNOTATIONS);
             }

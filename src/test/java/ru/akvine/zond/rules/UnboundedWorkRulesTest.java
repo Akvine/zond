@@ -453,7 +453,143 @@ class UnboundedWorkRulesTest {
         // которую можно отменить, - не находки
         assertThat(found).extracting(Violation::line).containsExactly(4, 35);
         assertThat(found.get(0).message()).contains("'future.get(5, TimeUnit.SECONDS)'", "future.cancel(true)");
+        // Задача пришла параметром, а вызовов метода в проекте нет: отменяют ли ее снаружи, неизвестно
+        assertThat(found).extracting(Violation::confidenceOrDefault)
+                .containsExactly(Confidence.SUSPICION, Confidence.SUSPICION);
         assertThat(RuleTests.check(new TimeoutWithoutCancelRule(), TEST_FILE, code)).isEmpty();
+    }
+
+    @Test
+    void timeoutCancelledByTaskOwner() {
+        String code = """
+                class Generation {
+                    private final ExecutorService executor = Executors.newFixedThreadPool(4);
+                    private Future<Report> background;
+                    private Future<Report> watched;
+
+                    Report own(Callable<Report> task) throws Exception {
+                        Future<Report> future = executor.submit(task);
+                        try {
+                            return future.get(5, TimeUnit.SECONDS);
+                        } catch (TimeoutException exception) {
+                            throw new IllegalStateException("too slow", exception);
+                        }
+                    }
+                    Report generate(Callable<Report> task) {
+                        Future<Report> future = executor.submit(task);
+                        try {
+                            return collect(future);
+                        } catch (RuntimeException exception) {
+                            future.cancel(true);
+                            throw exception;
+                        }
+                    }
+                    private Report collect(Future<Report> future) {
+                        return await(future);
+                    }
+                    private Report await(Future<Report> future) {
+                        try {
+                            return future.get(5, TimeUnit.SECONDS);
+                        } catch (TimeoutException | InterruptedException | ExecutionException exception) {
+                            throw new IllegalStateException("too slow", exception);
+                        }
+                    }
+                    Report careless(Callable<Report> task) {
+                        return poll(executor.submit(task));
+                    }
+                    private Report poll(Future<Report> future) {
+                        try {
+                            return future.get(5, TimeUnit.SECONDS);
+                        } catch (TimeoutException | InterruptedException | ExecutionException exception) {
+                            throw new IllegalStateException("too slow", exception);
+                        }
+                    }
+                    Report peek() throws Exception {
+                        try {
+                            return background.get(1, TimeUnit.SECONDS);
+                        } catch (TimeoutException exception) {
+                            return null;
+                        }
+                    }
+                    Report look() throws Exception {
+                        try {
+                            return watched.get(1, TimeUnit.SECONDS);
+                        } catch (TimeoutException exception) {
+                            return null;
+                        }
+                    }
+                    void close() {
+                        watched.cancel(true);
+                    }
+                }
+                """;
+        List<Violation> found = RuleTests.check(new TimeoutWithoutCancelRule(), code);
+
+        // await: задачу отменяет тот, кто ее запустил, - в catch двумя вызовами выше. poll: вызывающий не отменяет.
+        // watched отменяют в close(), но до тех пор задача выполняется - подозрение
+        assertThat(found).extracting(Violation::line).containsExactly(9, 38, 45, 52);
+        assertThat(found).extracting(Violation::confidenceOrDefault).containsExactly(
+                Confidence.PROBABLE, Confidence.PROBABLE, Confidence.PROBABLE, Confidence.SUSPICION);
+    }
+
+    @Test
+    void boundCheckedByCalledMethodOrCaller() {
+        String code = """
+                class Limits {
+                    private static final int MAX_REPEAT = 1000;
+                    private static final long MAX_STEPS = 1_000_000;
+                    String guarded(String text, String times) {
+                        int count = Integer.parseInt(times);
+                        allow(count);
+                        return text.repeat(count);
+                    }
+                    String logged(String text, String times) {
+                        int count = Integer.parseInt(times);
+                        note(count);
+                        return text.repeat(count);
+                    }
+                    private void allow(int value) {
+                        within(value, MAX_REPEAT);
+                    }
+                    private void within(int value, int limit) {
+                        if (value > limit) {
+                            throw new IllegalArgumentException("too many");
+                        }
+                    }
+                    private void note(int value) {
+                        System.out.println("repeat " + value);
+                    }
+                    long steps(String text) {
+                        long limit = Long.parseLong(text);
+                        if (limit > MAX_STEPS) {
+                            throw new IllegalArgumentException("too many");
+                        }
+                        return count(limit);
+                    }
+                    private long count(long limit) {
+                        long steps = 0;
+                        for (long i = 0; i < limit; i++) {
+                            steps += i % 7;
+                        }
+                        return steps;
+                    }
+                    long open(String text) {
+                        return walk(Long.parseLong(text));
+                    }
+                    private long walk(long limit) {
+                        long steps = 0;
+                        for (long i = 0; i < limit; i++) {
+                            steps += i % 7;
+                        }
+                        return steps;
+                    }
+                }
+                """;
+
+        // allow(count) сравнивает значение с границей двумя вызовами ниже, note(count) только пишет в журнал
+        assertThat(RuleTests.lines(new UnboundedAllocationSizeRule(), code)).containsExactly(12);
+        // В count(...) приходит уже проверенное значение, в walk(...) - любое
+        assertThat(RuleTests.lines(new ValueBoundedLoopRule(), code)).containsExactly(44);
     }
 
     @Test
@@ -801,11 +937,23 @@ class UnboundedWorkRulesTest {
                     List<String> joined(List<Thread> threads) {
                         return threads.stream().map(Thread::getName).toList();
                     }
+                    void released(List<CompletableFuture<String>> futures) throws Exception {
+                        var all = CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]));
+                        all.completeOnTimeout(null, 1, TimeUnit.MINUTES).join();
+                        for (CompletableFuture<String> future : futures) {
+                            System.out.println(future.get());
+                        }
+                    }
+                    void defaulted(List<CompletableFuture<String>> futures) {
+                        futures.forEach(future -> future.completeOnTimeout("", 1, TimeUnit.MINUTES));
+                        futures.forEach(future -> System.out.println(future.join()));
+                    }
                 }
                 """;
 
-        // Тип элемента виден по коллекции. После allOf(...).get(timeout, unit) и orTimeout ожидание уже ограничено
-        assertThat(RuleTests.lines(new WaitWithoutTimeoutRule(), code)).containsExactly(4, 9, 23);
+        // Тип элемента виден по коллекции. После allOf(...).get(timeout, unit) и orTimeout ожидание уже ограничено,
+        // а allOf(...).completeOnTimeout(...) задачи не завершает: get() в цикле после него ждет без предела
+        assertThat(RuleTests.lines(new WaitWithoutTimeoutRule(), code)).containsExactlyInAnyOrder(4, 9, 23, 38);
     }
 
     @Test

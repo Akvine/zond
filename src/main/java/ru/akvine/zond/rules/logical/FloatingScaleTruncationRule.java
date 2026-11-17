@@ -49,7 +49,7 @@ public class FloatingScaleTruncationRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (CastExpr cast : sourceFile.unit().findAll(CastExpr.class)) {
+        for (CastExpr cast : sourceFile.findAll(CastExpr.class)) {
             Expression value = Nodes.unwrap(cast.getExpression());
             if (!INTEGER_TARGETS.contains(cast.getType().asString()) || !isScaledFraction(value)
                     || TestClasses.isInside(cast)) {

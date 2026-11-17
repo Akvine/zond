@@ -88,7 +88,7 @@ public class WholeFileReadIntoMemoryRule extends AbstractRule implements Project
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         // Именно аннотации: само слово "Scheduled" встречается и в строках, и в названиях классов
         boolean server = sourceFiles.stream()
-                .flatMap(sourceFile -> sourceFile.unit().findAll(AnnotationExpr.class).stream())
+                .flatMap(sourceFile -> sourceFile.findAll(AnnotationExpr.class).stream())
                 .anyMatch(annotation -> REQUEST_HANDLING.contains(annotation.getNameAsString()));
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
@@ -109,7 +109,7 @@ public class WholeFileReadIntoMemoryRule extends AbstractRule implements Project
 
     private void check(SourceFile sourceFile, boolean server, List<Violation> violations) {
         Set<Node> reportedLoops = new HashSet<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (call.getScope().isEmpty() || TestClasses.isInside(call) || CodeContexts.isStartup(call)) {
                 continue;
             }

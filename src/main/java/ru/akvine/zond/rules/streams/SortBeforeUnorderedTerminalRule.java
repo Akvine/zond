@@ -46,7 +46,7 @@ public class SortBeforeUnorderedTerminalRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr sorted : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr sorted : sourceFile.findAll(MethodCallExpr.class)) {
             if (!SORTED.equals(sorted.getNameAsString()) || sorted.getArguments().size() > 1
                     || sorted.getScope().isEmpty() || TestClasses.isInside(sorted)) {
                 continue;

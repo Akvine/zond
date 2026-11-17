@@ -58,8 +58,8 @@ public class RandomPickWithRetryRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         Set<Node> reported = new HashSet<>();
-        List<Expression> candidates = new ArrayList<>(sourceFile.unit().findAll(MethodCallExpr.class));
-        candidates.addAll(sourceFile.unit().findAll(ArrayAccessExpr.class));
+        List<Expression> candidates = new ArrayList<>(sourceFile.findAll(MethodCallExpr.class));
+        candidates.addAll(sourceFile.findAll(ArrayAccessExpr.class));
         for (Expression candidate : candidates) {
             if (!TestClasses.isInside(candidate)) {
                 check(sourceFile, candidate, reported).ifPresent(violations::add);

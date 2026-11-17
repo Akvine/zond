@@ -38,7 +38,7 @@ public class SwitchFallThroughRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (SwitchStmt switchStmt : sourceFile.unit().findAll(SwitchStmt.class)) {
+        for (SwitchStmt switchStmt : sourceFile.findAll(SwitchStmt.class)) {
             List<SwitchEntry> entries = switchStmt.getEntries();
 
             // У последней ветки проваливаться некуда; у веток со стрелкой (case X ->) проваливания нет

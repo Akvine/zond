@@ -35,10 +35,10 @@ public class ThreadLocalNotRemovedRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        List<MethodCallExpr> calls = sourceFile.unit().findAll(MethodCallExpr.class);
+        List<MethodCallExpr> calls = sourceFile.findAll(MethodCallExpr.class);
         List<Violation> violations = new ArrayList<>();
 
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             for (VariableDeclarator variable : field.getVariables()) {
                 if (!THREAD_LOCAL_TYPES.contains(LocalTypes.typeName(variable.getType()))) {
                     continue;

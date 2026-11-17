@@ -40,7 +40,7 @@ public class BoxingInLoopRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
         // Об одной переменной сообщаем один раз
         Set<Node> reported = new HashSet<>();
-        for (Expression expression : sourceFile.unit().findAll(Expression.class)) {
+        for (Expression expression : sourceFile.findAll(Expression.class)) {
             Optional<Expression> target = accumulatorOf(expression);
             Optional<Node> iteration = Loops.enclosingIteration(expression);
             if (target.isEmpty() || iteration.isEmpty()) {

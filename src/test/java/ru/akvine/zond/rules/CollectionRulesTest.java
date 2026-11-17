@@ -35,6 +35,72 @@ class CollectionRulesTest {
     }
 
     @Test
+    void listFilledJustAboveIsNotEmpty() {
+        assertThat(RuleTests.lines(new ListGetFirstWithoutCheckRule(), """
+                class Sample {
+                    String added(List<String> names, String name) {
+                        List<String> seen = new ArrayList<>(names);
+                        seen.add(name);
+                        if (name.isEmpty()) {
+                            return seen.get(0);
+                        }
+                        return seen.get(0);
+                    }
+                    String created(String first, String second) {
+                        List<String> pair = List.of(first, second);
+                        return pair.get(0);
+                    }
+                    String cleared(List<String> names, String name) {
+                        List<String> seen = new ArrayList<>(names);
+                        seen.add(name);
+                        seen.clear();
+                        return seen.get(0);
+                    }
+                    String merged(List<String> names, List<String> other) {
+                        List<String> all = new ArrayList<>(names);
+                        all.addAll(other);
+                        return all.get(0);
+                    }
+                    String conditional(List<String> names, String name) {
+                        List<String> seen = new ArrayList<>(names);
+                        if (!name.isEmpty()) {
+                            seen.add(name);
+                        }
+                        return seen.get(0);
+                    }
+                }
+                """)).containsExactly(18, 23, 30);
+    }
+
+    @Test
+    void groupOfGroupingByIsNotEmpty() {
+        // Группа появляется в карте вместе с первым элементом; у partitioningBy обе части есть всегда, и пустые тоже
+        assertThat(RuleTests.lines(new ListGetFirstWithoutCheckRule(), """
+                class Sample {
+                    List<Order> firstOfEachCustomer(List<Order> orders) {
+                        Map<Long, List<Order>> byCustomer = orders.stream()
+                                .collect(Collectors.groupingBy(Order::getCustomerId));
+                        return byCustomer.values().stream().map(group -> group.get(0)).toList();
+                    }
+                    void print(List<Order> orders) {
+                        Map<Long, List<Order>> byCustomer = orders.stream().collect(groupingBy(Order::getCustomerId));
+                        for (List<Order> group : byCustomer.values()) {
+                            System.out.println(group.get(0));
+                        }
+                        byCustomer.forEach((customer, group) -> System.out.println(group.get(0)));
+                    }
+                    void parts(List<Order> orders) {
+                        Map<Boolean, List<Order>> parts = orders.stream().collect(partitioningBy(Order::isPaid));
+                        parts.values().forEach(part -> System.out.println(part.get(0)));
+                    }
+                    void batches(List<List<Order>> batches) {
+                        batches.forEach(batch -> System.out.println(batch.get(0)));
+                    }
+                }
+                """)).containsExactly(16, 19);
+    }
+
+    @Test
     void iteratorNextWithoutHasNext() {
         assertThat(RuleTests.lines(new IteratorNextWithoutHasNextRule(), """
                 class Sample {

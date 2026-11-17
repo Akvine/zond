@@ -42,7 +42,7 @@ public class InsecureCookieRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
 
         // Cookie cookie = new Cookie(...); cookie.setHttpOnly(true); cookie.setSecure(true);
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             boolean createsCookie = variable.getInitializer()
                     .map(Nodes::unwrap)
                     .filter(Expression::isObjectCreationExpr)
@@ -58,7 +58,7 @@ public class InsecureCookieRule extends AbstractRule {
         }
 
         // ResponseCookie.from(...).httpOnly(true).secure(true).build()
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (MethodCalls.isCallOn(call, RESPONSE_COOKIE, FROM) && !TestClasses.isInside(call)) {
                 String chain = topOfChain(call).toString();
                 describeMissing(chain.contains(".httpOnly" + TRUE), chain.contains(".secure" + TRUE))

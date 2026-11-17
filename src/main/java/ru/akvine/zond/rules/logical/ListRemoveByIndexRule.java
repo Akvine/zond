@@ -42,7 +42,7 @@ public class ListRemoveByIndexRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!REMOVE.equals(call.getNameAsString()) || call.getArguments().size() != 1 || call.getScope().isEmpty()
                     || !isListOfIntegers(call.getScope().get())) {
                 continue;

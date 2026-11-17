@@ -73,7 +73,7 @@ public class MockitoMisuseRule extends AbstractRule implements ProjectRule {
         Set<String> setupAnnotations = setupAnnotations(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 uninitializedMock(type, classes, setupAnnotations).ifPresent(field -> violations.add(violation(
                         sourceFile, field, "Поле '" + field.getVariable(0).getNameAsString() + "' с @"
                                 + Annotations.find(field, MOCK_ANNOTATIONS).map(annotation -> annotation.getName()
@@ -82,7 +82,7 @@ public class MockitoMisuseRule extends AbstractRule implements ProjectRule {
                                 + " MockitoAnnotations.openMocks(this), и в тесте будет NullPointerException вместо"
                                 + " проверки; добавьте расширение Mockito")));
             }
-            for (ExpressionStmt statement : sourceFile.unit().findAll(ExpressionStmt.class)) {
+            for (ExpressionStmt statement : sourceFile.findAll(ExpressionStmt.class)) {
                 if (isBareVerify(statement)) {
                     violations.add(violation(sourceFile, statement,
                             "'" + statement.getExpression() + "' ничего не проверяет: verify возвращает мок, и"
@@ -90,7 +90,7 @@ public class MockitoMisuseRule extends AbstractRule implements ProjectRule {
                                     + " verify(mock).save(order)"));
                 }
             }
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 realObjectStubbed(call).ifPresent(name -> violations.add(violation(sourceFile, call,
                         "when(...) у '" + name + "', а это настоящий объект, созданный через new: Mockito не сможет"
                                 + " подменить ответ и вызовет настоящий метод; сделайте объект моком или"
@@ -120,7 +120,7 @@ public class MockitoMisuseRule extends AbstractRule implements ProjectRule {
     private Set<String> setupAnnotations(List<SourceFile> sourceFiles) {
         Set<String> names = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (AnnotationDeclaration annotation : sourceFile.unit().findAll(AnnotationDeclaration.class)) {
+            for (AnnotationDeclaration annotation : sourceFile.findAll(AnnotationDeclaration.class)) {
                 boolean setsUp = annotation.getAnnotations().stream()
                         .anyMatch(meta -> MOCKITO_SETUP.matcher(meta.toString()).find()
                                 || SPRING_TESTS.contains(meta.getName().getIdentifier()));

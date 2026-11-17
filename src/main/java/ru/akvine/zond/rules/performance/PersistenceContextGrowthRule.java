@@ -58,7 +58,7 @@ public class PersistenceContextGrowthRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (method.isPrivate() || TransactionalAnnotations.findEffective(method).isEmpty() || TestClasses.isInside(method)
                     || releasesContext(method)) {
                 continue;

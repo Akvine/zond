@@ -62,7 +62,7 @@ public class SortForSingleElementRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr sort : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr sort : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<NameExpr> sorted = sortedLocal(sort);
             if (sorted.isEmpty() || TestClasses.isInside(sort)) {
                 continue;

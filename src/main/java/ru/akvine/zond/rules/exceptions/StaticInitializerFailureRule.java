@@ -54,7 +54,7 @@ public class StaticInitializerFailureRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (InitializerDeclaration block : sourceFile.unit().findAll(InitializerDeclaration.class)) {
+        for (InitializerDeclaration block : sourceFile.findAll(InitializerDeclaration.class)) {
             if (!block.isStatic() || TestClasses.isInside(block)) {
                 continue;
             }
@@ -68,7 +68,7 @@ public class StaticInitializerFailureRule extends AbstractRule {
                                     + " умолчанию и пишите ошибку в лог")));
         }
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (isUnsafeParse(call) && isClassInitialization(call) && !TestClasses.isInside(call)) {
                 violations.add(violation(sourceFile, call,
                         "'" + Nodes.text(call) + "' при загрузке класса: если переменная не задана или записана"

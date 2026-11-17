@@ -74,7 +74,7 @@ public final class ProjectClasses {
     private static ProjectClasses collect(List<SourceFile> sourceFiles) {
         ProjectClasses classes = new ProjectClasses();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 classes.bySimpleName.computeIfAbsent(type.getNameAsString(), name -> new ArrayList<>()).add(type);
                 classes.files.put(type, sourceFile);
             }

@@ -60,7 +60,7 @@ public class StreamWithoutTerminalRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ExpressionStmt statement : sourceFile.unit().findAll(ExpressionStmt.class)) {
+        for (ExpressionStmt statement : sourceFile.findAll(ExpressionStmt.class)) {
             Expression expression = Nodes.unwrap(statement.getExpression());
             if (!expression.isMethodCallExpr() || !INTERMEDIATE.contains(expression.asMethodCallExpr().getNameAsString())
                     || isReturnedFromLambda(statement)) {

@@ -37,7 +37,7 @@ public class LongMethodRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             // В тестах длинные методы с подготовкой данных - обычное дело
             if (method.getBody().isEmpty() || TestClasses.isInside(method)) {
                 continue;

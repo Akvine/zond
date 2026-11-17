@@ -38,7 +38,7 @@ public class OverridableCallInConstructorRule extends AbstractRule implements Pr
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (type.isInterface() || type.isFinal()) {
                     continue;
                 }

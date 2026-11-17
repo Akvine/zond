@@ -61,7 +61,7 @@ public class CommandInjectionRule extends AbstractTaintRule {
         List<Violation> violations = new ArrayList<>();
 
         // Runtime.getRuntime().exec("ping " + host), r.exec(args, env), processBuilder.command(arguments)
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             boolean isRuntimeExec = EXEC.equals(call.getNameAsString()) && call.getScope().filter(this::isRuntime).isPresent();
             boolean isCommand = COMMAND.equals(call.getNameAsString()) && !call.getArguments().isEmpty()
                     && call.getScope().filter(this::isProcessBuilder).isPresent();
@@ -72,7 +72,7 @@ public class CommandInjectionRule extends AbstractTaintRule {
         }
 
         // new ProcessBuilder("sh", "-c", "ping " + host)
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (PROCESS_BUILDER.equals(creation.getType().getNameAsString())
                     && isDangerous(creation.getArguments(), taint)) {
                 violations.add(report(sourceFile, creation,

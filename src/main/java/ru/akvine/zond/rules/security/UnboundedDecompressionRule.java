@@ -81,11 +81,11 @@ public class UnboundedDecompressionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Node> places = new ArrayList<>();
-        sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(this::readsEverything)
                 .forEach(places::add);
-        Stream.concat(sourceFile.unit().findAll(WhileStmt.class).stream().map(WhileStmt::getCondition),
-                        sourceFile.unit().findAll(DoStmt.class).stream().map(DoStmt::getCondition))
+        Stream.concat(sourceFile.findAll(WhileStmt.class).stream().map(WhileStmt::getCondition),
+                        sourceFile.findAll(DoStmt.class).stream().map(DoStmt::getCondition))
                 .filter(this::isCopyLoop)
                 .map(condition -> condition.getParentNode().orElse(condition))
                 .forEach(places::add);
@@ -203,8 +203,8 @@ public class UnboundedDecompressionRule extends AbstractRule {
 
     // Загрузка файла, тело запроса, соединение по сети - в именах типов, аннотаций и переменных файла
     private boolean takesUntrustedInput(SourceFile sourceFile) {
-        Stream<String> simpleNames = sourceFile.unit().findAll(SimpleName.class).stream().map(SimpleName::getIdentifier);
-        Stream<String> names = sourceFile.unit().findAll(Name.class).stream().map(Name::getIdentifier);
+        Stream<String> simpleNames = sourceFile.findAll(SimpleName.class).stream().map(SimpleName::getIdentifier);
+        Stream<String> names = sourceFile.findAll(Name.class).stream().map(Name::getIdentifier);
         return Stream.concat(simpleNames, names).anyMatch(name -> UNTRUSTED_INPUT.matcher(name).matches());
     }
 }

@@ -35,7 +35,7 @@ public class SystemExitRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(this::isExit)
                 .filter(call -> !isInsideMain(call))
                 .map(call -> violation(sourceFile, call,

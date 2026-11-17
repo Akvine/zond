@@ -67,7 +67,7 @@ public class JdbcBatches {
     public boolean isUsedIn(List<SourceFile> sources) {
         return sources.stream()
                 .filter(source -> !TestPaths.isTest(source.path()))
-                .anyMatch(source -> source.unit().findAll(MethodCallExpr.class).stream()
+                .anyMatch(source -> source.findAll(MethodCallExpr.class).stream()
                         .anyMatch(call -> BATCH_UPDATE.equals(call.getNameAsString())
                                 || ADD_BATCH.equals(call.getNameAsString())));
     }

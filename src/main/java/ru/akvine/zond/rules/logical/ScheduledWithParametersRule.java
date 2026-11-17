@@ -29,7 +29,7 @@ public class ScheduledWithParametersRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        return sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(method -> Annotations.hasAny(method, SCHEDULED_ANNOTATIONS))
                 .filter(method -> !method.getParameters().isEmpty())
                 .map(method -> violation(sourceFile, method,

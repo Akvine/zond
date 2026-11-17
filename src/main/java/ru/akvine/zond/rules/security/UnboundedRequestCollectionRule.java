@@ -83,7 +83,7 @@ public class UnboundedRequestCollectionRule extends AbstractRule implements Proj
 
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 boolean accepts = handlersKnown ? inbound.contains(type) : looksLikeRequest(type);
                 if (type.isInterface() || !accepts) {
                     continue;

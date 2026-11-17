@@ -50,7 +50,7 @@ public class StreamCountForExistenceRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(BinaryExpr.class).stream()
+        return sourceFile.findAll(BinaryExpr.class).stream()
                 .filter(this::isExistenceCheck)
                 .map(comparison -> violation(sourceFile, comparison,
                         "Проверка существования через count() в '" + comparison + "': count() обходит весь стрим,"

@@ -160,7 +160,7 @@ public class NullableColumnInQueryRule extends AbstractContextRule {
         Project project = new Project(ProjectClasses.of(context.sources()), DbSchema.of(context));
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : context.sources()) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 Optional<ClassOrInterfaceDeclaration> entity = Queries.isSpringDataRepository(type, project.classes())
                         ? RepositoryEntities.entityOf(type, project.classes())
                         : Optional.empty();

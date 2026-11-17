@@ -40,7 +40,7 @@ public class EntityFieldWithoutColumnRule extends AbstractContextRule {
         }
         ProjectClasses classes = ProjectClasses.of(context.sources());
         for (SourceFile sourceFile : context.sources()) {
-            for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile.unit())) {
+            for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile)) {
                 // Таблицы нет в миграциях - значит, она создается не здесь: о ее колонках ничего не известно
                 Optional<DbSchema.Table> table = EntityMapping.tableName(entity, classes)
                         .flatMap(schema.visibleFrom(entity)::find)

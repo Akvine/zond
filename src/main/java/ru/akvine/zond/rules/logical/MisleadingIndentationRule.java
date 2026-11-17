@@ -35,7 +35,7 @@ public class MisleadingIndentationRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (Statement statement : sourceFile.unit().findAll(Statement.class)) {
+        for (Statement statement : sourceFile.findAll(Statement.class)) {
             Optional<Statement> body = findBody(statement);
             if (body.isEmpty() || body.get().isBlockStmt() || body.get().isEmptyStmt()) {
                 continue;

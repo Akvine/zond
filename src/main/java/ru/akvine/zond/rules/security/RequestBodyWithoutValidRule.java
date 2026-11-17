@@ -58,7 +58,7 @@ public class RequestBodyWithoutValidRule extends AbstractRule implements Project
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (Parameter parameter : sourceFile.unit().findAll(Parameter.class)) {
+            for (Parameter parameter : sourceFile.findAll(Parameter.class)) {
                 if (Annotations.has(parameter, REQUEST_BODY) && !isOutgoing(parameter)
                         && !Annotations.hasAny(parameter, VALIDATION_TRIGGERS)
                         && needsValidation(parameter.getType(), sourceFile.unit(), classes)) {

@@ -30,7 +30,7 @@ public class DisabledTestWithoutReasonRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(AnnotationExpr.class).stream()
+        return sourceFile.findAll(AnnotationExpr.class).stream()
                 .filter(annotation -> DISABLING_ANNOTATIONS.contains(annotation.getName().getIdentifier()))
                 .filter(annotation -> !hasReason(annotation))
                 .map(annotation -> violation(sourceFile, annotation,

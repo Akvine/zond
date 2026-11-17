@@ -53,7 +53,7 @@ public class MassAssignmentRule extends AbstractTaintRule {
         List<Violation> violations = new ArrayList<>();
         boolean apache = sourceFile.unit().getImports().stream()
                 .anyMatch(declaration -> declaration.getNameAsString().startsWith(APACHE_PACKAGE));
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             // Третий аргумент - список свойств, которые копировать нельзя: с ним копирование уже ограничено
             boolean copiesAll = COPY_PROPERTIES.equals(call.getNameAsString())
                     && call.getArguments().size() == COPY_ALL_ARGUMENTS

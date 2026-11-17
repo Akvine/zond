@@ -33,7 +33,7 @@ public class BigDecimalDivideRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // divide(divisor) с одним аргументом; варианты с масштабом, RoundingMode или MathContext безопасны
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> DIVIDE.equals(call.getNameAsString()) && call.getArguments().size() == 1)
                 .filter(call -> call.getScope().filter(this::isBigDecimal).isPresent()
                         || isBigDecimal(call.getArgument(0)))

@@ -59,7 +59,7 @@ public class CaseWithoutLocaleRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> CASE_METHODS.contains(call.getNameAsString()))
                 .filter(call -> call.getArguments().isEmpty() && call.getScope().isPresent())
                 .filter(call -> !TestClasses.isInside(call) && !isLocaleNeutral(call.getScope().get()))

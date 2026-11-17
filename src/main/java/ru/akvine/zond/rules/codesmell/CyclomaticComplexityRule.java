@@ -53,13 +53,13 @@ public class CyclomaticComplexityRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (method.getBody().isPresent()) {
                 report(sourceFile, method, METHOD, method.getNameAsString(), violations);
             }
         }
         // Конструктор ветвится так же, как метод
-        for (ConstructorDeclaration constructor : sourceFile.unit().findAll(ConstructorDeclaration.class)) {
+        for (ConstructorDeclaration constructor : sourceFile.findAll(ConstructorDeclaration.class)) {
             report(sourceFile, constructor, CONSTRUCTOR, constructor.getNameAsString(), violations);
         }
         violations.sort(Comparator.comparingInt(Violation::line));

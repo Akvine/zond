@@ -77,7 +77,7 @@ public class OffsetPaginationRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         Set<Integer> reportedLines = new HashSet<>();
-        for (Node node : sourceFile.unit().findAll(Node.class)) {
+        for (Node node : sourceFile.findAll(Node.class)) {
             Optional<String> paging = describe(node);
             // В цикле смещение растет на каждом шаге - о таком обходе всей таблицы сообщает отдельное правило
             if (paging.isEmpty() || Loops.isRepeated(node) || TestClasses.isInside(node)) {

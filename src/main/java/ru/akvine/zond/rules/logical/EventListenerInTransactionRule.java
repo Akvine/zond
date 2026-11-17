@@ -37,7 +37,7 @@ public class EventListenerInTransactionRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        return sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(method -> Annotations.has(method, EVENT_LISTENER))
                 .filter(this::dependsOnTransactionOutcome)
                 .map(method -> violation(sourceFile, method,

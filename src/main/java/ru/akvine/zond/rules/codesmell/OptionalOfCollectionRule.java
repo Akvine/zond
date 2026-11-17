@@ -44,7 +44,7 @@ public class OptionalOfCollectionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             // Сигнатуру переопределенного метода задает предок: менять ее нужно там
             if (Annotations.has(method, OVERRIDE)) {
                 continue;

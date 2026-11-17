@@ -57,7 +57,7 @@ public class IdentityInsertPerStatementRule extends AbstractRule implements Proj
                 continue;
             }
             Map<String, String> constants = findConstants(sourceFile);
-            for (Expression expression : sourceFile.unit().findAll(Expression.class)) {
+            for (Expression expression : sourceFile.findAll(Expression.class)) {
                 // Только выражение целиком: его части дали бы ту же находку еще раз
                 if (expression.getParentNode().filter(Expression.class::isInstance).isPresent()) {
                     continue;
@@ -88,7 +88,7 @@ public class IdentityInsertPerStatementRule extends AbstractRule implements Proj
     // private static final String PRE_QUERY = "set identity_insert %s on\n";
     private Map<String, String> findConstants(SourceFile sourceFile) {
         Map<String, String> constants = new HashMap<>();
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             if (!field.isStatic() || !field.isFinal()) {
                 continue;
             }

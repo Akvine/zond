@@ -44,7 +44,7 @@ public class TrustBoundaryViolationRule extends AbstractTaintRule {
     @Override
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!SESSION_WRITES.contains(call.getNameAsString()) || call.getArguments().size() != 2
                     || call.getScope().filter(this::isSession).isEmpty()) {
                 continue;

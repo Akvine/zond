@@ -61,7 +61,7 @@ public class ContainsBeforeAddRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr contains : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr contains : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<MethodCallExpr> add = CheckThenAdd.addAfter(contains).filter(found -> !TestClasses.isInside(found));
             Optional<Node> declaration = add.flatMap(found -> LocalTypes.findDeclaration(contains.getScope().orElseThrow()));
             Optional<String> type = declaration.flatMap(LocalTypes::declaredType);

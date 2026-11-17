@@ -55,7 +55,7 @@ public class ListShiftInLoopRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<Shift> shift = shift(call);
             if (shift.isEmpty() || call.getScope().isEmpty() || TestClasses.isInside(call)) {
                 continue;

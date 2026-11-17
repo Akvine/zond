@@ -40,9 +40,11 @@ public class ArraysAsListPrimitiveRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
-                .filter(call -> call.getArguments().size() == 1 && isPrimitiveArray(call.getArgument(0)))
+        // Сначала дешевая проверка имени, затем тип аргумента: его приходится спрашивать у решателя типов
+        return sourceFile.findAll(MethodCallExpr.class).stream()
+                .filter(call -> call.getArguments().size() == 1)
                 .flatMap(call -> container(call)
+                        .filter(container -> isPrimitiveArray(call.getArgument(0)))
                         .map(container -> violation(sourceFile, call,
                                 "'" + call + "' от массива примитивов: получится " + container + " из одного"
                                         + " элемента - самого массива, а не список чисел; используйте"

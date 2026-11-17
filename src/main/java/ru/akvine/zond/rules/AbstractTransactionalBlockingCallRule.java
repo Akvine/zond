@@ -52,7 +52,7 @@ public abstract class AbstractTransactionalBlockingCallRule extends AbstractRule
         CallGraph graph = CallGraph.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 if (isTransactional(method) && applies(method)) {
                     check(sourceFile, method, graph, violations);
                 }

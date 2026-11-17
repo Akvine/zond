@@ -35,7 +35,7 @@ public class EndpointWithoutAuthorizationRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             // Проверка на классе действует на все методы; если прав нет ни у одного метода, их задают в другом месте
             boolean usesAuthorization = type.getMethods().stream()
                     .anyMatch(method -> Annotations.hasAny(method, AUTHORIZATION_ANNOTATIONS));

@@ -56,7 +56,7 @@ public class JmixReferenceWithoutFetchPlanRule extends AbstractRule implements P
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr load : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr load : sourceFile.findAll(MethodCallExpr.class)) {
                 Optional<List<MethodCallExpr>> chain = Jmix.loadChain(load).filter(calls -> LIST.equals(load.getNameAsString()));
                 boolean planned = chain.isEmpty() || chain.get().stream()
                         .anyMatch(call -> FETCH_PLAN_METHODS.contains(call.getNameAsString()));

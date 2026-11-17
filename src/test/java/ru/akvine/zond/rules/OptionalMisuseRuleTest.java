@@ -43,4 +43,25 @@ class OptionalMisuseRuleTest {
         assertThat(violations).allMatch(violation -> violation.ruleCode().equals("jr:24"));
         assertThat(violations.get(0).message()).contains("'find'", "null");
     }
+
+    @Test
+    void optionalsOfStreamFilteredByPresence() {
+        // До лямбды после filter(Optional::isPresent) доходят только непустые значения
+        assertThat(RuleTests.lines(rule, """
+                class Cache {
+                    List<Card> present(Map<String, Optional<Card>> cards) {
+                        return cards.values().stream()
+                                .filter(Optional::isPresent)
+                                .map(card -> new Card(card.get()))
+                                .toList();
+                    }
+                    List<Card> notEmpty(List<Optional<Card>> cards) {
+                        return cards.stream().filter(card -> !card.isEmpty()).map(card -> card.get().copy()).toList();
+                    }
+                    List<Card> unchecked(List<Optional<Card>> cards) {
+                        return cards.stream().filter(card -> card != null).map(card -> card.get().copy()).toList();
+                    }
+                }
+                """)).containsExactly(12);
+    }
 }

@@ -47,14 +47,14 @@ public class DefaultCharsetRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
 
         // text.getBytes() именно на строке: у MultipartFile.getBytes() кодировки нет
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             boolean onString = call.getScope().flatMap(LocalTypes::typeOf).filter(STRING::equals).isPresent();
             if (GET_BYTES.equals(call.getNameAsString()) && call.getArguments().isEmpty() && onString) {
                 violations.add(report(sourceFile, call));
             }
         }
 
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (dependsOnDefault(creation)) {
                 violations.add(report(sourceFile, creation));
             }

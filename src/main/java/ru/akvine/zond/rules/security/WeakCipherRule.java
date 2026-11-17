@@ -45,7 +45,7 @@ public class WeakCipherRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!MethodCalls.isCallOn(call, CIPHER, GET_INSTANCE) || call.getArguments().isEmpty()) {
                 continue;
             }
@@ -56,7 +56,7 @@ public class WeakCipherRule extends AbstractRule {
                             "'" + call + "': " + problem + "; используйте AES/GCM/NoPadding со случайным IV")));
         }
 
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (IV_PARAMETER_SPEC.equals(creation.getType().getNameAsString())
                     && !creation.getArguments().isEmpty()
                     && isConstant(creation.getArgument(0))) {

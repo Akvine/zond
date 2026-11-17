@@ -42,7 +42,7 @@ public class ExceptionMessageToClientRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration handler : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration handler : sourceFile.findAll(MethodDeclaration.class)) {
             Optional<Parameter> exception = handler.getParameters().stream()
                     .filter(parameter -> BROAD_EXCEPTIONS.contains(LocalTypes.typeName(parameter.getType())))
                     .findFirst();

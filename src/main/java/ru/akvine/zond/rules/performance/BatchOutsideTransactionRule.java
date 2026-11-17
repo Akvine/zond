@@ -67,7 +67,7 @@ public class BatchOutsideTransactionRule extends AbstractContextRule {
             if (TestPaths.isTest(source.path())) {
                 continue;
             }
-            for (MethodCallExpr call : source.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : source.findAll(MethodCallExpr.class)) {
                 Optional<String> advice = findAdvice(call);
                 if (advice.isEmpty() || CodeContexts.isStartup(call)
                         || TransactionScopes.isInTransaction(call, graph)) {

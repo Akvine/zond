@@ -81,7 +81,7 @@ public class RepeatedQueryInMethodRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (CallableDeclaration<?> callable : sourceFile.unit().findAll(CallableDeclaration.class)) {
+        for (CallableDeclaration<?> callable : sourceFile.findAll(CallableDeclaration.class)) {
             if (TestClasses.isInside(callable)) {
                 continue;
             }

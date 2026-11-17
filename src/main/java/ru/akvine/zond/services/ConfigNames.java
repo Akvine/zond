@@ -39,21 +39,21 @@ public class ConfigNames {
         Set<String> names = new HashSet<>();
         for (SourceFile source : sources) {
             // DEFAULT_ARGUMENT = "--spring.config.name=" + "thingsboard"; .properties("spring.config.name=app")
-            for (Expression expression : source.unit().findAll(Expression.class, ConfigNames::isWholeText)) {
+            for (Expression expression : source.findAll(Expression.class, ConfigNames::isWholeText)) {
                 textOf(expression, MAX_DEPTH)
                         .filter(text -> text.contains(CONFIG_NAME_ASSIGNMENT))
                         .map(text -> text.substring(text.indexOf(CONFIG_NAME_ASSIGNMENT) + CONFIG_NAME_ASSIGNMENT.length()))
                         .ifPresent(value -> addConfigNames(value, names));
             }
             // System.setProperty("spring.config.name", "thingsboard")
-            for (MethodCallExpr call : source.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : source.findAll(MethodCallExpr.class)) {
                 if (SET_PROPERTY.equals(call.getNameAsString()) && call.getArguments().size() == 2
                         && StringLiterals.textOf(call.getArgument(0)).filter(CONFIG_NAME_KEY::equals).isPresent()) {
                     textOf(call.getArgument(1), MAX_DEPTH).ifPresent(value -> addConfigNames(value, names));
                 }
             }
             // @PropertySource("classpath:recaptcha.properties")
-            for (AnnotationExpr annotation : source.unit().findAll(AnnotationExpr.class)) {
+            for (AnnotationExpr annotation : source.findAll(AnnotationExpr.class)) {
                 if (PROPERTY_SOURCES.contains(annotation.getName().getIdentifier())) {
                     annotation.findAll(StringLiteralExpr.class).stream()
                             .map(StringLiteralExpr::asString)

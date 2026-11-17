@@ -61,7 +61,7 @@ public class MultipleWritesWithoutTransactionRule extends AbstractRule implement
         CallGraph graph = CallGraph.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!SpringBeans.isBean(type) || TestClasses.isInside(type)) {
                     continue;
                 }

@@ -53,7 +53,7 @@ public class DeleteOneByOneRule extends AbstractRule implements ProjectRule {
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!Queries.isSpringDataRepository(type, classes)) {
                     continue;
                 }
@@ -70,7 +70,7 @@ public class DeleteOneByOneRule extends AbstractRule implements ProjectRule {
                     }
                 }
             }
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (!DELETE_ALL.equals(call.getNameAsString()) || call.getArguments().size() > 1
                         || !Repositories.isRepositoryCall(call) || TestClasses.isInside(call)) {
                     continue;

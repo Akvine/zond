@@ -47,7 +47,7 @@ public class SensitiveDataLoggingRule extends AbstractRule implements ProjectRul
 
     private List<Violation> check(SourceFile sourceFile, ProtectedProperties properties) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!Loggers.isLogCall(call)) {
                 continue;
             }

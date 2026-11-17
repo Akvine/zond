@@ -57,7 +57,7 @@ public class UnknownPropertyInQueryMethodRule extends AbstractRule implements Pr
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration repository : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration repository : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 Optional<ClassOrInterfaceDeclaration> entity = entityOf(repository, classes);
                 if (entity.isEmpty()) {
                     continue;

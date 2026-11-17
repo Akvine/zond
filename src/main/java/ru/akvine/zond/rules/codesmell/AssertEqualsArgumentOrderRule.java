@@ -48,7 +48,7 @@ public class AssertEqualsArgumentOrderRule extends AbstractRule {
         if (testNg) {
             return violations;
         }
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!ASSERTIONS.contains(call.getNameAsString()) || call.getArguments().size() < 2
                     || !TestClasses.isInside(call)) {
                 continue;

@@ -51,7 +51,7 @@ public class StaticSimpleDateFormatRule implements Rule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             if (!field.isStatic()) {
                 continue;
             }

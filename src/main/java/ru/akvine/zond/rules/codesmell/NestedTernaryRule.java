@@ -28,7 +28,7 @@ public class NestedTernaryRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Сообщаем о внешнем операторе, и только один раз на всю цепочку
-        return sourceFile.unit().findAll(ConditionalExpr.class).stream()
+        return sourceFile.findAll(ConditionalExpr.class).stream()
                 .filter(ternary -> !isNested(ternary))
                 .filter(ternary -> ternary.findAll(ConditionalExpr.class).size() > 1)
                 .map(ternary -> violation(sourceFile, ternary,

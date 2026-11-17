@@ -55,7 +55,7 @@ public class ConsoleOutputRule extends AbstractRule {
         if (TestPaths.isSample(sourceFile.path()) || isConsoleCommand(sourceFile) || isConsoleInterface(sourceFile)) {
             return violations;
         }
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (isInMainProgram(call)) {
                 continue;
             }
@@ -113,7 +113,7 @@ public class ConsoleOutputRule extends AbstractRule {
         boolean hasMain = sourceFile.unit().getTypes().stream()
                 .flatMap(type -> type.getMethods().stream())
                 .anyMatch(method -> MAIN.equals(method.getNameAsString()) && method.isStatic());
-        return command || hasMain && CONSOLE_INPUT.matcher(sourceFile.unit().toString()).find();
+        return command || hasMain && CONSOLE_INPUT.matcher(sourceFile.text()).find();
     }
 
     // Вывод в main и в его закрытых статических помощниках (printUsage): консольная программа пишет результат.

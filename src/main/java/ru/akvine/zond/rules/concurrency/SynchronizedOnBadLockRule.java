@@ -44,7 +44,7 @@ public class SynchronizedOnBadLockRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (SynchronizedStmt block : sourceFile.unit().findAll(SynchronizedStmt.class)) {
+        for (SynchronizedStmt block : sourceFile.findAll(SynchronizedStmt.class)) {
             Expression lock = Nodes.unwrap(block.getExpression());
             Optional<String> problem = describeProblem(lock);
             if (problem.isPresent()) {

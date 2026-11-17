@@ -39,7 +39,7 @@ public class SequenceAllocationSizeOneRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (AnnotationExpr annotation : sourceFile.unit().findAll(AnnotationExpr.class)) {
+        for (AnnotationExpr annotation : sourceFile.findAll(AnnotationExpr.class)) {
             if (!GENERATORS.contains(annotation.getName().getIdentifier()) || !annotation.isNormalAnnotationExpr()) {
                 continue;
             }

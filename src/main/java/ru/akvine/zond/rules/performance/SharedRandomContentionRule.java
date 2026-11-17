@@ -80,7 +80,7 @@ public class SharedRandomContentionRule extends AbstractRule implements ProjectR
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         List<Candidate> candidates = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+            for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
                 generators(field).forEach(variable -> candidates.add(new Candidate(sourceFile, variable)));
             }
         }
@@ -179,11 +179,11 @@ public class SharedRandomContentionRule extends AbstractRule implements ProjectR
 
     private boolean isConcurrent(List<SourceFile> sourceFiles) {
         for (SourceFile sourceFile : sourceFiles) {
-            boolean annotated = sourceFile.unit().findAll(AnnotationExpr.class).stream()
+            boolean annotated = sourceFile.findAll(AnnotationExpr.class).stream()
                     .anyMatch(annotation -> CONCURRENT_ANNOTATIONS.contains(annotation.getNameAsString()));
-            boolean typed = sourceFile.unit().findAll(ClassOrInterfaceType.class).stream()
+            boolean typed = sourceFile.findAll(ClassOrInterfaceType.class).stream()
                     .anyMatch(type -> CONCURRENT_TYPES.contains(type.getNameAsString()));
-            boolean parallel = sourceFile.unit().findAll(MethodCallExpr.class).stream()
+            boolean parallel = sourceFile.findAll(MethodCallExpr.class).stream()
                     .anyMatch(call -> CONCURRENT_CALLS.contains(call.getNameAsString()));
             if (annotated || typed || parallel) {
                 return true;

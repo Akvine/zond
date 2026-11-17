@@ -79,7 +79,7 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
             // webClient.get().uri(...).retrieve() - один запрос, а не три
             Set<Integer> reportedLines = new HashSet<>();
             // ids.stream().map(priceClient::fetch): вызова в коде нет, но запрос уходит на каждый элемент
-            for (MethodReferenceExpr reference : sourceFile.unit().findAll(MethodReferenceExpr.class)) {
+            for (MethodReferenceExpr reference : sourceFile.findAll(MethodReferenceExpr.class)) {
                 Optional<MethodCallExpr> operation = MethodReferences.perElementOperation(reference);
                 if (operation.isEmpty() || CodeContexts.isInCatch(reference) || isConfigurationCode(operation.get())) {
                     continue;
@@ -93,7 +93,7 @@ public class HttpCallInLoopRule extends AbstractRule implements ProjectRule {
                                 + " умеет, либо отправляйте запросы параллельно с ограничением числа одновременных")
                                 .withConfidence(problem.confidence())));
             }
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 // Цикл повторных попыток повторяет один запрос, catch выполняется только при сбое, а вызов,
                 // после которого цикл кончается, уходит один раз
                 if (!CodeContexts.isRepeatedOverData(call) || CodeContexts.isInCatch(call) || Loops.endsIteration(call)

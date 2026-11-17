@@ -31,7 +31,7 @@ public class SpringBootTestWithoutContextRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class).stream()
+        return sourceFile.findAll(ClassOrInterfaceDeclaration.class).stream()
                 .filter(type -> Annotations.has(type, SPRING_BOOT_TEST))
                 .filter(this::takesNothingFromContext)
                 .map(type -> violation(sourceFile, type,

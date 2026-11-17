@@ -72,7 +72,7 @@ public class MutableKeyClassRule extends AbstractRule implements ProjectRule {
         // Класс-ключ -> первое место, где он использован ключом
         Map<ClassOrInterfaceDeclaration, String> usages = new LinkedHashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceType type : sourceFile.unit().findAll(ClassOrInterfaceType.class)) {
+            for (ClassOrInterfaceType type : sourceFile.findAll(ClassOrInterfaceType.class)) {
                 if (TestClasses.isInside(type)) {
                     continue;
                 }

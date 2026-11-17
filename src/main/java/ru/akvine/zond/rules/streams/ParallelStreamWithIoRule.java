@@ -56,7 +56,7 @@ public class ParallelStreamWithIoRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr parallel : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr parallel : sourceFile.findAll(MethodCallExpr.class)) {
             if (!PARALLEL_METHODS.contains(parallel.getNameAsString()) || !parallel.getArguments().isEmpty()) {
                 continue;
             }

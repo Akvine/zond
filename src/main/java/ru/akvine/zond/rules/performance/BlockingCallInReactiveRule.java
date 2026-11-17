@@ -110,7 +110,7 @@ public class BlockingCallInReactiveRule extends AbstractRule {
         }
 
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<String> blocking = describeBlocking(call);
             if (blocking.isEmpty() || TestClasses.isInside(call) || CodeContexts.isStartup(call)) {
                 continue;

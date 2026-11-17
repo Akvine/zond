@@ -51,7 +51,7 @@ public class EnumLookupByValuesScanRule extends AbstractRule implements ProjectR
             if (TestPaths.isTest(sourceFile.path())) {
                 continue;
             }
-            for (EnumDeclaration type : sourceFile.unit().findAll(EnumDeclaration.class)) {
+            for (EnumDeclaration type : sourceFile.findAll(EnumDeclaration.class)) {
                 if (type.getEntries().size() < MIN_CONSTANTS) {
                     continue;
                 }

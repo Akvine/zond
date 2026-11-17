@@ -51,7 +51,7 @@ public class EntitiesLoadedForIdsRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr map : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr map : sourceFile.findAll(MethodCallExpr.class)) {
             if (!MAP.equals(map.getNameAsString()) || map.getArguments().size() != 1
                     || !takesId(map.getArgument(0)) || TestClasses.isInside(map)) {
                 continue;

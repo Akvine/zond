@@ -46,7 +46,7 @@ public class OptionalOrElseCallRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> OR_ELSE.equals(call.getNameAsString()) && call.getArguments().size() == 1)
                 .filter(call -> call.getScope().isPresent() && isComputed(call.getArgument(0)))
                 .map(call -> violation(sourceFile, call,

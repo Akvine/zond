@@ -40,7 +40,7 @@ public class StringBuilderCharConstructorRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             String type = creation.getType().getNameAsString();
             if (!BUILDERS.contains(type) || creation.getArguments().size() != 1) {
                 continue;

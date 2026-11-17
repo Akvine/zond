@@ -16,6 +16,9 @@ import java.util.stream.Stream;
 
 @Component
 public class FileSystemTextFileLoader implements TextFileLoader {
+    private static final int MAX_FILE_MEGABYTES = 32;
+    private static final long MAX_FILE_BYTES = MAX_FILE_MEGABYTES * 1024L * 1024L;
+
     // Каталоги сборки и служебные: там лежат копии тех же файлов либо чужой код
     private static final Set<String> SKIPPED_DIRECTORIES =
             Set.of("build", "target", "out", "node_modules", ".git", ".gradle", ".idea");
@@ -40,6 +43,12 @@ public class FileSystemTextFileLoader implements TextFileLoader {
     // Файл в другой кодировке или недоступный для чтения пропускаем
     private void read(Path path, List<TextFile> files) {
         try {
+            // Файл читается в память целиком. Миграции, манифесты и файлы сборки занимают килобайты, а дамп базы
+            // или выгрузка данных на сотни мегабайт исчерпали бы память самой проверки
+            if (Files.size(path) > MAX_FILE_BYTES) {
+                System.err.println("Файл " + path + " пропущен: он больше " + MAX_FILE_MEGABYTES + " МБ");
+                return;
+            }
             List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
             // XML и YAML бывают какими угодно: что это за файл, видно только по содержимому
             TextFileType.of(path, lines).ifPresent(type -> files.add(new TextFile(path, lines, type)));

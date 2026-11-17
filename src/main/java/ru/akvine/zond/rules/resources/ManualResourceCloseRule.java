@@ -35,7 +35,7 @@ public class ManualResourceCloseRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             if (!Resources.isLocalVariable(variable)
                     || variable.getInitializer().filter(Resources::opens).isEmpty()) {
                 continue;

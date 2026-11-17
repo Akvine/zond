@@ -71,7 +71,7 @@ public class WriteInReadOnlyTransactionRule extends AbstractRule implements Proj
         CallGraph graph = CallGraph.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 if (isReadOnlyEntry(method)) {
                     check(sourceFile, method, graph, violations);
                 }

@@ -46,7 +46,7 @@ public class CompareBySubtractionRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (!COMPARE_METHODS.contains(method.getNameAsString())) {
                 continue;
             }
@@ -58,7 +58,7 @@ public class CompareBySubtractionRule extends AbstractRule {
             }
         }
 
-        for (LambdaExpr lambda : sourceFile.unit().findAll(LambdaExpr.class)) {
+        for (LambdaExpr lambda : sourceFile.findAll(LambdaExpr.class)) {
             if (lambda.getParameters().size() != 2 || !isComparator(lambda)) {
                 continue;
             }

@@ -45,7 +45,7 @@ public class DurationOfDaysAsYearRule implements Rule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> MethodCalls.isCallOn(call, DURATION, OF_DAYS))
                 .filter(call -> call.getArguments().size() == 1 && isYearInDays(call.getArgument(0)))
                 .map(call -> new Violation(

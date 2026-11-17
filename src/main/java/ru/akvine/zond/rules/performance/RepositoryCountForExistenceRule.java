@@ -55,7 +55,7 @@ public class RepositoryCountForExistenceRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (BinaryExpr comparison : sourceFile.unit().findAll(BinaryExpr.class)) {
+        for (BinaryExpr comparison : sourceFile.findAll(BinaryExpr.class)) {
             BinaryExpr.Operator operator = comparison.getOperator();
             boolean existence = isCountQuery(comparison.getLeft()) && isExistenceBound(operator, comparison.getRight())
                     || isCountQuery(comparison.getRight())

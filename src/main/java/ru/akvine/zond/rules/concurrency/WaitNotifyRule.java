@@ -34,7 +34,7 @@ public class WaitNotifyRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (WAIT.equals(call.getNameAsString())
                     && call.getArguments().size() <= WAIT_MAX_ARGUMENTS
                     && Nodes.enclosingLoop(call).isEmpty()) {

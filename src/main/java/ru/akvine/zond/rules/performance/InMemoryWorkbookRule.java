@@ -30,7 +30,7 @@ public class InMemoryWorkbookRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Книга без аргументов создается для записи; с аргументом - это чтение готового файла
-        return sourceFile.unit().findAll(ObjectCreationExpr.class).stream()
+        return sourceFile.findAll(ObjectCreationExpr.class).stream()
                 .filter(creation -> IN_MEMORY_WORKBOOKS.contains(creation.getType().getNameAsString()))
                 .filter(creation -> creation.getArguments().isEmpty())
                 .map(creation -> violation(sourceFile, creation,

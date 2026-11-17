@@ -66,7 +66,7 @@ public class BusinessErrorAsBadRequestRule extends AbstractRule implements Proje
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration handler : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration handler : sourceFile.findAll(MethodDeclaration.class)) {
                 List<String> handled = Annotations.find(handler, EXCEPTION_HANDLER)
                         .map(annotation -> handledBy(annotation, handler))
                         .orElse(List.of());
@@ -77,7 +77,7 @@ public class BusinessErrorAsBadRequestRule extends AbstractRule implements Proje
                 badRequestIn(handler).ifPresent(status -> violations.add(violation(sourceFile, status, message(handled.get(0)))));
             }
             // @ResponseStatus(HttpStatus.BAD_REQUEST) на самом исключении
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 Annotations.find(type, RESPONSE_STATUS)
                         .filter(annotation -> annotation.toString().contains(BAD_REQUEST)
                                 && isBusiness(type.getNameAsString(), classes))

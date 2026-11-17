@@ -39,7 +39,7 @@ public class AutowiredOnStaticFieldRule implements Rule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(FieldDeclaration.class).stream()
+        return sourceFile.findAll(FieldDeclaration.class).stream()
                 .filter(FieldDeclaration::isStatic)
                 .filter(this::isAutowired)
                 .map(field -> new Violation(

@@ -49,7 +49,7 @@ public class RandomTruncatedToZeroRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(CastExpr.class).stream()
+        return sourceFile.findAll(CastExpr.class).stream()
                 .filter(cast -> cast.getType().isPrimitiveType() && INTEGRAL.contains(cast.getType().asPrimitiveType().getType()))
                 // Произведение в скобках - (int) (Math.random() * n) - приводится целиком, это правильная запись
                 .filter(cast -> isUnitRandom(cast.getExpression()))

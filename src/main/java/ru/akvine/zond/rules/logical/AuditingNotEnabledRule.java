@@ -56,10 +56,10 @@ public class AuditingNotEnabledRule extends AbstractRule implements ProjectRule 
         Set<String> typeAnnotations = new HashSet<>();
         boolean auditorKnown = false;
         for (SourceFile sourceFile : sourceFiles) {
-            for (TypeDeclaration<?> type : sourceFile.unit().findAll(TypeDeclaration.class)) {
+            for (TypeDeclaration<?> type : sourceFile.findAll(TypeDeclaration.class)) {
                 type.getAnnotations().forEach(annotation -> typeAnnotations.add(annotation.getName().getIdentifier()));
             }
-            auditorKnown |= sourceFile.unit().toString().contains(AUDITOR_AWARE);
+            auditorKnown |= sourceFile.text().contains(AUDITOR_AWARE);
         }
         List<Violation> violations = new ArrayList<>();
         if (typeAnnotations.stream().noneMatch(CONFIGURATION_ANNOTATIONS::contains)) {
@@ -71,7 +71,7 @@ public class AuditingNotEnabledRule extends AbstractRule implements ProjectRule 
         boolean enableReported = false;
         boolean auditorReported = false;
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 // @JmixEntity: Jmix заполняет @CreatedDate и @CreatedBy сам, аудит Spring Data ему не нужен
                 Optional<FieldDeclaration> audited = firstField(type, AUDIT_FIELDS)
                         .filter(field -> !Annotations.has(type, JMIX_ENTITY));

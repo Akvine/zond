@@ -43,7 +43,7 @@ public class ModifyingQueryMisuseRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             Optional<String> query = Queries.find(method).flatMap(Queries::text);
             boolean changes = query.filter(text -> CHANGING_QUERY.matcher(text).matches()).isPresent();
             boolean modifying = Annotations.has(method, MODIFYING);

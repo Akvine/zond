@@ -30,7 +30,7 @@ public class ThreadRunRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // thread.run() на переменной типа Thread либо new Thread(...).run()
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> RUN.equals(call.getNameAsString()) && call.getArguments().isEmpty())
                 .filter(call -> call.getScope().flatMap(LocalTypes::typeOf).filter(THREAD::equals).isPresent())
                 .map(call -> violation(sourceFile, call,

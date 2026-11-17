@@ -42,7 +42,7 @@ public class SizeComparedToZeroRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(BinaryExpr.class).stream()
+        return sourceFile.findAll(BinaryExpr.class).stream()
                 .filter(comparison -> !isInsideIsEmpty(comparison))
                 .flatMap(comparison -> findEmptinessCheck(comparison)
                         .map(call -> violation(sourceFile, comparison,

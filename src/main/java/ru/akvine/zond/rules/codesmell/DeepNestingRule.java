@@ -45,7 +45,7 @@ public class DeepNestingRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Сообщаем о конструкции, с которой предел превышен; то, что вложено еще глубже, не дублируем
-        return sourceFile.unit().findAll(Statement.class).stream()
+        return sourceFile.findAll(Statement.class).stream()
                 .filter(this::isNesting)
                 .filter(statement -> depth(statement) == value(MAX_DEPTH) + 1)
                 .filter(statement -> !TestClasses.isInside(statement))

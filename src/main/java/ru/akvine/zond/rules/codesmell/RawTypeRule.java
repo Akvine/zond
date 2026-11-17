@@ -45,7 +45,7 @@ public class RawTypeRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
         // List<Map> list = new ArrayList(): на строке два сырых типа, сообщаем один раз
         Set<Integer> reportedLines = new HashSet<>();
-        for (ClassOrInterfaceType type : sourceFile.unit().findAll(ClassOrInterfaceType.class)) {
+        for (ClassOrInterfaceType type : sourceFile.findAll(ClassOrInterfaceType.class)) {
             // new ArrayList<>() - параметр выведет компилятор: аргументы заданы, хоть и пустые
             if (!GENERIC_TYPES.contains(type.getNameAsString()) || type.getTypeArguments().isPresent()
                     || !isTypeUsage(type) || isAnotherClass(sourceFile, type.getNameAsString())) {

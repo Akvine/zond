@@ -45,7 +45,7 @@ public class ManualAckMisuseRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration listener : Messaging.listeners(sourceFile.unit())) {
+        for (MethodDeclaration listener : Messaging.listeners(sourceFile)) {
             Messaging.acknowledgment(listener)
                     .filter(parameter -> listener.getBody().isPresent())
                     .ifPresent(parameter -> check(sourceFile, listener, parameter, violations));

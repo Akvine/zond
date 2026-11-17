@@ -72,7 +72,7 @@ public class CheckThenInsertWithoutUniqueRule extends AbstractContextRule {
         ProjectClasses classes = ProjectClasses.of(context.sources());
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : context.sources()) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 if (method.getBody().isPresent() && !isProtected(method)) {
                     check(sourceFile, method, schema, classes, violations);
                 }

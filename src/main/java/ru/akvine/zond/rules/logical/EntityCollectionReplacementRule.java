@@ -37,7 +37,7 @@ public class EntityCollectionReplacementRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile.unit())) {
+        for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile)) {
             Set<String> collections = findOrphanRemovalCollections(entity);
             if (collections.isEmpty()) {
                 continue;

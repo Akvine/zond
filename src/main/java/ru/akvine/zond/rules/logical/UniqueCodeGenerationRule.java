@@ -89,7 +89,7 @@ public class UniqueCodeGenerationRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (Statement loop : sourceFile.unit().findAll(Statement.class, this::isLoop)) {
+        for (Statement loop : sourceFile.findAll(Statement.class, this::isLoop)) {
             if (TestClasses.isInside(loop)) {
                 continue;
             }

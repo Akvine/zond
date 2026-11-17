@@ -30,7 +30,7 @@ public class AsyncWithoutExecutorRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(AnnotationExpr.class).stream()
+        return sourceFile.findAll(AnnotationExpr.class).stream()
                 .filter(annotation -> ASYNC.equals(annotation.getName().getIdentifier()))
                 .filter(annotation -> !hasExecutor(annotation))
                 .map(annotation -> violation(sourceFile, annotation,

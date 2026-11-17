@@ -119,7 +119,7 @@ public class StatefulBeanAsSingletonRule extends AbstractRule implements Project
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (type.isInterface() || TestClasses.isInside(type)) {
                     continue;
                 }

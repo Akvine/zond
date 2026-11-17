@@ -3,6 +3,7 @@ package ru.akvine.zond.rules.support;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -39,6 +40,10 @@ public final class CallGraph {
     private final Map<String, List<MethodDeclaration>> byTypeName = new HashMap<>();
     private final Map<String, List<TypeDeclaration<?>>> subtypes = new HashMap<>();
     private final Set<String> methodNames = new HashSet<>();
+    // Имя метода -> сколько параметров бывает у методов проекта с таким именем
+    private final Map<String, Set<Integer>> parameterCounts = new HashMap<>();
+    // Методы с переменным числом параметров: add(Object... items) принимает сколько угодно аргументов
+    private final Set<String> varArgsNames = new HashSet<>();
 
     // Вызовы, для которых нашелся метод проекта
     private final Set<MethodCallExpr> linkedSites = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -70,7 +75,7 @@ public final class CallGraph {
             index(source);
         }
         for (SourceFile source : sources) {
-            for (MethodDeclaration caller : source.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration caller : source.findAll(MethodDeclaration.class)) {
                 caller.getBody().ifPresent(body -> link(caller, body));
             }
         }
@@ -129,6 +134,11 @@ public final class CallGraph {
             }
             for (MethodDeclaration method : type.getMethods()) {
                 methodNames.add(method.getNameAsString());
+                parameterCounts.computeIfAbsent(method.getNameAsString(), name -> new HashSet<>())
+                        .add(method.getParameters().size());
+                if (method.getParameters().stream().anyMatch(Parameter::isVarArgs)) {
+                    varArgsNames.add(method.getNameAsString());
+                }
                 byTypeName.computeIfAbsent(type.getNameAsString(), name -> new ArrayList<>()).add(method);
                 location(method).ifPresent(location -> byLocation.put(location, method));
             }
@@ -137,8 +147,9 @@ public final class CallGraph {
 
     private void link(MethodDeclaration caller, Node body) {
         for (MethodCallExpr site : body.findAll(MethodCallExpr.class)) {
-            // Разрешение вызова - дорогая операция: методов JDK с такими именами в проекте нет, их и не пробуем
-            if (!methodNames.contains(site.getNameAsString())) {
+            // Разрешение вызова - дорогая операция: методов JDK с такими именами в проекте нет, их и не разрешаем.
+            // И list.add(item) при единственном в проекте add(key, value) методом проекта быть не может
+            if (!mayBeProjectMethod(site)) {
                 continue;
             }
             List<MethodDeclaration> declared = resolve(site);
@@ -151,6 +162,12 @@ public final class CallGraph {
                 incoming.computeIfAbsent(target, method -> new ArrayList<>()).add(call);
             }
         }
+    }
+
+    private boolean mayBeProjectMethod(MethodCallExpr site) {
+        String name = site.getNameAsString();
+        return methodNames.contains(name) && (varArgsNames.contains(name)
+                || parameterCounts.get(name).contains(site.getArguments().size()));
     }
 
     private List<MethodDeclaration> resolve(MethodCallExpr site) {
@@ -299,7 +316,7 @@ public final class CallGraph {
 
     private List<TypeDeclaration<?>> types(SourceFile source) {
         List<TypeDeclaration<?>> types = new ArrayList<>();
-        for (Node node : source.unit().findAll(Node.class)) {
+        for (Node node : source.findAll(Node.class)) {
             if (node instanceof TypeDeclaration<?> type) {
                 types.add(type);
             }

@@ -77,7 +77,7 @@ public class TransactionalWithAsyncRule extends AbstractRule implements ProjectR
     }
 
     private void check(SourceFile sourceFile, CallGraph graph, ProjectClasses classes, List<Violation> violations) {
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             // На приватных методах @Transactional не работает в принципе, это ловит отдельное правило
             if (method.isPrivate() || TransactionalAnnotations.findEffective(method).isEmpty()) {
                 continue;

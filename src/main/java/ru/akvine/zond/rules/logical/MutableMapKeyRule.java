@@ -64,7 +64,7 @@ public class MutableMapKeyRule extends AbstractRule implements ProjectRule {
     private List<Violation> check(SourceFile sourceFile, ProjectClasses classes) {
         List<Violation> violations = new ArrayList<>();
         Set<Node> reported = new HashSet<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<String> key = keyOf(call).filter(name -> hashDependsOnFields(call, classes));
             Optional<Node> callable = Nodes.enclosingCallable(call);
             if (key.isEmpty() || callable.isEmpty()) {

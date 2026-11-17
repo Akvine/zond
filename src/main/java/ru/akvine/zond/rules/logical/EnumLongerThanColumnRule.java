@@ -51,7 +51,7 @@ public class EnumLongerThanColumnRule extends AbstractContextRule {
         Map<String, List<EnumDeclaration>> enums = enumsOf(context.sources());
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : context.sources()) {
-            for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile.unit())) {
+            for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile)) {
                 Optional<DbSchema.Table> table = EntityMapping.tableName(entity, classes)
                         .flatMap(schema.visibleFrom(entity)::find)
                         .filter(found -> !found.isOpaque());
@@ -123,7 +123,7 @@ public class EnumLongerThanColumnRule extends AbstractContextRule {
     private Map<String, List<EnumDeclaration>> enumsOf(List<SourceFile> sources) {
         Map<String, List<EnumDeclaration>> enums = new HashMap<>();
         for (SourceFile source : sources) {
-            for (EnumDeclaration declaration : source.unit().findAll(EnumDeclaration.class)) {
+            for (EnumDeclaration declaration : source.findAll(EnumDeclaration.class)) {
                 enums.computeIfAbsent(declaration.getNameAsString(), name -> new ArrayList<>()).add(declaration);
             }
         }

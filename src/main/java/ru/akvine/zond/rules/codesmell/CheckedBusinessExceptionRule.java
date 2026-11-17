@@ -87,7 +87,7 @@ public class CheckedBusinessExceptionRule extends AbstractRule implements Projec
         }
         Map<String, List<ObjectCreationExpr>> created = new HashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+            for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
                 String name = creation.getType().getNameAsString();
                 if (names.contains(name) && !TestClasses.isInside(creation)) {
                     created.computeIfAbsent(name, key -> new ArrayList<>()).add(creation);

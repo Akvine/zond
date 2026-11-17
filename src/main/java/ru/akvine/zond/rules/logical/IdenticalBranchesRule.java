@@ -35,7 +35,7 @@ public class IdenticalBranchesRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (IfStmt ifStmt : sourceFile.unit().findAll(IfStmt.class)) {
+        for (IfStmt ifStmt : sourceFile.findAll(IfStmt.class)) {
             Optional<Statement> elseBranch = ifStmt.getElseStmt().filter(branch -> !branch.isIfStmt());
             if (elseBranch.isPresent() && Nodes.text(ifStmt.getThenStmt()).equals(Nodes.text(elseBranch.get()))) {
                 violations.add(violation(sourceFile, ifStmt,
@@ -47,7 +47,7 @@ public class IdenticalBranchesRule extends AbstractRule {
             }
         }
 
-        for (ConditionalExpr ternary : sourceFile.unit().findAll(ConditionalExpr.class)) {
+        for (ConditionalExpr ternary : sourceFile.findAll(ConditionalExpr.class)) {
             if (Nodes.text(ternary.getThenExpr()).equals(Nodes.text(ternary.getElseExpr()))) {
                 violations.add(violation(sourceFile, ternary,
                         "Обе ветки тернарного оператора одинаковы: условие '" + ternary.getCondition()

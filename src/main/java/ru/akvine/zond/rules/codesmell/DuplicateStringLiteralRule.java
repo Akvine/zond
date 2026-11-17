@@ -59,7 +59,7 @@ public class DuplicateStringLiteralRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         Map<String, List<StringLiteralExpr>> occurrences = new LinkedHashMap<>();
-        for (StringLiteralExpr literal : sourceFile.unit().findAll(StringLiteralExpr.class)) {
+        for (StringLiteralExpr literal : sourceFile.findAll(StringLiteralExpr.class)) {
             if (literal.asString().length() >= value(MIN_LENGTH) && !isExcluded(literal)) {
                 occurrences.computeIfAbsent(literal.asString(), key -> new ArrayList<>()).add(literal);
             }

@@ -113,7 +113,7 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
     private FlowAnalysis(List<SourceFile> sources) {
         this.callGraph = CallGraph.of(sources);
         for (SourceFile source : sources) {
-            for (MethodDeclaration method : source.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : source.findAll(MethodDeclaration.class)) {
                 // Объявление без тела (метод интерфейса) другого поведения не дает: считаем только тела
                 if (method.getBody().isPresent()) {
                     signatures.merge(signature(method), 1, Integer::sum);
@@ -133,8 +133,8 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
     }
 
     private void analyze(SourceFile source) {
-        List<CallableDeclaration<?>> callables = new ArrayList<>(source.unit().findAll(MethodDeclaration.class));
-        callables.addAll(source.unit().findAll(ConstructorDeclaration.class));
+        List<CallableDeclaration<?>> callables = new ArrayList<>(source.findAll(MethodDeclaration.class));
+        callables.addAll(source.findAll(ConstructorDeclaration.class));
         // Одно и то же место проходится несколько раз (ветка finally, лямбда) - находка нужна одна
         Set<String> seen = new HashSet<>();
         for (CallableDeclaration<?> callable : callables) {

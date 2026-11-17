@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.support;
 
+import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
@@ -70,6 +71,8 @@ public class DataValues {
     // Сравнение с таким числом - это проверка на ноль и знак или условие выхода из рекурсии, а не верхняя граница
     private static final long MAX_NOT_A_LIMIT = 2;
     private static final int MAX_ALIASES = 3;
+    // На сколько вызовов вглубь искать проверку границы: check(count) -> checkRange(count, LIMIT)
+    private static final int MAX_CHECK_DEPTH = 2;
 
     public enum Origin {
         /** Элемент коллекции, массива или стрима */
@@ -227,8 +230,58 @@ public class DataValues {
         if (root == null || value.names().isEmpty()) {
             return false;
         }
-        Set<String> names = Set.copyOf(value.names());
+        if (isBoundedIn(root, Set.copyOf(value.names()), ignored, MAX_CHECK_DEPTH)) {
+            return true;
+        }
+        if (value.origin() != Origin.LONG_PARAMETER || !(root instanceof MethodDeclaration method)) {
+            return false;
+        }
+        // Значение пришло параметром: границу мог проверить тот, кто вызывает метод
+        String parameter = value.names().get(value.names().size() - 1);
+        for (int position = 0; position < method.getParameters().size(); position++) {
+            if (method.getParameter(position).getNameAsString().equals(parameter)) {
+                return isBoundedByCallers(method, position);
+            }
+        }
+        return false;
+    }
 
+    /**
+     * Параметр закрытого метода получает только то, что передали из этого же файла. Если все вызовы передают
+     * константу или значение, которое вызывающий код уже ограничил, проверять границу в самом методе незачем
+     *
+     * @return true, если метод закрытый, вызовы найдены и каждый передает в параметр ограниченное значение
+     */
+    public boolean isBoundedByCallers(MethodDeclaration method, int position) {
+        Optional<CompilationUnit> unit = method.findCompilationUnit();
+        if (!method.isPrivate() || unit.isEmpty()) {
+            return false;
+        }
+        List<MethodCallExpr> calls = unit.get().findAll(MethodCallExpr.class).stream()
+                .filter(call -> isCallOf(call, method) && !Nodes.isInside(call, method))
+                .toList();
+        return !calls.isEmpty() && calls.stream().allMatch(call -> isBoundedArgument(call, call.getArgument(position)));
+    }
+
+    private boolean isBoundedArgument(MethodCallExpr call, Expression argument) {
+        // strip(...) оставляет Math.min(count, LIMIT) как есть: это и есть ограничение
+        Expression value = strip(argument);
+        boolean clamped = value.isMethodCallExpr() && MethodCalls.isCallOn(value.asMethodCallExpr(), MATH, MIN);
+        if (isConstant(value) || clamped) {
+            return true;
+        }
+        Node root = Nodes.enclosingCallable(call).orElse(null);
+        return value.isNameExpr() && root != null
+                && isBoundedIn(root, Set.of(value.asNameExpr().getNameAsString()), null, MAX_CHECK_DEPTH);
+    }
+
+    private boolean isCallOf(MethodCallExpr call, MethodDeclaration method) {
+        return call.getNameAsString().equals(method.getNameAsString())
+                && call.getArguments().size() == method.getParameters().size()
+                && call.getScope().filter(scope -> !scope.isThisExpr()).isEmpty();
+    }
+
+    private boolean isBoundedIn(Node root, Set<String> names, Node ignored, int depth) {
         for (BinaryExpr comparison : root.findAll(BinaryExpr.class)) {
             if (!COMPARISONS.contains(comparison.getOperator()) || isSkipped(comparison, ignored)
                     || isLoopCondition(comparison)) {
@@ -247,8 +300,11 @@ public class DataValues {
             String name = call.getNameAsString();
             boolean limits = MethodCalls.isCallOn(call, MATH, MIN)
                     || CHECK_METHOD.matcher(name).matches() && !OTHER_CHECK.matcher(name).matches();
-            if (limits && call.getArguments().stream().anyMatch(argument -> isOneOf(argument, names))) {
-                return true;
+            for (int position = 0; position < call.getArguments().size(); position++) {
+                if (isOneOf(call.getArgument(position), names)
+                        && (limits || depth > 0 && isBoundedByCallee(call, position, depth - 1))) {
+                    return true;
+                }
             }
         }
         for (AssignExpr assignment : root.findAll(AssignExpr.class)) {
@@ -257,6 +313,24 @@ public class DataValues {
             }
         }
         return false;
+    }
+
+    /**
+     * guard(count), где {@code void guard(int value) { if (value > LIMIT) throw ...; }} объявлен в этом же файле:
+     * границу проверяет вызванный метод, как бы он ни назывался
+     */
+    private boolean isBoundedByCallee(MethodCallExpr call, int position, int depth) {
+        Optional<CompilationUnit> unit = call.findCompilationUnit();
+        if (unit.isEmpty()) {
+            return false;
+        }
+        Node caller = Nodes.enclosingCallable(call).orElse(null);
+        return unit.get().findAll(MethodDeclaration.class).stream()
+                .filter(method -> method != caller && method.getBody().isPresent()
+                        && method.getNameAsString().equals(call.getNameAsString())
+                        && method.getParameters().size() == call.getArguments().size())
+                .anyMatch(method -> isBoundedIn(method,
+                        Set.of(method.getParameter(position).getNameAsString()), null, depth));
     }
 
     // count = clamp(count), count %= SIZE ограничивают значение. count = Integer.parseInt(text) и count = 1 его

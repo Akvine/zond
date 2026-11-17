@@ -50,7 +50,7 @@ public class LazyInjectionRule extends AbstractRule implements ProjectRule {
         BeanGraph graph = BeanGraph.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (AnnotationExpr annotation : sourceFile.unit().findAll(AnnotationExpr.class)) {
+            for (AnnotationExpr annotation : sourceFile.findAll(AnnotationExpr.class)) {
                 if (!LAZY.equals(annotation.getName().getIdentifier())) {
                     continue;
                 }

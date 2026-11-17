@@ -28,7 +28,7 @@ public class EnumeratedOrdinalRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(AnnotationExpr.class).stream()
+        return sourceFile.findAll(AnnotationExpr.class).stream()
                 .filter(annotation -> ENUMERATED.equals(annotation.getName().getIdentifier()))
                 .filter(this::isOrdinal)
                 .map(annotation -> violation(sourceFile, annotation,

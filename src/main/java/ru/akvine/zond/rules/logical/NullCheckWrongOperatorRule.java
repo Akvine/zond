@@ -36,7 +36,7 @@ public class NullCheckWrongOperatorRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
         // В цепочке a && b && c одно и то же место видно из нескольких вложенных выражений
         Set<Integer> reportedLines = new HashSet<>();
-        for (BinaryExpr condition : sourceFile.unit().findAll(BinaryExpr.class)) {
+        for (BinaryExpr condition : sourceFile.findAll(BinaryExpr.class)) {
             boolean isAnd = condition.getOperator() == BinaryExpr.Operator.AND;
             if (!isAnd && condition.getOperator() != BinaryExpr.Operator.OR) {
                 continue;

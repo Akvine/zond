@@ -40,7 +40,7 @@ public class InstantUnsupportedUnitRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!ARITHMETIC_METHODS.contains(call.getNameAsString())
                     || call.getScope().filter(this::isInstant).isEmpty()) {
                 continue;

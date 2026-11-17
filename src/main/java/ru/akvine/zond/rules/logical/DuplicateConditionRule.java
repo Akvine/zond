@@ -30,7 +30,7 @@ public class DuplicateConditionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (IfStmt first : sourceFile.unit().findAll(IfStmt.class)) {
+        for (IfStmt first : sourceFile.findAll(IfStmt.class)) {
             if (isElseIf(first)) {
                 continue;
             }

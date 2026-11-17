@@ -33,7 +33,7 @@ public class CurrentTimeMillisForDurationRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Разность двух отсчетов времени - это длительность
-        return sourceFile.unit().findAll(BinaryExpr.class).stream()
+        return sourceFile.findAll(BinaryExpr.class).stream()
                 .filter(difference -> difference.getOperator() == BinaryExpr.Operator.MINUS)
                 .filter(difference -> isWallClock(difference.getLeft()) && isWallClock(difference.getRight()))
                 .map(difference -> violation(sourceFile, difference,

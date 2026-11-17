@@ -63,7 +63,7 @@ public class DeepOffsetPaginationRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         Set<Integer> reportedLines = new HashSet<>();
-        for (Node node : sourceFile.unit().findAll(Node.class)) {
+        for (Node node : sourceFile.findAll(Node.class)) {
             Optional<String> paging = describePaging(node);
             if (paging.isPresent() && reportedLines.add(node.getBegin().map(position -> position.line).orElse(0))) {
                 violations.add(violation(sourceFile, node,

@@ -48,7 +48,8 @@ public class LocalTypes {
         Expression value = Nodes.unwrap(expression);
         return declaredTypeOf(value)
                 .or(() -> Types.simpleName(value))
-                .or(() -> Lombok.typeName(value));
+                .or(() -> Lombok.typeName(value))
+                .or(() -> Types.writtenTypeName(value));
     }
 
     /**
@@ -220,16 +221,18 @@ public class LocalTypes {
 
     public Optional<String> declaredType(Node declaration) {
         if (declaration instanceof Parameter parameter) {
+            // У параметра лямбды типа в коде нет: order -> order.isPaid(). Он виден по коллекции, которую перебирают
             return parameter.getType().isUnknownType()
-                    ? Optional.empty()
+                    ? ElementTypes.of(parameter).map(LocalTypes::typeName)
                     : Optional.of(typeName(parameter.getType()));
         }
         if (declaration instanceof VariableDeclarator variable) {
-            // var x = new Foo() -> Foo; так же и val из Lombok
+            // var x = new Foo() -> Foo; так же и val из Lombok. for (var item : items) - по коллекции
             if (variable.getType().isVarType() || Lombok.isVal(variable.getType())) {
                 return variable.getInitializer()
                         .filter(initializer -> !initializer.isNameExpr())
-                        .flatMap(LocalTypes::typeOf);
+                        .flatMap(LocalTypes::typeOf)
+                        .or(() -> ElementTypes.of(variable).map(LocalTypes::typeName));
             }
             return Optional.of(typeName(variable.getType()));
         }

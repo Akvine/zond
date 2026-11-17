@@ -34,7 +34,7 @@ public class PublicStaticNonFinalFieldRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Поля интерфейса неявно final, а без модификатора public они сюда и не попадут
-        return sourceFile.unit().findAll(FieldDeclaration.class).stream()
+        return sourceFile.findAll(FieldDeclaration.class).stream()
                 .filter(field -> field.isPublic() && field.isStatic() && !field.isFinal())
                 .filter(field -> !isAcknowledged(field))
                 .map(field -> violation(sourceFile, field,

@@ -48,7 +48,7 @@ public class JumpInFinallyRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
         // Переход во вложенном finally виден из обоих блоков, а сообщить о нем нужно один раз
         Set<Node> jumps = Collections.newSetFromMap(new IdentityHashMap<>());
-        for (TryStmt tryStmt : sourceFile.unit().findAll(TryStmt.class)) {
+        for (TryStmt tryStmt : sourceFile.findAll(TryStmt.class)) {
             if (tryStmt.getFinallyBlock().isEmpty()) {
                 continue;
             }

@@ -30,7 +30,7 @@ public class ModifyingWithoutTransactionalRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        return sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(method -> Annotations.has(method, MODIFYING))
                 .filter(method -> !isTransactional(method))
                 .map(method -> violation(sourceFile, method,

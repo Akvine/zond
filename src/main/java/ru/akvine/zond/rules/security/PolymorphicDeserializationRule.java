@@ -65,7 +65,7 @@ public class PolymorphicDeserializationRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (TestClasses.isInside(call)) {
                 continue;
             }
@@ -79,7 +79,7 @@ public class PolymorphicDeserializationRule extends AbstractRule {
                                 + " либо обойдитесь без default typing"));
             }
         }
-        for (AnnotationExpr annotation : sourceFile.unit().findAll(AnnotationExpr.class)) {
+        for (AnnotationExpr annotation : sourceFile.findAll(AnnotationExpr.class)) {
             if (JSON_TYPE_INFO.equals(annotation.getName().getIdentifier()) && usesClassName(annotation)
                     && isOpenField(annotation)) {
                 violations.add(violation(sourceFile, annotation,
@@ -88,7 +88,7 @@ public class PolymorphicDeserializationRule extends AbstractRule {
                                 + " перечнем подтипов в @JsonSubTypes либо сузьте тип поля"));
             }
         }
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (TestClasses.isInside(creation)) {
                 continue;
             }

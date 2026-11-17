@@ -67,7 +67,7 @@ public class NullUnboxingRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         // Об одной переменной в одном методе сообщаем один раз
         Set<Node> reported = new HashSet<>();
-        return sourceFile.unit().findAll(NameExpr.class).stream()
+        return sourceFile.findAll(NameExpr.class).stream()
                 .filter(this::isUsedAsCondition)
                 .filter(name -> isNullableBoolean(name) && !TestClasses.isInside(name) && !isAssignedNonNull(name))
                 .filter(name -> !isDefaultedWhenNull(name))
@@ -210,8 +210,9 @@ public class NullUnboxingRule extends AbstractRule {
         if (isInjectedProperty(declaration.get())) {
             return false;
         }
-        if (declaration.get() instanceof Parameter) {
-            return true;
+        if (declaration.get() instanceof Parameter parameter) {
+            // Параметр лямбды без записанного типа - значение из Optional, Mono или потока: null туда не кладут
+            return !parameter.getType().isUnknownType();
         }
         return declaration.get() instanceof VariableDeclarator variable
                 && variable.getInitializer().map(Nodes::unwrap).filter(Expression::isBooleanLiteralExpr).isEmpty();

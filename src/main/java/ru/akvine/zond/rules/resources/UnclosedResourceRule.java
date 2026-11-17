@@ -121,7 +121,7 @@ public class UnclosedResourceRule extends AbstractRule implements ProjectRule {
     }
 
     private void check(SourceFile sourceFile, CallGraph graph, List<Violation> violations) {
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             if (!Resources.isLocalVariable(variable) || variable.getInitializer().isEmpty()) {
                 continue;
             }
@@ -139,7 +139,7 @@ public class UnclosedResourceRule extends AbstractRule implements ProjectRule {
             }
         }
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (isFilesStream(call) && isConsumedWithoutClosing(call)) {
                 violations.add(violation(sourceFile, call,
                         "Стрим Files." + call.getNameAsString() + "(...) держит открытый файл и не закрыт:"

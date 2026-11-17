@@ -55,7 +55,7 @@ public class SubscribeWithoutErrorHandlerRule extends AbstractRule {
         if (!usesReactiveLibrary(sourceFile.unit())) {
             return List.of();
         }
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> SUBSCRIBE.equals(call.getNameAsString())
                         && call.getArguments().size() <= MAX_ARGUMENTS_WITHOUT_ERROR_HANDLER)
                 .filter(call -> call.getScope().isPresent() && isReactive(call.getScope().get()))

@@ -40,7 +40,7 @@ public class ExpressionInjectionRule extends AbstractTaintRule {
     @Override
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<Expression> expression = findExpression(call);
             if (expression.isEmpty()) {
                 continue;

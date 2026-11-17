@@ -53,7 +53,7 @@ public class SortInLoopRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<Expression> sorted = sortedCollection(call);
             if (sorted.isEmpty() || TestClasses.isInside(call)) {
                 continue;

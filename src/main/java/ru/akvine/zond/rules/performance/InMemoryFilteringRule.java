@@ -36,7 +36,7 @@ public class InMemoryFilteringRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!FIND_ALL.equals(call.getNameAsString()) || !call.getArguments().isEmpty()
                     || !Repositories.isRepositoryCall(call) || TestClasses.isInside(call)) {
                 continue;

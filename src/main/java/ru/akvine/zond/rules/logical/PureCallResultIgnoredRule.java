@@ -51,7 +51,7 @@ public class PureCallResultIgnoredRule extends AbstractRule implements ProjectRu
         SideEffects effects = SideEffects.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (!isIgnored(call) || TestClasses.isInside(call)) {
                     continue;
                 }

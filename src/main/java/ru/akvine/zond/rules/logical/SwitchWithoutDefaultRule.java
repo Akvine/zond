@@ -40,7 +40,7 @@ public class SwitchWithoutDefaultRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // switch-выражение не трогаем: компилятор сам требует от него полноты
-        return sourceFile.unit().findAll(SwitchStmt.class).stream()
+        return sourceFile.findAll(SwitchStmt.class).stream()
                 .filter(switchStmt -> switchStmt.getEntries().stream().noneMatch(entry -> entry.getLabels().isEmpty() || entry.isDefault()))
                 .filter(switchStmt -> !coversWholeEnum(switchStmt) && !hasFallbackAfter(switchStmt))
                 .map(switchStmt -> violation(sourceFile, switchStmt,

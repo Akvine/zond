@@ -53,7 +53,7 @@ public class PeriodBetweenForExactIntervalRule implements Rule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr between : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr between : sourceFile.findAll(MethodCallExpr.class)) {
             if (!MethodCalls.isCallOn(between, PERIOD, BETWEEN)) {
                 continue;
             }

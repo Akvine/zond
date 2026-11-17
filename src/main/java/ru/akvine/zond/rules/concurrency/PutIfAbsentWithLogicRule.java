@@ -48,13 +48,13 @@ public class PutIfAbsentWithLogicRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
 
         // if (map.putIfAbsent(key, value) == null) { ... }
-        for (IfStmt ifStmt : sourceFile.unit().findAll(IfStmt.class)) {
+        for (IfStmt ifStmt : sourceFile.findAll(IfStmt.class)) {
             findNullCheck(ifStmt, this::isPutIfAbsent)
                     .ifPresent(check -> violations.add(report(sourceFile, ifStmt)));
         }
 
         // V previous = map.putIfAbsent(key, value); if (previous == null) { ... }
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             Optional<Node> callable = Nodes.enclosingCallable(variable);
             if (callable.isEmpty() || variable.getInitializer().filter(this::isPutIfAbsent).isEmpty()) {
                 continue;

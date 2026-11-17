@@ -57,7 +57,7 @@ public class CacheEvictInTransactionRule extends AbstractRule implements Project
         Map<CompilationUnit, SourceFile> files = new IdentityHashMap<>();
         sourceFiles.forEach(sourceFile -> files.put(sourceFile.unit(), sourceFile));
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 List<AnnotationExpr> evictions = CacheAnnotations.find(method, CacheAnnotations.EVICTING);
                 if (evictions.isEmpty()) {
                     continue;

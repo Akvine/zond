@@ -37,7 +37,7 @@ public class TransactionOnPrivateMethodRule implements Rule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        return sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(MethodDeclaration::isPrivate)
                 .filter(TransactionalAnnotations::isPresent)
                 .map(method -> new Violation(

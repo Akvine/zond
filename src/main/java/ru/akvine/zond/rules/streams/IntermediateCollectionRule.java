@@ -54,7 +54,7 @@ public class IntermediateCollectionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr question : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr question : sourceFile.findAll(MethodCallExpr.class)) {
             String replacement = REPLACEMENTS.get(question.getNameAsString());
             Expression scope = question.getScope().map(Nodes::unwrap).orElse(null);
             if (replacement == null || scope == null || !scope.isMethodCallExpr() || !isSuitable(question)

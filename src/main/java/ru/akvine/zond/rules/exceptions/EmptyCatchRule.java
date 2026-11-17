@@ -38,7 +38,7 @@ public class EmptyCatchRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Комментарий внутри блока считаем объяснением, почему исключение пропущено
-        return sourceFile.unit().findAll(CatchClause.class).stream()
+        return sourceFile.findAll(CatchClause.class).stream()
                 .filter(clause -> clause.getBody().getStatements().isEmpty())
                 .filter(clause -> clause.getBody().getAllContainedComments().isEmpty())
                 .filter(clause -> !IGNORED_NAMES.contains(clause.getParameter().getNameAsString()))

@@ -66,13 +66,13 @@ public class ProductOverflowRule extends AbstractRule {
             return violations;
         }
 
-        for (AssignExpr assignment : sourceFile.unit().findAll(AssignExpr.class)) {
+        for (AssignExpr assignment : sourceFile.findAll(AssignExpr.class)) {
             checkLoop(sourceFile, assignment).ifPresent(violations::add);
         }
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             checkReduce(sourceFile, call).ifPresent(violations::add);
         }
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             checkRecursion(sourceFile, method).ifPresent(violations::add);
         }
         return violations;

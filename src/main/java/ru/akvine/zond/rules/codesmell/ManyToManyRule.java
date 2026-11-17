@@ -27,7 +27,7 @@ public class ManyToManyRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(AnnotationExpr.class).stream()
+        return sourceFile.findAll(AnnotationExpr.class).stream()
                 .filter(annotation -> MANY_TO_MANY.equals(annotation.getName().getIdentifier()))
                 .map(annotation -> violation(sourceFile, annotation,
                         "@ManyToMany: промежуточная таблица скрыта, в нее нельзя добавить свои поля (дату, статус),"

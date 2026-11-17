@@ -33,7 +33,7 @@ public class FlushInLoopRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> FLUSH_METHODS.contains(call.getNameAsString()) && call.getScope().isPresent())
                 .filter(call -> !TestClasses.isInside(call))
                 .filter(this::isFlushedOnEveryIteration)

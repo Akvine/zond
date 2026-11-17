@@ -42,7 +42,7 @@ public class SecretInRequestParameterRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration handler : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration handler : sourceFile.findAll(MethodDeclaration.class)) {
             Optional<AnnotationExpr> mapping = Mappings.find(handler);
             // Интерфейс HTTP-клиента описывает чужой сервис: каким быть его адресу, решает он. Обычный же
             // интерфейс с адресами - объявление своего контроллера, и аннотации параметров стоят как раз в нем

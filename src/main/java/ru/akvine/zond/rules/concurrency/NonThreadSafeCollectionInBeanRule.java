@@ -71,7 +71,7 @@ public class NonThreadSafeCollectionInBeanRule extends AbstractRule implements P
 
     private List<Violation> checkFile(SourceFile sourceFile, ThreadReach reach) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration bean : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration bean : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             // @Scope("prototype"), @StepScope, @ServerEndpoint: у каждого потребителя свой экземпляр, но статическое
             // поле у них одно на всех - пул подключений WebSocket меняют все соединения сразу
             boolean singleton = BeanScopes.isSingletonBean(bean);

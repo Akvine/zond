@@ -39,7 +39,7 @@ public class VolatileNonAtomicRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (UnaryExpr unary : sourceFile.unit().findAll(UnaryExpr.class)) {
+        for (UnaryExpr unary : sourceFile.findAll(UnaryExpr.class)) {
             boolean changes = unary.getOperator().name().endsWith("INCREMENT")
                     || unary.getOperator().name().endsWith("DECREMENT");
             if (changes && isUnprotectedVolatile(unary.getExpression(), unary)) {
@@ -47,7 +47,7 @@ public class VolatileNonAtomicRule extends AbstractRule {
             }
         }
 
-        for (AssignExpr assign : sourceFile.unit().findAll(AssignExpr.class)) {
+        for (AssignExpr assign : sourceFile.findAll(AssignExpr.class)) {
             // x += 1 либо x = x + 1: новое значение зависит от старого
             boolean readsItself = assign.getOperator() != AssignExpr.Operator.ASSIGN || readsField(assign);
             if (readsItself && isUnprotectedVolatile(assign.getTarget(), assign)) {

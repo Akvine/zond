@@ -42,7 +42,7 @@ public class PeekWithSideEffectRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // peek() без аргументов - это не стрим, а очередь или итератор
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> PEEK.equals(call.getNameAsString()) && call.getArguments().size() == 1)
                 .filter(call -> changesState(call.getArgument(0)))
                 .map(call -> violation(sourceFile, call,

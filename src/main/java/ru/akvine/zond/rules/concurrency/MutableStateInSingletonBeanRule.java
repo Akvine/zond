@@ -107,7 +107,7 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
 
     private void checkFile(SourceFile sourceFile, Map<String, List<MethodCallExpr>> setterCalls, Lifecycle lifecycle,
                            ThreadReach reach, List<Violation> violations) {
-        for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             if (!isSingletonBean(type)) {
                 continue;
             }
@@ -185,7 +185,7 @@ public class MutableStateInSingletonBeanRule implements ProjectRule {
     private Map<String, List<MethodCallExpr>> setterCalls(List<SourceFile> sourceFiles) {
         Map<String, List<MethodCallExpr>> calls = new HashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (call.getNameAsString().startsWith(SETTER) && call.getArguments().size() == 1) {
                     calls.computeIfAbsent(call.getNameAsString(), name -> new ArrayList<>()).add(call);
                 }

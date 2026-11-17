@@ -42,7 +42,7 @@ public class EqualsOnPossibleNullRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> EQUALS_METHODS.contains(call.getNameAsString()) && call.getArguments().size() == 1)
                 .filter(call -> call.getArgument(0).isStringLiteralExpr() && call.getScope().isPresent())
                 .filter(call -> mayBeNull(call.getScope().get()) && !TestClasses.isInside(call))

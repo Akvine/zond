@@ -62,13 +62,13 @@ public class StreamQueryWithoutFetchSizeRule extends AbstractContextRule {
             return List.of();
         }
         boolean templateConfigured = context.sources().stream()
-                .flatMap(sourceFile -> sourceFile.unit().findAll(MethodCallExpr.class).stream())
+                .flatMap(sourceFile -> sourceFile.findAll(MethodCallExpr.class).stream())
                 .anyMatch(call -> SET_FETCH_SIZE.equals(call.getNameAsString()));
 
         ProjectClasses classes = ProjectClasses.of(context.sources());
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : context.sources()) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!type.isInterface() || TestClasses.isInside(type) || !Queries.isSpringDataRepository(type, classes)) {
                     continue;
                 }
@@ -85,7 +85,7 @@ public class StreamQueryWithoutFetchSizeRule extends AbstractContextRule {
             if (templateConfigured) {
                 continue;
             }
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (QUERY_FOR_STREAM.equals(call.getNameAsString()) && call.getScope()
                         .filter(scope -> JDBC_TEMPLATE.matcher(MethodCalls.receiverName(scope)).matches()).isPresent()
                         && !TestClasses.isInside(call)) {

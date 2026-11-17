@@ -40,8 +40,8 @@ public class DisabledSecurityRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        boolean isStateless = STATELESS.matcher(sourceFile.unit().toString()).find();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        boolean isStateless = STATELESS.matcher(sourceFile.text()).find();
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             String name = call.getNameAsString();
 
             // Для API без сессий (токен в заголовке, STATELESS) защита от CSRF не нужна: подделывать нечего

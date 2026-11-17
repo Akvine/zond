@@ -68,7 +68,7 @@ public class TrustedForwardedHeaderRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         Set<Node> reportedMethods = new HashSet<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<String> header = forwardedHeader(call);
             Optional<Node> method = Nodes.enclosingCallable(call);
             if (header.isEmpty() || method.isEmpty() || TestClasses.isInside(call)

@@ -65,16 +65,16 @@ public class TemplateInjectionRule extends AbstractTaintRule {
     @Override
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             // new Template("name", new StringReader(text), cfg) и new Template("name", text, cfg) во FreeMarker
             if (TEMPLATE.equals(creation.getType().getNameAsString()) && creation.getArguments().size() >= 2) {
                 report(sourceFile, creation, templateText(creation.getArgument(1)), taint, violations);
             }
         }
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             report(sourceFile, call, templateOf(call), taint, violations);
         }
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (isViewHandler(method)) {
                 method.findAll(ReturnStmt.class).stream()
                         .filter(statement -> !Nodes.isInNestedScope(statement, method))

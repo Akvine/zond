@@ -62,7 +62,7 @@ public class UnknownFieldInQueryRule extends AbstractRule implements ProjectRule
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 Optional<AnnotationExpr> query = Queries.find(method).filter(annotation -> !Queries.isNative(annotation));
                 Optional<String> text = query.flatMap(Queries::text);
                 if (text.isEmpty()) {

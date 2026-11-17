@@ -44,7 +44,7 @@ public class MutablePublicConstantRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             if (!isPublicConstant(field)) {
                 continue;
             }

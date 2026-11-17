@@ -42,7 +42,7 @@ public class FlatMapInfiniteStreamRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr flatMap : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr flatMap : sourceFile.findAll(MethodCallExpr.class)) {
             if (!FLAT_MAP_METHODS.contains(flatMap.getNameAsString())
                     || flatMap.getArguments().size() != 1
                     || !flatMap.getArgument(0).isLambdaExpr()) {

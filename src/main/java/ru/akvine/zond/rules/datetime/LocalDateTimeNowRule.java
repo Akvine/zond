@@ -62,7 +62,7 @@ public class LocalDateTimeNowRule implements Rule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // now(zone) и now(clock) не трогаем: там пояс выбран явно
-        List<MethodCallExpr> calls = sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        List<MethodCallExpr> calls = sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> MethodCalls.isCallOn(call, LOCAL_DATE_TIME, NOW))
                 .filter(call -> call.getArguments().isEmpty())
                 .toList();

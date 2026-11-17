@@ -33,7 +33,7 @@ public class EntityWithDataRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return JpaEntities.findEntities(sourceFile.unit()).stream()
+        return JpaEntities.findEntities(sourceFile).stream()
                 .filter(entity -> Annotations.has(entity, DATA))
                 .map(entity -> hasRelations(entity)
                         ? violation(sourceFile, entity,

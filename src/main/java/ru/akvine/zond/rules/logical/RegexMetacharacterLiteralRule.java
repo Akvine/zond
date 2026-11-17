@@ -53,7 +53,7 @@ public class RegexMetacharacterLiteralRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> REGEX_METHODS.contains(call.getNameAsString()) && !call.getArguments().isEmpty())
                 .filter(this::isCalledOnString)
                 .flatMap(call -> metacharacter(call.getArgument(0)).stream()

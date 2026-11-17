@@ -32,7 +32,7 @@ public class SleepInLoopRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // В тестах sleep ловит отдельное правило
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> MethodCalls.isCallOn(call, THREAD, SLEEP))
                 .filter(call -> Nodes.enclosingLoop(call).isPresent() && !TestClasses.isInside(call))
                 .map(call -> violation(sourceFile, call,

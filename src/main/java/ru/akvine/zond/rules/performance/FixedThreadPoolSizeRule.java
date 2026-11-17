@@ -106,7 +106,7 @@ public class FixedThreadPoolSizeRule extends AbstractContextRule {
     }
 
     private void checkCode(SourceFile sourceFile, List<Violation> violations) {
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             boolean factory = SIZED_FACTORIES.contains(call.getNameAsString())
                     && call.getScope().filter(scope -> EXECUTORS.equals(MethodCalls.receiverName(scope))).isPresent();
             boolean setter = SIZE_SETTERS.contains(call.getNameAsString()) && call.getArguments().size() == 1;
@@ -115,7 +115,7 @@ public class FixedThreadPoolSizeRule extends AbstractContextRule {
                         violation(sourceFile, call.getName(), message("'" + Nodes.text(call) + "'", size))));
             }
         }
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             String type = creation.getType().getNameAsString();
             if (!SIZED_TYPES.contains(type) || creation.getArguments().isEmpty() || TestClasses.isInside(creation)) {
                 continue;

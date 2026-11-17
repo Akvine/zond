@@ -5,15 +5,21 @@ import com.github.javaparser.ast.DataKey;
 import com.github.javaparser.ast.ImportDeclaration;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.AnnotationDeclaration;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.TypePatternExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import com.github.javaparser.ast.nodeTypes.NodeWithExtends;
 import com.github.javaparser.ast.nodeTypes.NodeWithImplements;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.resolution.TypeSolver;
@@ -53,8 +59,15 @@ public class Types {
     };
     private static final DataKey<CallTarget> CALL_TARGET = new DataKey<>() {
     };
+    private static final DataKey<Optional<String>> WRITTEN_TYPE_NAME = new DataKey<>() {
+    };
     private static final DataKey<Optional<AnnotationDeclaration>> ANNOTATION_DECLARATION = new DataKey<>() {
     };
+
+    // Решатель ищет имя, перебирая предыдущие операторы блока и сравнивая их по содержимому. В блоке из тысячи
+    // похожих строк (таблица проверок в тесте) одно разрешение занимает десятки миллисекунд, а весь метод - минуты.
+    // В блоках длиннее этого решатель не используется: типы там определяются по объявлениям и именам
+    private static final int MAX_SOLVED_BLOCK_STATEMENTS = 300;
 
     private static final String JDK_PACKAGE = "java.";
     private static final String JAVA_LANG = "java.lang.";
@@ -345,7 +358,19 @@ public class Types {
     }
 
     private boolean hasSolver(Node node) {
-        return node.findCompilationUnit().filter(unit -> unit.containsData(Node.SYMBOL_RESOLVER_KEY)).isPresent();
+        return !isInHugeBlock(node)
+                && node.findCompilationUnit().filter(unit -> unit.containsData(Node.SYMBOL_RESOLVER_KEY)).isPresent();
+    }
+
+    private boolean isInHugeBlock(Node node) {
+        Node current = node;
+        while (current != null) {
+            if (current instanceof BlockStmt block && block.getStatements().size() > MAX_SOLVED_BLOCK_STATEMENTS) {
+                return true;
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
     }
 
     // Решатель сообщает о неудаче исключениями разных типов, а на запутанных обобщениях может уйти в рекурсию
@@ -354,15 +379,123 @@ public class Types {
             // Имя может обозначать не переменную, а класс (String в String.valueOf(...)): у класса нет значения
             // и типа выражения. resolve() находит только переменные, поля и параметры, для класса - исключение
             if (expression.isNameExpr()) {
-                return Optional.of(expression.asNameExpr().resolve().getType());
+                return Optional.of(valueType(expression.asNameExpr().resolve().getType()));
             }
             if (expression.isFieldAccessExpr()) {
-                return Optional.of(expression.asFieldAccessExpr().resolve().getType());
+                return Optional.of(valueType(expression.asFieldAccessExpr().resolve().getType()));
             }
-            return Optional.of(expression.calculateResolvedType());
+            return Optional.of(valueType(expression.calculateResolvedType()));
         } catch (RuntimeException | StackOverflowError exception) {
-            return Lombok.resolve(expression);
+            return Lombok.resolve(expression).or(() -> elementType(expression));
         }
+    }
+
+    // Параметр лямбды и переменная for-each без типа: решатель не справился с цепочкой, но тип элемента записан
+    // в объявлении коллекции, которую перебирают
+    private Optional<ResolvedType> elementType(Expression expression) {
+        if (!expression.isNameExpr()) {
+            return Optional.empty();
+        }
+        Optional<Node> declaration = LocalTypes.findDeclaration(expression);
+        Optional<Type> written = Optional.empty();
+        if (declaration.isPresent() && declaration.get() instanceof Parameter parameter) {
+            written = ElementTypes.of(parameter);
+        } else if (declaration.isPresent() && declaration.get() instanceof VariableDeclarator variable
+                && variable.getType().isVarType()) {
+            written = ElementTypes.of(variable);
+        }
+        return written.flatMap(Types::resolve);
+    }
+
+    /**
+     * Тип значения вместо записи с подстановочным знаком. Параметр лямбды решатель описывает так, как он объявлен
+     * у функционального интерфейса: у forEach(Consumer<? super T>) это "? super Order", хотя в теле лямбды значение
+     * имеет тип Order. Так же значение из List<? extends Order> - это Order. А из List<? super Order> достается
+     * Object: такой тип остается как есть
+     */
+    private ResolvedType valueType(ResolvedType type) {
+        if (type.isConstraint()) {
+            return type.asConstraintType().getBound();
+        }
+        return type.isWildcard() && type.asWildcard().isExtends() ? type.asWildcard().getBoundedType() : type;
+    }
+
+    /**
+     * Имя типа так, как оно записано в коде проекта, когда сам тип разрешить не удалось: его библиотеки нет в
+     * classpath. {@code HttpClient client()} в классе проекта: у client().execute(...) получатель - HttpClient,
+     * хотя что это за класс, неизвестно. То же с полем класса-предка и переменной из instanceof
+     *
+     * @return простое имя типа из объявления метода, поля или переменной, найденного в исходниках проекта
+     */
+    public synchronized Optional<String> writtenTypeName(Expression expression) {
+        if (expression.containsData(WRITTEN_TYPE_NAME)) {
+            return expression.getData(WRITTEN_TYPE_NAME);
+        }
+        Optional<String> name = hasSolver(expression) ? findWrittenTypeName(expression) : Optional.empty();
+        expression.setData(WRITTEN_TYPE_NAME, name);
+        return name;
+    }
+
+    private Optional<String> findWrittenTypeName(Expression expression) {
+        try {
+            if (expression.isMethodCallExpr()) {
+                return target(expression.asMethodCallExpr()).declaration()
+                        .filter(node -> node instanceof MethodDeclaration)
+                        .map(node -> (MethodDeclaration) node)
+                        .filter(method -> !isTypeParameter(method.getType(), method))
+                        .flatMap(method -> writtenName(method.getType()));
+            }
+            Optional<Node> declaration = Optional.empty();
+            if (expression.isNameExpr()) {
+                declaration = expression.asNameExpr().resolve().toAst();
+            } else if (expression.isFieldAccessExpr()) {
+                declaration = expression.asFieldAccessExpr().resolve().toAst();
+            }
+            return declaration.flatMap(Types::writtenTypeOf).flatMap(Types::writtenName);
+        } catch (RuntimeException | StackOverflowError exception) {
+            return Optional.empty();
+        }
+    }
+
+    // Решатель отдает поле целиком: по private Logger first, second; имя одно на все переменные
+    private Optional<Type> writtenTypeOf(Node declaration) {
+        if (declaration instanceof FieldDeclaration field) {
+            return Optional.of(field.getCommonType());
+        }
+        if (declaration instanceof VariableDeclarator variable) {
+            return Optional.of(variable.getType());
+        }
+        if (declaration instanceof Parameter parameter) {
+            return Optional.of(parameter.getType());
+        }
+        return declaration instanceof TypePatternExpr pattern ? Optional.of(pattern.getType()) : Optional.empty();
+    }
+
+    // java.util.Map<String, String> -> Map; у var, void и неизвестного типа параметра лямбды имени нет
+    private Optional<String> writtenName(Type type) {
+        return type.isClassOrInterfaceType()
+                ? Optional.of(type.asClassOrInterfaceType().getNameAsString())
+                : Optional.empty();
+    }
+
+    // <T> T find(...) и class Box<T> { T get() }: T - не имя класса
+    private boolean isTypeParameter(Type type, MethodDeclaration method) {
+        if (!type.isClassOrInterfaceType()) {
+            return false;
+        }
+        String name = type.asClassOrInterfaceType().getNameAsString();
+        if (method.getTypeParameters().stream().anyMatch(parameter -> parameter.getNameAsString().equals(name))) {
+            return true;
+        }
+        Node current = method.getParentNode().orElse(null);
+        while (current != null) {
+            if (current instanceof ClassOrInterfaceDeclaration owner && owner.getTypeParameters().stream()
+                    .anyMatch(parameter -> parameter.getNameAsString().equals(name))) {
+                return true;
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
     }
 
     private Optional<Boolean> matches(ResolvedType type, Predicate<String> typeName) {

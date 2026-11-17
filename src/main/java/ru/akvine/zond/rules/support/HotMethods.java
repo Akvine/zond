@@ -50,7 +50,7 @@ public final class HotMethods {
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         // items.stream().map(this::normalize), names.forEach(Cleaner::clean)
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodReferenceExpr reference : sourceFile.unit().findAll(MethodReferenceExpr.class)) {
+            for (MethodReferenceExpr reference : sourceFile.findAll(MethodReferenceExpr.class)) {
                 if (MethodReferences.perElementOperation(reference).isEmpty() || CodeContexts.isStartup(reference)
                         || TestClasses.isInside(reference)) {
                     continue;

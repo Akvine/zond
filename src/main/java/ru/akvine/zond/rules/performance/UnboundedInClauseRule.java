@@ -80,7 +80,7 @@ public class UnboundedInClauseRule extends AbstractRule implements ProjectRule {
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (call.getArguments().isEmpty() || !isInQuery(call, classes) || TestClasses.isInside(call)
                         || isPartitioned(call)) {
                     continue;

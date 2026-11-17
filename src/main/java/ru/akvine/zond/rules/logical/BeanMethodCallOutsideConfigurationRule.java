@@ -38,7 +38,7 @@ public class BeanMethodCallOutsideConfigurationRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             Set<String> beanMethods = type.getMethods().stream()
                     .filter(method -> Annotations.has(method, BEAN))
                     .map(MethodDeclaration::getNameAsString)

@@ -30,7 +30,7 @@ public class SortedFindFirstRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Именно подряд: sorted().skip(1).findFirst() или sorted().filter(...).findFirst() через min() не выразить
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> FIND_FIRST.equals(call.getNameAsString()) && call.getArguments().isEmpty())
                 .filter(call -> call.getScope()
                         .map(Nodes::unwrap)

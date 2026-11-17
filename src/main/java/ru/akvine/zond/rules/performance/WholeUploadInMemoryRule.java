@@ -39,7 +39,7 @@ public class WholeUploadInMemoryRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> call.getArguments().isEmpty() && call.getScope().isPresent())
                 .filter(call -> readsUpload(call, Nodes.unwrap(call.getScope().get())))
                 .filter(call -> !TestClasses.isInside(call))

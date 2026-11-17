@@ -63,9 +63,9 @@ public class ReadLoopWithoutEofRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         List<Statement> loops = new ArrayList<>();
-        loops.addAll(sourceFile.unit().findAll(WhileStmt.class));
-        loops.addAll(sourceFile.unit().findAll(DoStmt.class));
-        loops.addAll(sourceFile.unit().findAll(ForStmt.class));
+        loops.addAll(sourceFile.findAll(WhileStmt.class));
+        loops.addAll(sourceFile.findAll(DoStmt.class));
+        loops.addAll(sourceFile.findAll(ForStmt.class));
         for (Statement loop : loops) {
             for (MethodCallExpr call : loop.findAll(MethodCallExpr.class)) {
                 if (!isStreamCall(call) || Nodes.enclosingLoop(call).filter(found -> found == loop).isEmpty()) {

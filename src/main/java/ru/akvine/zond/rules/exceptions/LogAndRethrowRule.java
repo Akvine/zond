@@ -33,7 +33,7 @@ public class LogAndRethrowRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (CatchClause clause : sourceFile.unit().findAll(CatchClause.class)) {
+        for (CatchClause clause : sourceFile.findAll(CatchClause.class)) {
             List<Statement> statements = clause.getBody().getStatements();
             if (statements.isEmpty() || !statements.get(statements.size() - 1).isThrowStmt()) {
                 continue;

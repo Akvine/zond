@@ -43,8 +43,8 @@ public class LinearSearchInsteadOfMapRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<KeyLookups.Lookup> lookups = Stream.concat(
-                        sourceFile.unit().findAll(MethodCallExpr.class).stream().map(KeyLookups::ofStream),
-                        sourceFile.unit().findAll(ForEachStmt.class).stream().map(KeyLookups::ofLoop))
+                        sourceFile.findAll(MethodCallExpr.class).stream().map(KeyLookups::ofStream),
+                        sourceFile.findAll(ForEachStmt.class).stream().map(KeyLookups::ofLoop))
                 .flatMap(Optional::stream)
                 // В тестах данных мало: перебор там ничего не стоит
                 .filter(lookup -> !TestClasses.isInside(lookup.place()))

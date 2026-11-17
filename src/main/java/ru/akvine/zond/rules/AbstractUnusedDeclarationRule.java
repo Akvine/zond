@@ -31,7 +31,7 @@ public abstract class AbstractUnusedDeclarationRule extends AbstractRule impleme
 
         ProjectUsages usages = ProjectUsages.of(sourceFiles);
         for (SourceFile sourceFile : sourceFiles) {
-            for (Node node : sourceFile.unit().findAll(Node.class)) {
+            for (Node node : sourceFile.findAll(Node.class)) {
                 if (node instanceof TypeDeclaration<?> type) {
                     check(sourceFile, type, usages, violations);
                 }

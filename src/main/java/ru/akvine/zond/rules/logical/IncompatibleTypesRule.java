@@ -60,7 +60,7 @@ public class IncompatibleTypesRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (call.getScope().isEmpty() || call.getArguments().isEmpty()) {
                 continue;
             }

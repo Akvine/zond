@@ -53,14 +53,14 @@ public class PageWithoutTotalRule extends AbstractRule implements ProjectRule {
         Set<String> pageMethods = new HashSet<>();
         Set<String> otherMethods = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class).stream()
+            sourceFile.findAll(ClassOrInterfaceDeclaration.class).stream()
                     .filter(type -> type.isInterface() && REPOSITORY_TYPE.matcher(type.getNameAsString()).matches())
                     .flatMap(type -> type.getMethods().stream())
                     .forEach(method -> collect(method, pageMethods, otherMethods));
         }
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr content : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr content : sourceFile.findAll(MethodCallExpr.class)) {
                 if (!GET_CONTENT.equals(content.getNameAsString()) || !content.getArguments().isEmpty()
                         || TestClasses.isInside(content)) {
                     continue;

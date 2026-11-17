@@ -145,12 +145,12 @@ public class EntityColumnTypeMismatchRule extends AbstractContextRule {
         ProjectClasses classes = ProjectClasses.of(context.sources());
         Known known = new Known(new HashSet<>(), new HashSet<>());
         for (SourceFile sourceFile : context.sources()) {
-            sourceFile.unit().findAll(EnumDeclaration.class).forEach(found -> known.enums().add(found.getNameAsString()));
-            sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)
+            sourceFile.findAll(EnumDeclaration.class).forEach(found -> known.enums().add(found.getNameAsString()));
+            sourceFile.findAll(ClassOrInterfaceDeclaration.class)
                     .forEach(type -> known.converted().addAll(convertedBy(type)));
         }
         for (SourceFile sourceFile : context.sources()) {
-            for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile.unit())) {
+            for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile)) {
                 Optional<DbSchema.Table> table = EntityMapping.tableName(entity, classes)
                         .flatMap(schema.visibleFrom(entity)::find)
                         .filter(found -> !found.isOpaque());

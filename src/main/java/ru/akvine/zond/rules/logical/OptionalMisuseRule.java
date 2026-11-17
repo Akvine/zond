@@ -8,6 +8,7 @@ import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.UnaryExpr;
 import com.github.javaparser.ast.stmt.ReturnStmt;
 import com.github.javaparser.ast.stmt.TryStmt;
 import org.springframework.stereotype.Component;
@@ -17,6 +18,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.ElementTypes;
 import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
@@ -33,7 +35,10 @@ public class OptionalMisuseRule extends AbstractRule {
     private static final String OPTIONAL = "Optional";
     private static final String GET = "get";
     private static final String OPTIONAL_OF = "of";
-    private static final Set<String> PRESENCE_CHECKS = Set.of("isPresent", "isEmpty");
+    private static final String IS_PRESENT = "isPresent";
+    private static final String IS_EMPTY = "isEmpty";
+    private static final Set<String> PRESENCE_CHECKS = Set.of(IS_PRESENT, IS_EMPTY);
+    private static final String FILTER = "filter";
 
     // Методы, которые возвращают Optional: вызов get() сразу после них ничем не защищен
     private static final Set<String> OPTIONAL_SOURCES = Set.of("findFirst", "findAny", "findById", "ofNullable");
@@ -66,7 +71,7 @@ public class OptionalMisuseRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (!OPTIONAL.equals(LocalTypes.typeName(method.getType()))) {
                 continue;
             }
@@ -80,7 +85,7 @@ public class OptionalMisuseRule extends AbstractRule {
             }
         }
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (isUncheckedPrimitiveGet(call)) {
                 violations.add(violation(sourceFile, call.getName(),
                         "'" + call.getNameAsString() + "()' без проверки сразу после '"
@@ -201,10 +206,36 @@ public class OptionalMisuseRule extends AbstractRule {
         // Проверка производного значения - это и проверка исходного: column = table.flatMap(...) не пуст,
         // только когда не пуст table
         Set<String> names = withDerived(variable, call);
-        if (isInsideOwnChain(call, names) || isAlwaysPresent(scope, call)) {
+        if (isInsideOwnChain(call, names) || isAlwaysPresent(scope, call) || isFilteredByPresence(scope)) {
             return false;
         }
         return !Guards.isGuarded(call, check -> isPresenceCheckOfAny(check, names));
+    }
+
+    // values.stream().filter(Optional::isPresent).map(value -> value.get()): до лямбды доходят только непустые
+    private boolean isFilteredByPresence(Expression scope) {
+        return LocalTypes.findDeclaration(scope).stream()
+                .flatMap(declaration -> ElementTypes.passedBy(declaration).stream())
+                .filter(step -> FILTER.equals(step.getNameAsString()) && step.getArguments().size() == 1)
+                .anyMatch(step -> isPresenceFilter(step.getArgument(0)));
+    }
+
+    // Optional::isPresent, value -> value.isPresent(), value -> !value.isEmpty()
+    private boolean isPresenceFilter(Expression condition) {
+        if (condition.isMethodReferenceExpr()) {
+            return IS_PRESENT.equals(condition.asMethodReferenceExpr().getIdentifier());
+        }
+        Optional<Expression> body = condition.toLambdaExpr()
+                .flatMap(LambdaExpr::getExpressionBody)
+                .map(Nodes::unwrap);
+        if (body.filter(Expression::isUnaryExpr).isPresent()) {
+            Expression negated = Nodes.unwrap(body.get().asUnaryExpr().getExpression());
+            return body.get().asUnaryExpr().getOperator() == UnaryExpr.Operator.LOGICAL_COMPLEMENT
+                    && negated.isMethodCallExpr() && IS_EMPTY.equals(negated.asMethodCallExpr().getNameAsString());
+        }
+        return body.filter(Expression::isMethodCallExpr)
+                .filter(check -> IS_PRESENT.equals(check.asMethodCallExpr().getNameAsString()))
+                .isPresent();
     }
 
     // resource = Optional.of(acquire()); use(resource.get()): до get() доходит только заведомо не пустой Optional

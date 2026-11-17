@@ -36,7 +36,7 @@ public class AssignmentInConditionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (Node node : sourceFile.unit().findAll(Node.class)) {
+        for (Node node : sourceFile.findAll(Node.class)) {
             // Условие целиком должно быть присваиванием. Идиома while ((line = reader.readLine()) != null)
             // сюда не попадает: там условие - сравнение
             findCondition(node)

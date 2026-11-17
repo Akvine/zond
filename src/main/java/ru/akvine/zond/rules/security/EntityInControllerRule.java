@@ -43,7 +43,7 @@ public class EntityInControllerRule extends AbstractRule implements ProjectRule 
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         // Какие классы являются сущностями, видно только по всему проекту: они объявлены в других файлах
         Set<String> entities = sourceFiles.stream()
-                .flatMap(sourceFile -> JpaEntities.findEntities(sourceFile.unit()).stream())
+                .flatMap(sourceFile -> JpaEntities.findEntities(sourceFile).stream())
                 .map(ClassOrInterfaceDeclaration::getNameAsString)
                 .collect(Collectors.toSet());
         if (entities.isEmpty()) {
@@ -52,7 +52,7 @@ public class EntityInControllerRule extends AbstractRule implements ProjectRule 
 
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!Annotations.hasAny(type, CONTROLLER_ANNOTATIONS)) {
                     continue;
                 }

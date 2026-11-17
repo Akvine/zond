@@ -1,6 +1,5 @@
 package ru.akvine.zond.rules.codesmell;
 
-import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.SimpleName;
@@ -49,7 +48,7 @@ public class ExecutorWithoutMdcRule extends AbstractRule implements ProjectRule 
     }
 
     private boolean fillsContext(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .anyMatch(call -> CONTEXT_WRITES.contains(call.getNameAsString())
                         && call.getScope().filter(scope -> CONTEXT_HOLDERS.contains(scope.toString())).isPresent());
     }
@@ -57,11 +56,11 @@ public class ExecutorWithoutMdcRule extends AbstractRule implements ProjectRule 
     private List<Violation> checkFile(SourceFile sourceFile) {
         // MDC хранится в ThreadLocal, поэтому в потоках пула он пуст. Если в файле о нем нигде не вспоминают,
         // значит передачу контекста не настраивали
-        if (propagatesContext(sourceFile.unit())) {
+        if (propagatesContext(sourceFile)) {
             return List.of();
         }
 
-        return sourceFile.unit().findAll(Expression.class).stream()
+        return sourceFile.findAll(Expression.class).stream()
                 .filter(ExecutorCreations::creates)
                 .filter(creation -> !isContextAware(creation))
                 .map(creation -> violation(sourceFile, creation,
@@ -87,9 +86,10 @@ public class ExecutorWithoutMdcRule extends AbstractRule implements ProjectRule 
                 && CONTEXT_AWARE.matcher(creation.asObjectCreationExpr().getType().getNameAsString()).find();
     }
 
-    private boolean propagatesContext(CompilationUnit unit) {
-        boolean usesMdc = unit.findAll(SimpleName.class).stream().anyMatch(name -> MDC.equals(name.getIdentifier()));
-        return usesMdc || unit.findAll(MethodCallExpr.class).stream()
+    private boolean propagatesContext(SourceFile sourceFile) {
+        boolean usesMdc = sourceFile.findAll(SimpleName.class).stream()
+                .anyMatch(name -> MDC.equals(name.getIdentifier()));
+        return usesMdc || sourceFile.findAll(MethodCallExpr.class).stream()
                 .anyMatch(call -> CONTEXT_PROPAGATION_METHODS.contains(call.getNameAsString()));
     }
 }

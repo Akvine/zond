@@ -81,7 +81,7 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
     private void checkPositions(SourceFile sourceFile, List<Violation> violations) {
         // name.charAt(0) + name.substring(1) - одна и та же непроверенная строка: сообщаем о ней один раз на оператор
         Map<Node, Set<String>> reported = new IdentityHashMap<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (call.getScope().isEmpty() || !isRiskyPosition(call) || isCutByMatch(call)
                     || CodeContexts.isCaught(call, INDEX_FAILURES)) {
                 continue;
@@ -98,7 +98,7 @@ public class IndexWithoutLengthCheckRule extends AbstractRule {
 
     // String[] parts = line.split(","); parts[1]
     private void checkSplitParts(SourceFile sourceFile, List<Violation> violations) {
-        for (ArrayAccessExpr access : sourceFile.unit().findAll(ArrayAccessExpr.class)) {
+        for (ArrayAccessExpr access : sourceFile.findAll(ArrayAccessExpr.class)) {
             // Нулевой элемент есть всегда: split возвращает хотя бы одну часть
             if (!access.getIndex().isIntegerLiteralExpr() || !access.getName().isNameExpr()
                     || FIRST_INDEX.equals(access.getIndex().asIntegerLiteralExpr().getValue())) {

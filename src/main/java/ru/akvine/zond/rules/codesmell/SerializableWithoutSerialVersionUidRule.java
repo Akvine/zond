@@ -31,7 +31,7 @@ public class SerializableWithoutSerialVersionUidRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             boolean serializable = type.getImplementedTypes().stream()
                     .anyMatch(implemented -> SERIALIZABLE.equals(implemented.getNameAsString()));
             if (type.isInterface() || !serializable || type.getFieldByName(SERIAL_VERSION_UID).isPresent()

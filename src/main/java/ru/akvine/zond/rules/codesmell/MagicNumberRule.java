@@ -137,9 +137,9 @@ public class MagicNumberRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<LiteralStringValueExpr> literals = new ArrayList<>();
-        literals.addAll(sourceFile.unit().findAll(IntegerLiteralExpr.class));
-        literals.addAll(sourceFile.unit().findAll(LongLiteralExpr.class));
-        literals.addAll(sourceFile.unit().findAll(DoubleLiteralExpr.class));
+        literals.addAll(sourceFile.findAll(IntegerLiteralExpr.class));
+        literals.addAll(sourceFile.findAll(LongLiteralExpr.class));
+        literals.addAll(sourceFile.findAll(DoubleLiteralExpr.class));
 
         return literals.stream()
                 .filter(literal -> !isAllowed(literal.getValue()))

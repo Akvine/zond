@@ -70,26 +70,27 @@ public class UnusedCodeRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
 
         Set<String> usedMethods = new HashSet<>();
-        unit.findAll(MethodCallExpr.class).forEach(call -> usedMethods.add(call.getNameAsString()));
-        unit.findAll(MethodReferenceExpr.class).forEach(reference -> usedMethods.add(reference.getIdentifier()));
-        Set<String> reflective = reflectivelyUsedNames(unit);
+        sourceFile.findAll(MethodCallExpr.class).forEach(call -> usedMethods.add(call.getNameAsString()));
+        sourceFile.findAll(MethodReferenceExpr.class)
+                .forEach(reference -> usedMethods.add(reference.getIdentifier()));
+        Set<String> reflective = reflectivelyUsedNames(sourceFile);
         usedMethods.addAll(reflective);
 
         Set<String> usedVariables = new HashSet<>();
-        unit.findAll(NameExpr.class).forEach(name -> usedVariables.add(name.getNameAsString()));
-        unit.findAll(FieldAccessExpr.class).forEach(access -> usedVariables.add(access.getNameAsString()));
+        sourceFile.findAll(NameExpr.class).forEach(name -> usedVariables.add(name.getNameAsString()));
+        sourceFile.findAll(FieldAccessExpr.class).forEach(access -> usedVariables.add(access.getNameAsString()));
         usedVariables.addAll(methodReferenceScopes(unit));
         usedVariables.addAll(reflective);
 
         for (ImportDeclaration importDeclaration : unit.getImports()) {
-            if (!importDeclaration.isAsterisk() && !isImportUsed(unit, importDeclaration)) {
+            if (!importDeclaration.isAsterisk() && !isImportUsed(sourceFile, importDeclaration)) {
                 violations.add(violation(sourceFile, importDeclaration,
                         "Неиспользуемый импорт '" + importDeclaration.getNameAsString() + "'"));
             }
         }
 
         // Аннотация на поле или методе означает, что им пользуется фреймворк, а не код
-        for (FieldDeclaration field : unit.findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             if (!field.isPrivate() || !field.getAnnotations().isEmpty() || isInsideLombokClass(field)) {
                 continue;
             }
@@ -101,7 +102,7 @@ public class UnusedCodeRule extends AbstractRule {
             }
         }
 
-        for (MethodDeclaration method : unit.findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (!method.isPrivate()
                     || !method.getAnnotations().isEmpty()
                     || SERIALIZATION_METHODS.contains(method.getNameAsString())) {
@@ -147,8 +148,8 @@ public class UnusedCodeRule extends AbstractRule {
         }
     }
 
-    private Set<String> reflectivelyUsedNames(CompilationUnit unit) {
-        return unit.findAll(MethodCallExpr.class).stream()
+    private Set<String> reflectivelyUsedNames(SourceFile sourceFile) {
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> REFLECTIVE_LOOKUPS.contains(call.getNameAsString()))
                 .flatMap(call -> call.getArguments().stream())
                 .filter(Expression::isStringLiteralExpr)
@@ -178,12 +179,13 @@ public class UnusedCodeRule extends AbstractRule {
     }
 
     // Импорт используется, если его простое имя встречается в коде либо в комментарии ({@link Type})
-    private boolean isImportUsed(CompilationUnit unit, ImportDeclaration importDeclaration) {
+    private boolean isImportUsed(SourceFile sourceFile, ImportDeclaration importDeclaration) {
+        CompilationUnit unit = sourceFile.unit();
         String name = importDeclaration.getName().getIdentifier();
 
-        boolean usedInCode = unit.findAll(SimpleName.class).stream()
+        boolean usedInCode = sourceFile.findAll(SimpleName.class).stream()
                 .anyMatch(simpleName -> simpleName.getIdentifier().equals(name));
-        if (usedInCode || isUsedAsQualifier(unit, name)) {
+        if (usedInCode || isUsedAsQualifier(sourceFile, name)) {
             return true;
         }
 
@@ -192,8 +194,8 @@ public class UnusedCodeRule extends AbstractRule {
     }
 
     // Имена аннотаций и составные имена (Outer.Inner) хранятся как Name, а не SimpleName
-    private boolean isUsedAsQualifier(CompilationUnit unit, String name) {
-        for (Name qualified : unit.findAll(Name.class)) {
+    private boolean isUsedAsQualifier(SourceFile sourceFile, String name) {
+        for (Name qualified : sourceFile.findAll(Name.class)) {
             if (isPartOfHeader(qualified)) {
                 continue;
             }

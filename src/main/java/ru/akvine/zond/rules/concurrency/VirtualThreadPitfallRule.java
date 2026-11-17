@@ -71,7 +71,7 @@ public class VirtualThreadPitfallRule extends AbstractContextRule {
             return violations;
         }
         for (SourceFile sourceFile : context.sources()) {
-            for (Node node : sourceFile.unit().findAll(Node.class)) {
+            for (Node node : sourceFile.findAll(Node.class)) {
                 if (TestClasses.isInside(node)) {
                     continue;
                 }
@@ -106,7 +106,7 @@ public class VirtualThreadPitfallRule extends AbstractContextRule {
     }
 
     private boolean usesVirtualThreads(SourceFile sourceFile) {
-        String text = sourceFile.unit().toString();
+        String text = sourceFile.text();
         return VIRTUAL_MARKERS.stream().anyMatch(text::contains);
     }
 

@@ -45,7 +45,7 @@ public class ReferenceOutsideTransactionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             Optional<MethodCallExpr> source = variable.getInitializer()
                     .map(Nodes::unwrap)
                     .filter(Expression::isMethodCallExpr)

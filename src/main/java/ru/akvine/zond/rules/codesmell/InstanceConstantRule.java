@@ -38,7 +38,7 @@ public class InstanceConstantRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             // Поле с аннотацией (@Value, @Builder.Default, @Column) заполняет или читает фреймворк
             if (field.isStatic() || !field.isFinal() || !field.getAnnotations().isEmpty() || !isInClass(field)
                     || TestClasses.isInside(field)) {

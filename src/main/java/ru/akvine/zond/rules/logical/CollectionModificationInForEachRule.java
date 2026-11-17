@@ -58,13 +58,13 @@ public class CollectionModificationInForEachRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (ForEachStmt loop : sourceFile.unit().findAll(ForEachStmt.class)) {
+        for (ForEachStmt loop : sourceFile.findAll(ForEachStmt.class)) {
             iteratedCollection(loop.getIterable())
                     .ifPresent(collection -> report(sourceFile, loop.getBody(), collection, violations));
         }
 
         // list.forEach(item -> list.remove(item))
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (FOR_EACH.equals(call.getNameAsString()) && call.getArguments().size() == 1) {
                 call.getScope()
                         .flatMap(this::iteratedCollection)

@@ -118,7 +118,7 @@ public class RecursiveDocumentTraversalRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         CompilationUnit unit = sourceFile.unit();
-        for (TypeDeclaration<?> type : unit.findAll(TypeDeclaration.class)) {
+        for (TypeDeclaration<?> type : sourceFile.findAll(TypeDeclaration.class)) {
             if (TestClasses.isInside(type)) {
                 continue;
             }
@@ -393,7 +393,7 @@ public class RecursiveDocumentTraversalRule extends AbstractRule {
     // org.w3c.dom.Node прямо в объявлении, import org.w3c.dom.Node, а без него - import org.w3c.dom.*.
     // Явный импорт важнее: import com.github.javaparser.ast.Node рядом с org.w3c.dom.* - узел дерева Java
     private Optional<String> formatOfImported(String type, String written, CompilationUnit unit) {
-        if (written.indexOf(PACKAGE_SEPARATOR) > 0) {
+        if (written.indexOf(PACKAGE_SEPARATOR) >= 0) {
             return formatOfPackage(written.substring(0, written.lastIndexOf(PACKAGE_SEPARATOR)));
         }
         List<ImportDeclaration> imports = unit.getImports().stream().filter(declaration -> !declaration.isStatic()).toList();

@@ -31,7 +31,7 @@ public class LinkedListGetInLoopRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> GET.equals(call.getNameAsString()) && call.getArguments().size() == 1)
                 .filter(call -> call.getScope().filter(this::isLinkedList).isPresent())
                 .filter(Loops::isRepeated)

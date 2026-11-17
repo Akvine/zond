@@ -46,7 +46,7 @@ public class ToMapWithoutMergeRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Collectors.toMap(...) либо toMap(...) через статический импорт; mapper.toMap(a, b) сюда не попадает
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> TO_MAP_METHODS.contains(call.getNameAsString()))
                 .filter(call -> call.getArguments().size() == ARGUMENTS_WITHOUT_MERGE)
                 .filter(call -> call.getScope().map(scope -> MethodCalls.isType(scope, COLLECTORS)).orElse(true))

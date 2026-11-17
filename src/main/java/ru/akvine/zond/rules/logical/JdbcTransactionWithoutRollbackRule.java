@@ -33,7 +33,7 @@ public class JdbcTransactionWithoutRollbackRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> SET_AUTO_COMMIT.equals(call.getNameAsString())
                         && call.getArguments().size() == 1
                         && FALSE.equals(call.getArgument(0).toString()))

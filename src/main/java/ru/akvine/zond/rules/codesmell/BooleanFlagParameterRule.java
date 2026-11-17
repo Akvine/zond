@@ -34,7 +34,7 @@ public class BooleanFlagParameterRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             // Единственный boolean-параметр - это сеттер или переключатель: setActive(true) читается ясно.
             // Приватные методы и переопределенные не трогаем
             if (method.getParameters().size() < 2 || method.isPrivate() || Annotations.has(method, OVERRIDE)) {

@@ -83,12 +83,12 @@ public class RabbitAcknowledgeModeNoneRule extends AbstractContextRule {
 
     private void checkCode(SourceFile sourceFile, List<Violation> violations) {
         // factory.setAcknowledgeMode(AcknowledgeMode.NONE)
-        sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> SET_ACKNOWLEDGE_MODE.equals(call.getNameAsString()) && call.getArguments().size() == 1)
                 .filter(call -> call.getArgument(0).toString().endsWith(NONE))
                 .forEach(call -> violations.add(violation(sourceFile, call.getName(), "У слушателей задан " + MESSAGE)));
         // @RabbitListener(queues = "orders", ackMode = "NONE")
-        sourceFile.unit().findAll(AnnotationExpr.class).stream()
+        sourceFile.findAll(AnnotationExpr.class).stream()
                 .filter(annotation -> RABBIT_LISTENER.equals(annotation.getName().getIdentifier()))
                 .filter(annotation -> Queries.member(annotation, ACK_MODE)
                         .flatMap(StringLiterals::textOf)

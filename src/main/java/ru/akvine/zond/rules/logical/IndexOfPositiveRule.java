@@ -31,7 +31,7 @@ public class IndexOfPositiveRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(BinaryExpr.class).stream()
+        return sourceFile.findAll(BinaryExpr.class).stream()
                 .filter(this::skipsFirstPosition)
                 .map(comparison -> violation(sourceFile, comparison,
                         "'" + comparison + "': совпадение в самом начале имеет индекс 0, и это условие его"

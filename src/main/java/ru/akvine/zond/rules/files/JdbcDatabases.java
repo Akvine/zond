@@ -70,7 +70,7 @@ public class JdbcDatabases {
             if (TestPaths.isTest(source.path())) {
                 continue;
             }
-            for (LiteralStringValueExpr literal : source.unit().findAll(LiteralStringValueExpr.class)) {
+            for (LiteralStringValueExpr literal : source.findAll(LiteralStringValueExpr.class)) {
                 if (literal.isStringLiteralExpr() || literal.isTextBlockLiteralExpr()) {
                     add(urls, source.path(), literal.getBegin().map(position -> position.line).orElse(1),
                             literal.getValue());

@@ -42,7 +42,7 @@ public class ZipSlipRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> GET_NAME.equals(call.getNameAsString()) && call.getArguments().isEmpty())
                 .filter(call -> call.getScope()
                         .flatMap(LocalTypes::typeOf)

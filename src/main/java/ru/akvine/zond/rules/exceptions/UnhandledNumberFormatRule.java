@@ -58,7 +58,7 @@ public class UnhandledNumberFormatRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             String type = PARSE_METHODS.get(call.getNameAsString());
             if (type == null || !MethodCalls.isCallOn(call, type, call.getNameAsString())) {
                 continue;

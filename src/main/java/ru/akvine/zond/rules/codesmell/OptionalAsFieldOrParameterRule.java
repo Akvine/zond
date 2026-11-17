@@ -37,7 +37,7 @@ public class OptionalAsFieldOrParameterRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             for (VariableDeclarator variable : field.getVariables()) {
                 if (OPTIONAL.equals(LocalTypes.typeName(variable.getType()))) {
                     violations.add(violation(sourceFile, variable,
@@ -49,7 +49,7 @@ public class OptionalAsFieldOrParameterRule extends AbstractRule {
         }
 
         // Параметры лямбд не трогаем: их тип задает функциональный интерфейс
-        for (Parameter parameter : sourceFile.unit().findAll(Parameter.class)) {
+        for (Parameter parameter : sourceFile.findAll(Parameter.class)) {
             Node owner = parameter.getParentNode().orElse(null);
             boolean isDeclared = owner instanceof MethodDeclaration || owner instanceof ConstructorDeclaration;
             if (isDeclared && OPTIONAL.equals(LocalTypes.typeName(parameter.getType()))) {

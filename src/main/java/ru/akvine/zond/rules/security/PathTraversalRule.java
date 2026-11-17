@@ -57,7 +57,7 @@ public class PathTraversalRule extends AbstractTaintRule {
     @Override
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
-        for (Expression expression : sourceFile.unit().findAll(Expression.class)) {
+        for (Expression expression : sourceFile.findAll(Expression.class)) {
             List<Expression> arguments = pathArguments(expression);
             if (arguments.isEmpty() || isSanitized(expression) || isNameOnly(expression)) {
                 continue;

@@ -59,7 +59,7 @@ public class SchedulerSingleThreadRule extends AbstractContextRule {
         // Задачи разных модулей работают в разных приложениях и друг другу не мешают
         Map<String, List<Task>> byModule = new LinkedHashMap<>();
         for (SourceFile source : context.sources()) {
-            for (MethodDeclaration method : source.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : source.findAll(MethodDeclaration.class)) {
                 // @Async уводит задачу в другой пул: очередь планировщика она не занимает
                 if (Annotations.hasAny(method, SCHEDULED) && !Annotations.has(method, ASYNC) && !TestClasses.isInside(method)) {
                     byModule.computeIfAbsent(moduleOf(source), module -> new ArrayList<>()).add(new Task(source, method));

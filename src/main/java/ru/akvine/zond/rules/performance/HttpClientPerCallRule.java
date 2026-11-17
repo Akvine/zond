@@ -73,11 +73,11 @@ public class HttpClientPerCallRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Expression> creations = new ArrayList<>();
-        sourceFile.unit().findAll(ObjectCreationExpr.class).stream()
+        sourceFile.findAll(ObjectCreationExpr.class).stream()
                 .filter(creation -> CLIENT_CLASSES.contains(creation.getType().getNameAsString())
                         && creation.getAnonymousClassBody().isEmpty())
                 .forEach(creations::add);
-        sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(this::isClientFactoryCall)
                 .forEach(creations::add);
         return creations.stream()

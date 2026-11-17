@@ -53,7 +53,7 @@ public class NullInCollectorRule extends AbstractRule implements ProjectRule {
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 String name = call.getNameAsString();
                 boolean toMap = TO_MAP.contains(name) && call.getArguments().size() >= 2;
                 boolean grouping = GROUPING.contains(name) && !call.getArguments().isEmpty();

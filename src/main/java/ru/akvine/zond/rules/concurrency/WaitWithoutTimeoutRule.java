@@ -8,11 +8,7 @@ import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.MethodReferenceExpr;
-import com.github.javaparser.ast.expr.TypeExpr;
 import com.github.javaparser.ast.stmt.ForEachStmt;
-import com.github.javaparser.ast.type.ClassOrInterfaceType;
-import com.github.javaparser.ast.type.Type;
-import com.github.javaparser.ast.type.WildcardType;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -42,11 +38,10 @@ public class WaitWithoutTimeoutRule extends AbstractRule {
     // Методы, которые возвращают Future: executor.submit(task).get()
     private static final Set<String> FUTURE_SOURCES = Set.of("submit", "supplyAsync", "runAsync", "allOf", "anyOf");
 
-    // futures.values().stream().filter(...).forEach(future -> future.join()): элемент остается тем же
-    private static final Set<String> SAME_ELEMENT_METHODS = Set.of(
-            "stream", "parallelStream", "values", "filter", "peek", "sorted", "distinct", "limit", "skip");
     // После allOf(...).join() задачи уже завершены, а orTimeout(...) сам ограничивает ожидание
-    private static final Set<String> WAIT_LIMITS = Set.of("allOf", "orTimeout", "completeOnTimeout");
+    private static final String ALL_OF = "allOf";
+    private static final String OR_TIMEOUT = "orTimeout";
+    private static final String COMPLETE_ON_TIMEOUT = "completeOnTimeout";
 
     // executor.invokeAll(tasks) ждет все задачи, invokeAny(tasks) - первую успешную; срок - вторым аргументом
     private static final Set<String> INVOKE_METHODS = Set.of("invokeAll", "invokeAny");
@@ -68,7 +63,7 @@ public class WaitWithoutTimeoutRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (call.getScope().isEmpty()) {
                 continue;
             }
@@ -82,7 +77,9 @@ public class WaitWithoutTimeoutRule extends AbstractRule {
                                 + " зависнет, поток будет ждать вечно; используйте " + method
                                 + "(tasks, timeout, unit) - задачи, которые не успели, он отменит"));
             }
-            if (!call.getArguments().isEmpty()) {
+            // Тип получателя узнаем только у await(), get() и join(): вызовов без аргументов в коде большинство,
+            // а определение типа - дорогая операция
+            if (!call.getArguments().isEmpty() || !AWAIT.equals(method) && !FUTURE_WAIT_METHODS.contains(method)) {
                 continue;
             }
             Optional<String> type = LocalTypes.typeOf(scope);
@@ -101,7 +98,7 @@ public class WaitWithoutTimeoutRule extends AbstractRule {
             }
         }
         // futures.stream().map(CompletableFuture::join): то же ожидание, записанное ссылкой на метод
-        for (MethodReferenceExpr reference : sourceFile.unit().findAll(MethodReferenceExpr.class)) {
+        for (MethodReferenceExpr reference : sourceFile.findAll(MethodReferenceExpr.class)) {
             if (FUTURE_WAIT_METHODS.contains(reference.getIdentifier()) && isFutureType(reference.getScope())
                     && !isWaitLimited(reference)) {
                 violations.add(violation(sourceFile, reference,
@@ -127,81 +124,55 @@ public class WaitWithoutTimeoutRule extends AbstractRule {
         if (scope.isMethodCallExpr()) {
             return FUTURE_SOURCES.contains(scope.asMethodCallExpr().getNameAsString());
         }
-        return type.filter(FUTURE_TYPES::contains).isPresent()
-                || type.isEmpty() && isElementOfFutures(scope) && !isWaitLimited(scope);
+        // futures.forEach(future -> future.join()) после allOf(futures).get(timeout, unit) уже не ждет
+        return type.filter(FUTURE_TYPES::contains).isPresent() && !(isElement(scope) && isWaitLimited(scope));
     }
 
-    /**
-     * futures.forEach((index, future) -> future.join()), for (var future : futures) future.get(): у параметра
-     * лямбды и переменной var типа в коде нет, но он виден по коллекции, которую перебирают
-     */
-    private boolean isElementOfFutures(Expression scope) {
-        if (!scope.isNameExpr()) {
-            return false;
-        }
+    // Параметр лямбды или переменная цикла: одна из задач коллекции, которую перебирают
+    private boolean isElement(Expression scope) {
         Optional<Node> declaration = LocalTypes.findDeclaration(scope);
         if (declaration.isEmpty()) {
             return false;
         }
-        Optional<Expression> source = Optional.empty();
-        if (declaration.get() instanceof Parameter parameter && parameter.getType().isUnknownType()) {
-            source = parameter.getParentNode()
-                    .filter(LambdaExpr.class::isInstance)
-                    .flatMap(Node::getParentNode)
-                    .filter(MethodCallExpr.class::isInstance)
-                    .flatMap(iteration -> ((MethodCallExpr) iteration).getScope());
-        } else if (declaration.get() instanceof VariableDeclarator variable && variable.getType().isVarType()) {
-            source = variable.getParentNode()
-                    .flatMap(Node::getParentNode)
-                    .filter(ForEachStmt.class::isInstance)
-                    .map(loop -> ((ForEachStmt) loop).getIterable());
+        if (declaration.get() instanceof Parameter parameter) {
+            return parameter.getParentNode().filter(LambdaExpr.class::isInstance).isPresent();
         }
-        return source.map(this::collectionOf).filter(this::holdsFutures).isPresent();
+        return declaration.get() instanceof VariableDeclarator variable && variable.getParentNode()
+                .flatMap(Node::getParentNode)
+                .filter(ForEachStmt.class::isInstance)
+                .isPresent();
     }
 
-    // futures.values().stream() -> futures
-    private Expression collectionOf(Expression source) {
-        Expression current = Nodes.unwrap(source);
-        while (current.isMethodCallExpr() && current.asMethodCallExpr().getScope().isPresent()
-                && SAME_ELEMENT_METHODS.contains(current.asMethodCallExpr().getNameAsString())) {
-            current = Nodes.unwrap(current.asMethodCallExpr().getScope().get());
-        }
-        return current;
-    }
-
-    // List<Future<Report>>, Map<Integer, CompletableFuture<List<?>>>, Future<?>[]
-    private boolean holdsFutures(Expression collection) {
-        Optional<Type> declared = LocalTypes.findDeclaration(collection)
-                .map(declaration -> declaration instanceof Parameter parameter
-                        ? parameter.getType()
-                        : declaration instanceof VariableDeclarator variable ? variable.getType() : null);
-        if (declared.isEmpty()) {
-            return false;
-        }
-        if (declared.get().isArrayType()) {
-            return isFutureType(declared.get().asArrayType().getComponentType());
-        }
-        return declared.get().isClassOrInterfaceType()
-                && declared.get().asClassOrInterfaceType().getTypeArguments().stream()
-                .flatMap(List::stream)
-                .anyMatch(this::isFutureType);
-    }
-
-    private boolean isFutureType(Node type) {
-        if (type instanceof TypeExpr expression) {
-            return isFutureType(expression.getType());
-        }
-        if (type instanceof WildcardType wildcard) {
-            return wildcard.getExtendedType().filter(this::isFutureType).isPresent();
-        }
-        return type instanceof ClassOrInterfaceType named && FUTURE_TYPES.contains(named.getNameAsString());
+    // CompletableFuture::join
+    private boolean isFutureType(Expression scope) {
+        return scope.isTypeExpr() && scope.asTypeExpr().getType().isClassOrInterfaceType()
+                && FUTURE_TYPES.contains(scope.asTypeExpr().getType().asClassOrInterfaceType().getNameAsString());
     }
 
     private boolean isWaitLimited(Node usage) {
-        return Nodes.enclosingCallable(usage)
-                .filter(callable -> callable.findAll(MethodCallExpr.class).stream()
-                        .anyMatch(call -> WAIT_LIMITS.contains(call.getNameAsString())))
-                .isPresent();
+        List<MethodCallExpr> calls = Nodes.enclosingCallable(usage)
+                .map(callable -> callable.findAll(MethodCallExpr.class))
+                .orElse(List.of());
+        boolean released = calls.stream().anyMatch(this::releasesCombined);
+        return calls.stream().anyMatch(call -> switch (call.getNameAsString()) {
+            case OR_TIMEOUT -> true;
+            case ALL_OF -> !released;
+            case COMPLETE_ON_TIMEOUT -> !releasesCombined(call);
+            default -> false;
+        });
+    }
+
+    /**
+     * allOf(futures).completeOnTimeout(null, 5, SECONDS).join() по таймауту вернет управление, а сами задачи
+     * при этом могут еще работать: ожидание каждой из них такой allOf не ограничивает
+     */
+    private boolean releasesCombined(MethodCallExpr call) {
+        if (!COMPLETE_ON_TIMEOUT.equals(call.getNameAsString()) || call.getScope().isEmpty()) {
+            return false;
+        }
+        Expression combined = Nodes.unwrap(call.getScope().get());
+        Expression source = LocalTypes.findInitializer(combined).map(Nodes::unwrap).orElse(combined);
+        return source.isMethodCallExpr() && ALL_OF.equals(source.asMethodCallExpr().getNameAsString());
     }
 
     private boolean isExecutor(Expression scope) {

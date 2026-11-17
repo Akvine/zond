@@ -56,7 +56,7 @@ public class RepeatedComputationRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         // Оператор -> текст вызова -> сами вызовы
         Map<Node, Map<String, List<MethodCallExpr>>> byStatement = new IdentityHashMap<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (level(call) == null || TestClasses.isInside(call) || CHANGING.matcher(call.toString()).find()) {
                 continue;
             }

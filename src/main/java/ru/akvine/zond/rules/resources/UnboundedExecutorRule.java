@@ -67,7 +67,7 @@ public class UnboundedExecutorRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             String name = call.getNameAsString();
             if (!MethodCalls.isCallOn(call, EXECUTORS, name)) {
                 continue;
@@ -85,7 +85,7 @@ public class UnboundedExecutorRule extends AbstractRule {
             }
         }
 
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (THREAD_POOL_EXECUTOR.equals(creation.getType().getNameAsString())
                     && creation.getArguments().stream().anyMatch(this::isUnbounded)) {
                 violations.add(violation(sourceFile, creation,

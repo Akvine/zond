@@ -123,7 +123,7 @@ public class SharedBeanReconfigurationRule extends AbstractRule implements Proje
         Beans beans = collectBeans(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (type.isInterface() || TestClasses.isInside(type) || isConfiguration(type)) {
                     continue;
                 }
@@ -172,7 +172,7 @@ public class SharedBeanReconfigurationRule extends AbstractRule implements Proje
         Set<String> prototypes = new HashSet<>();
         Set<String> singletons = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (SpringBeans.isBean(type) && !TestClasses.isInside(type)) {
                     SpringBeans.findDependencies(type).stream()
                             .filter(dependency -> SHARED_TYPES.containsKey(dependency.type()))

@@ -43,7 +43,7 @@ public class UnpaddedFractionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (BinaryExpr remainder : sourceFile.unit().findAll(BinaryExpr.class)) {
+        for (BinaryExpr remainder : sourceFile.findAll(BinaryExpr.class)) {
             if (remainder.getOperator() != BinaryExpr.Operator.REMAINDER
                     || !WIDE_SCALE.matcher(Nodes.unwrap(remainder.getRight()).toString()).matches()
                     || TestClasses.isInside(remainder)) {

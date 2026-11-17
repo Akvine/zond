@@ -46,7 +46,7 @@ public class StreamInLoopRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!STREAM_METHODS.contains(call.getNameAsString())
                     || !call.getArguments().isEmpty()
                     || call.getScope().isEmpty()) {

@@ -69,7 +69,7 @@ public class TransactionalRollbackForCheckedExceptionRule implements Rule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             // Приватные не учитываем: на них @Transactional не работает в принципе, это ловит отдельное правило
             if (method.isPrivate()) {
                 continue;

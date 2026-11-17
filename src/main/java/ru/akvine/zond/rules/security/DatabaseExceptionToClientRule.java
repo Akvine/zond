@@ -105,7 +105,7 @@ public class DatabaseExceptionToClientRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         Set<Integer> reportedLines = new HashSet<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (method.getBody().isEmpty()) {
                 continue;
             }
@@ -118,7 +118,7 @@ public class DatabaseExceptionToClientRule extends AbstractRule {
                 }
             }
         }
-        for (CatchClause clause : sourceFile.unit().findAll(CatchClause.class)) {
+        for (CatchClause clause : sourceFile.findAll(CatchClause.class)) {
             Optional<String> type = databaseType(clause);
             if (type.isEmpty() || !isInController(clause)) {
                 continue;

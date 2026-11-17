@@ -7,6 +7,7 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import lombok.experimental.UtilityClass;
+import ru.akvine.zond.models.SourceFile;
 
 import java.util.List;
 import java.util.Set;
@@ -25,8 +26,8 @@ public class JpaEntities {
     public final static Set<String> RELATION_ANNOTATIONS =
             Set.of("OneToMany", "ManyToOne", "OneToOne", "ManyToMany", "ElementCollection");
 
-    public List<ClassOrInterfaceDeclaration> findEntities(CompilationUnit unit) {
-        return unit.findAll(ClassOrInterfaceDeclaration.class).stream()
+    public List<ClassOrInterfaceDeclaration> findEntities(SourceFile sourceFile) {
+        return sourceFile.findAll(ClassOrInterfaceDeclaration.class).stream()
                 .filter(type -> !type.isInterface() && Annotations.has(type, ENTITY))
                 .toList();
     }

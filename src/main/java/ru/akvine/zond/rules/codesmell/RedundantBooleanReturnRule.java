@@ -37,7 +37,7 @@ public class RedundantBooleanReturnRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
 
         // if (x) { return true; } else { return false; }
-        for (IfStmt ifStmt : sourceFile.unit().findAll(IfStmt.class)) {
+        for (IfStmt ifStmt : sourceFile.findAll(IfStmt.class)) {
             Optional<Boolean> thenValue = returnedLiteral(ifStmt.getThenStmt());
             Optional<Boolean> elseValue = ifStmt.getElseStmt().flatMap(this::returnedLiteral);
             if (thenValue.isPresent() && elseValue.isPresent() && !thenValue.get().equals(elseValue.get())) {
@@ -46,7 +46,7 @@ public class RedundantBooleanReturnRule extends AbstractRule {
         }
 
         // x ? true : false
-        for (ConditionalExpr ternary : sourceFile.unit().findAll(ConditionalExpr.class)) {
+        for (ConditionalExpr ternary : sourceFile.findAll(ConditionalExpr.class)) {
             Optional<Boolean> thenValue = literal(ternary.getThenExpr());
             Optional<Boolean> elseValue = literal(ternary.getElseExpr());
             if (thenValue.isPresent() && elseValue.isPresent() && !thenValue.get().equals(elseValue.get())) {

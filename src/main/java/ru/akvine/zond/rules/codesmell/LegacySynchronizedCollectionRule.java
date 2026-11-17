@@ -85,14 +85,14 @@ public class LegacySynchronizedCollectionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             String type = creation.getType().getNameAsString();
             if (LEGACY_ADVICE.containsKey(type) && !TestClasses.isInside(creation) && !feedsLegacyApi(creation)) {
                 violations.add(violation(sourceFile, creation,
                         "'new " + type + "': " + LEGACY_ADVICE.get(type)));
             }
         }
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!isSynchronizedWrapper(call) || TestClasses.isInside(call)) {
                 continue;
             }

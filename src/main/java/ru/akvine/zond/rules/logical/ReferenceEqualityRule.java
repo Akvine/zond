@@ -61,7 +61,7 @@ public class ReferenceEqualityRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (BinaryExpr comparison : sourceFile.unit().findAll(BinaryExpr.class)) {
+        for (BinaryExpr comparison : sourceFile.findAll(BinaryExpr.class)) {
             if (comparison.getOperator() != BinaryExpr.Operator.EQUALS
                     && comparison.getOperator() != BinaryExpr.Operator.NOT_EQUALS) {
                 continue;

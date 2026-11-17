@@ -87,7 +87,7 @@ public class TransactionalEventOutsideTransactionRule extends AbstractRule imple
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         CallGraph graph = CallGraph.of(sourceFiles);
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr publish : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr publish : sourceFile.findAll(MethodCallExpr.class)) {
                 if (!PUBLISH.equals(publish.getNameAsString()) || publish.getArguments().size() != 1) {
                     continue;
                 }
@@ -125,7 +125,7 @@ public class TransactionalEventOutsideTransactionRule extends AbstractRule imple
     private List<Listener> listenersOf(List<SourceFile> sourceFiles) {
         List<Listener> listeners = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 Optional<AnnotationExpr> annotation = Annotations.find(method, LISTENER)
                         .filter(found -> Queries.member(found, FALLBACK).filter(value -> TRUE.equals(value.toString())).isEmpty());
                 annotation.ifPresent(found -> eventsOf(method, found).stream()

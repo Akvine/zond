@@ -31,7 +31,7 @@ public class AtomicGetThenSetRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> SET.equals(call.getNameAsString()) && call.getArguments().size() == 1)
                 .filter(call -> call.getScope().filter(scope -> isAtomic(scope) && readsSameVariable(call, scope)).isPresent())
                 .map(call -> violation(sourceFile, call,

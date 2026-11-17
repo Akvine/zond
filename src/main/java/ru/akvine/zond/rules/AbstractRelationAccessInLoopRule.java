@@ -54,7 +54,7 @@ public abstract class AbstractRelationAccessInLoopRule extends AbstractRule {
         }
 
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!collectionMethod().equals(call.getNameAsString())
                     || call.getArguments().size() != argumentsCount()
                     || call.getScope().isEmpty()) {

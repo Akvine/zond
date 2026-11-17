@@ -56,7 +56,7 @@ public class PeekWithShortCircuitRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr peek : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr peek : sourceFile.findAll(MethodCallExpr.class)) {
             // peek() без аргументов - это не стрим, а очередь или итератор
             if (!PEEK.equals(peek.getNameAsString()) || peek.getArguments().size() != 1) {
                 continue;

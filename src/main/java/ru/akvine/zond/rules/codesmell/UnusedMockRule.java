@@ -36,7 +36,7 @@ public class UnusedMockRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             // @InjectMocks подставляет моки в проверяемый объект сам - имя поля в тесте может не встретиться
             if (type.getFields().stream().anyMatch(field -> Annotations.has(field, INJECT_MOCKS))) {
                 continue;

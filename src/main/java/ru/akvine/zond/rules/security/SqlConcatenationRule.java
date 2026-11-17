@@ -43,7 +43,7 @@ public class SqlConcatenationRule extends AbstractTaintRule {
     @Override
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
-        for (BinaryExpr concatenation : sourceFile.unit().findAll(BinaryExpr.class)) {
+        for (BinaryExpr concatenation : sourceFile.findAll(BinaryExpr.class)) {
             if (concatenation.getOperator() != BinaryExpr.Operator.PLUS || isPartOfConcatenation(concatenation)) {
                 continue;
             }

@@ -44,7 +44,7 @@ public class SecretComparisonRule extends AbstractRule implements ProjectRule {
     }
 
     private List<Violation> check(SourceFile sourceFile, ProtectedProperties properties) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> EQUALS.equals(call.getNameAsString()) && call.getArguments().size() == 1)
                 .filter(call -> call.getScope().isPresent()
                         && comparesSecrets(call.getScope().get(), call.getArgument(0), properties))

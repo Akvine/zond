@@ -40,7 +40,7 @@ public class ExplicitGcRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> GC.equals(call.getNameAsString()) && call.getArguments().isEmpty())
                 .filter(call -> call.getScope().filter(scope -> OWNERS.contains(scope.toString())).isPresent())
                 .filter(call -> !TestClasses.isInside(call) && !isOnShutdown(call))

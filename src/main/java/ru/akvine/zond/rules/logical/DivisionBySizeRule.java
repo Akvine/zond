@@ -36,7 +36,7 @@ public class DivisionBySizeRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(BinaryExpr.class).stream()
+        return sourceFile.findAll(BinaryExpr.class).stream()
                 .filter(division -> division.getOperator() == BinaryExpr.Operator.DIVIDE
                         || division.getOperator() == BinaryExpr.Operator.REMAINDER)
                 .filter(division -> !TestClasses.isInside(division))

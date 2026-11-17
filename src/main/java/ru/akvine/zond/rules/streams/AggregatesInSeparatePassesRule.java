@@ -69,7 +69,7 @@ public class AggregatesInSeparatePassesRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         // Итоги одного метода по одной коллекции с одним и тем же отбором
         Map<String, List<Aggregate>> groups = new LinkedHashMap<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<Node> callable = Nodes.enclosingCallable(call);
             if (callable.isEmpty()) {
                 continue;

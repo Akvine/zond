@@ -39,7 +39,7 @@ public class LogConcatenationRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(Loggers::isLogCall)
                 .filter(call -> call.getArguments().stream().anyMatch(this::isBuiltEagerly))
                 .filter(call -> !isUnderLevelCheck(call))

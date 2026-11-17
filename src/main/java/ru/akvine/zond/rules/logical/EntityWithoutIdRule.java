@@ -34,7 +34,7 @@ public class EntityWithoutIdRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // У сущности с родителем @Id может быть объявлен в нем
-        return JpaEntities.findEntities(sourceFile.unit()).stream()
+        return JpaEntities.findEntities(sourceFile).stream()
                 .filter(entity -> !JpaEntities.hasParent(entity))
                 .filter(entity -> !hasId(entity))
                 .map(entity -> violation(sourceFile, entity,

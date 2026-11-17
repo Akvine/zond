@@ -47,7 +47,7 @@ public class IgnoredResultRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ExpressionStmt statement : sourceFile.unit().findAll(ExpressionStmt.class)) {
+        for (ExpressionStmt statement : sourceFile.findAll(ExpressionStmt.class)) {
             // item -> text.equals(item): тело лямбды-выражения тоже хранится как оператор, но его результат нужен.
             // Кроме лямбды, результат которой отбрасывают: items.forEach(item -> total.add(item.getPrice()))
             boolean isLambdaBody = statement.getParentNode()

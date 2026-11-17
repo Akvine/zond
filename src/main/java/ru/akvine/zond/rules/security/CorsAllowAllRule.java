@@ -43,12 +43,12 @@ public class CorsAllowAllRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (AnnotationExpr annotation : sourceFile.unit().findAll(AnnotationExpr.class)) {
+        for (AnnotationExpr annotation : sourceFile.findAll(AnnotationExpr.class)) {
             if (CROSS_ORIGIN.equals(annotation.getName().getIdentifier()) && allowsAnyOrigin(annotation)) {
                 violations.add(report(sourceFile, annotation));
             }
         }
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (ORIGIN_METHODS.contains(call.getNameAsString()) && call.toString().contains(ANY_ORIGIN)) {
                 violations.add(report(sourceFile, call));
             }
@@ -78,7 +78,7 @@ public class CorsAllowAllRule extends AbstractRule {
     // Любой сайт вместе с отправкой cookie - прямая уязвимость; без учетных данных открытый CORS бывает
     // осознанным решением для публичного API
     private Violation report(SourceFile sourceFile, Node node) {
-        boolean withCredentials = CREDENTIALS.matcher(sourceFile.unit().toString()).find();
+        boolean withCredentials = CREDENTIALS.matcher(sourceFile.text()).find();
         return describe(sourceFile, node).withConfidence(withCredentials ? Confidence.CONFIRMED : Confidence.SUSPICION);
     }
 

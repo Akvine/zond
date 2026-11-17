@@ -39,7 +39,7 @@ public class OpenRedirectRule extends AbstractTaintRule {
         List<Violation> violations = new ArrayList<>();
 
         // "redirect:" + url. Вариант "redirect:/orders/" + id не трогаем: адрес остается внутри приложения
-        for (BinaryExpr concatenation : sourceFile.unit().findAll(BinaryExpr.class)) {
+        for (BinaryExpr concatenation : sourceFile.findAll(BinaryExpr.class)) {
             boolean redirectsToInput = concatenation.getOperator() == BinaryExpr.Operator.PLUS
                     && StringLiterals.textOf(concatenation.getLeft()).filter(REDIRECT_PREFIX::equals).isPresent();
             if (redirectsToInput) {
@@ -48,14 +48,14 @@ public class OpenRedirectRule extends AbstractTaintRule {
         }
 
         // response.sendRedirect(url)
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (SEND_REDIRECT.equals(call.getNameAsString()) && call.getArguments().size() == 1) {
                 report(sourceFile, taint, call, call.getArgument(0), violations);
             }
         }
 
         // new RedirectView(url)
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (REDIRECT_VIEW.equals(creation.getType().getNameAsString()) && !creation.getArguments().isEmpty()) {
                 report(sourceFile, taint, creation, creation.getArgument(0), violations);
             }

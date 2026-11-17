@@ -43,7 +43,7 @@ public class UnusedLocalVariableRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             Optional<Node> callable = Nodes.enclosingCallable(variable);
             String name = variable.getNameAsString();
             boolean ignored = IGNORED_NAMES.contains(name) || IGNORED_SUFFIX.matcher(name).matches();

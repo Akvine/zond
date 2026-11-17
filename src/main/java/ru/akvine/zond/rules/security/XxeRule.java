@@ -42,12 +42,12 @@ public class XxeRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Настройку парсера ищем в том же файле: обычно она стоит рядом с его созданием
-        String text = sourceFile.unit().toString();
+        String text = sourceFile.text();
         if (PROTECTION_MARKERS.stream().anyMatch(text::contains)) {
             return List.of();
         }
 
-        return sourceFile.unit().findAll(Expression.class).stream()
+        return sourceFile.findAll(Expression.class).stream()
                 .flatMap(expression -> describeParser(expression)
                         .map(parser -> violation(sourceFile, expression,
                                 "XML-парсер '" + parser + "' создается без запрета внешних сущностей: документ с"

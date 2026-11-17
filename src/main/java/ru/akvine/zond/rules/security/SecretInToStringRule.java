@@ -51,7 +51,7 @@ public class SecretInToStringRule extends AbstractRule implements ProjectRule {
 
     private List<Violation> check(SourceFile sourceFile, ProtectedProperties properties) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             boolean generated = Annotations.hasAny(type, TO_STRING_GENERATORS);
             Set<String> printed = findFieldsUsedInToString(type);
 

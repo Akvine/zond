@@ -78,7 +78,7 @@ public class NarrowingCastRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>(findExplicit(sourceFile));
         // count += total, где count - int, а total - long: компилятор сам добавляет приведение (int)
-        for (AssignExpr assignment : sourceFile.unit().findAll(AssignExpr.class)) {
+        for (AssignExpr assignment : sourceFile.findAll(AssignExpr.class)) {
             if (!COMPOUND_OPERATORS.contains(assignment.getOperator()) || TestClasses.isInside(assignment)) {
                 continue;
             }
@@ -96,7 +96,7 @@ public class NarrowingCastRule extends AbstractRule {
     }
 
     private List<Violation> findExplicit(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(CastExpr.class).stream()
+        return sourceFile.findAll(CastExpr.class).stream()
                 .filter(cast -> NARROW_TYPES.contains(cast.getType().asString()))
                 .filter(cast -> isUnboundedLong(Nodes.unwrap(cast.getExpression())) && !TestClasses.isInside(cast))
                 // (int) Math.min(size, limit): значение перед приведением обрезано до предела

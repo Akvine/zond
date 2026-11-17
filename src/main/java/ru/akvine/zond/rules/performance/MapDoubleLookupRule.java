@@ -55,7 +55,7 @@ public class MapDoubleLookupRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr check : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr check : sourceFile.findAll(MethodCallExpr.class)) {
             if (!CONTAINS_KEY.equals(check.getNameAsString()) || check.getArguments().size() != 1
                     || check.getScope().isEmpty() || TestClasses.isInside(check) || !isPlainMap(check.getScope().get())) {
                 continue;

@@ -161,8 +161,25 @@ public class Lombok {
         return Optional.empty();
     }
 
-    // getName() и isActive() - по полю name / active; при @Accessors(fluent = true) геттер назван как поле: name()
+    /**
+     * @return тип поля, записанный в коде, если вызов - геттер, который создаст Lombok: по нему видно и то, чем
+     * параметризована коллекция ({@code List<Item>} у order.getItems())
+     */
+    public Optional<Type> getterFieldType(MethodCallExpr call) {
+        if (!call.getArguments().isEmpty()) {
+            return Optional.empty();
+        }
+        return ownerOf(call)
+                .flatMap(owner -> getterField(call, owner))
+                .map(field -> field.getVariable(0).getType());
+    }
+
     private Optional<ResolvedType> getterType(MethodCallExpr call, TypeDeclaration<?> owner) {
+        return getterField(call, owner).flatMap(field -> Types.resolve(field.getVariable(0).getType()));
+    }
+
+    // getName() и isActive() - по полю name / active; при @Accessors(fluent = true) геттер назван как поле: name()
+    private Optional<FieldDeclaration> getterField(MethodCallExpr call, TypeDeclaration<?> owner) {
         String method = call.getNameAsString();
         Optional<FieldDeclaration> field = Optional.empty();
         if (method.startsWith(GET_PREFIX)) {
@@ -177,8 +194,7 @@ public class Lombok {
 
         return field
                 .filter(candidate -> !candidate.isStatic())
-                .filter(candidate -> hasAny(owner, GETTER_ANNOTATIONS) || has(candidate, GETTER))
-                .flatMap(candidate -> Types.resolve(candidate.getVariable(0).getType()));
+                .filter(candidate -> hasAny(owner, GETTER_ANNOTATIONS) || has(candidate, GETTER));
     }
 
     // Сеттер возвращает сам объект при @Accessors(chain = true) и при fluent, где он назван как поле: name("x")

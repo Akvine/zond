@@ -39,7 +39,7 @@ public class OneToManyWithoutMappedByRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             Optional<AnnotationExpr> relation = Annotations.find(field, ONE_TO_MANY);
             if (relation.isEmpty() || hasMappedBy(relation.get()) || Annotations.hasAny(field, JOIN_ANNOTATIONS)) {
                 continue;

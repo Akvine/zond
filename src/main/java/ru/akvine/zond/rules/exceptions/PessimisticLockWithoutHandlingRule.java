@@ -56,7 +56,7 @@ public class PessimisticLockWithoutHandlingRule extends AbstractRule implements 
         PessimisticLocks locks = PessimisticLocks.of(ProjectClasses.of(sourceFiles));
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 Optional<String> lock = locks.describe(call);
                 if (lock.isEmpty() || TestClasses.isInside(call)
                         || !handling.escapes(call, FailureHandling.LOCK_FAILURES, value(MAX_CALL_DEPTH))) {

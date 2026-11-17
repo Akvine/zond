@@ -31,7 +31,7 @@ public class IncompleteAssertionRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Оператор целиком - это assertThat(value); за ним нет isEqualTo, isTrue и т.п.
-        return sourceFile.unit().findAll(ExpressionStmt.class).stream()
+        return sourceFile.findAll(ExpressionStmt.class).stream()
                 .filter(statement -> statement.getExpression().isMethodCallExpr())
                 .map(statement -> statement.getExpression().asMethodCallExpr())
                 .filter(call -> ASSERTION_STARTS.contains(call.getNameAsString()))

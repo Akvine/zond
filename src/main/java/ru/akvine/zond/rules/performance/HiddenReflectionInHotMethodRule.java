@@ -64,7 +64,7 @@ public class HiddenReflectionInHotMethodRule extends AbstractRule implements Pro
             }
             // Один метод - одна находка, сколько бы раз он ни обращался к рефлексии
             Set<MethodDeclaration> reported = Collections.newSetFromMap(new IdentityHashMap<>());
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 // Рефлексия прямо в цикле по данным - находка jr:419
                 if (!isClassScan(call) || CodeContexts.isRepeatedOverData(call) || CodeContexts.isStartup(call)
                         || TestClasses.isInside(call)) {

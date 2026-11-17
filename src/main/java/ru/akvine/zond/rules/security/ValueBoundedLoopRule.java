@@ -81,23 +81,23 @@ public class ValueBoundedLoopRule extends AbstractRule {
             return violations;
         }
 
-        for (ForStmt loop : sourceFile.unit().findAll(ForStmt.class)) {
+        for (ForStmt loop : sourceFile.findAll(ForStmt.class)) {
             loop.getCompare()
                     .flatMap(compare -> findBound(compare, loop.getUpdate()))
                     .flatMap(bound -> check(sourceFile, loop, loop.getBody(), bound))
                     .ifPresent(violations::add);
         }
-        for (WhileStmt loop : sourceFile.unit().findAll(WhileStmt.class)) {
+        for (WhileStmt loop : sourceFile.findAll(WhileStmt.class)) {
             findBound(loop.getCondition(), List.of(loop.getBody()))
                     .flatMap(bound -> check(sourceFile, loop, loop.getBody(), bound))
                     .ifPresent(violations::add);
         }
-        for (DoStmt loop : sourceFile.unit().findAll(DoStmt.class)) {
+        for (DoStmt loop : sourceFile.findAll(DoStmt.class)) {
             findBound(loop.getCondition(), List.of(loop.getBody()))
                     .flatMap(bound -> check(sourceFile, loop, loop.getBody(), bound))
                     .ifPresent(violations::add);
         }
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             checkRange(sourceFile, call).ifPresent(violations::add);
         }
         return violations;

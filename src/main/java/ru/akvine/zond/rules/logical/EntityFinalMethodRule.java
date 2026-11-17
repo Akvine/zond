@@ -30,7 +30,7 @@ public class EntityFinalMethodRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile.unit())) {
+        for (ClassOrInterfaceDeclaration entity : JpaEntities.findEntities(sourceFile)) {
             // От final класса прокси не создать вообще - отдельные методы уже не важны
             if (entity.isFinal()) {
                 violations.add(violation(sourceFile, entity,

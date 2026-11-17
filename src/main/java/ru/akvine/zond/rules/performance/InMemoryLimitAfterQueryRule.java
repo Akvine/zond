@@ -50,7 +50,7 @@ public class InMemoryLimitAfterQueryRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr cut : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr cut : sourceFile.findAll(MethodCallExpr.class)) {
             if (TestClasses.isInside(cut)) {
                 continue;
             }

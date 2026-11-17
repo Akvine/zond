@@ -35,7 +35,7 @@ public class AbsOfHashCodeRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> MethodCalls.isCallOn(call, MATH, ABS) && call.getArguments().size() == 1)
                 .filter(call -> isFullRange(call.getArgument(0)))
                 .map(call -> violation(sourceFile, call,

@@ -52,7 +52,7 @@ public class IntegerDivisionBeforeMultiplyRule extends AbstractRule {
                 .filter(typed -> FLOATING_TYPES.contains(typed.targetType()))
                 .forEach(typed -> floating.addAll(typed.expression().findAll(BinaryExpr.class)));
         List<Violation> violations = new ArrayList<>();
-        for (BinaryExpr product : sourceFile.unit().findAll(BinaryExpr.class)) {
+        for (BinaryExpr product : sourceFile.findAll(BinaryExpr.class)) {
             if (product.getOperator() != BinaryExpr.Operator.MULTIPLY || TestClasses.isInside(product)) {
                 continue;
             }

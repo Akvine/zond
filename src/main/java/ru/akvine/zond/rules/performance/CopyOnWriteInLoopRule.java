@@ -46,7 +46,7 @@ public class CopyOnWriteInLoopRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         Set<String> reported = new HashSet<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!WRITES.contains(call.getNameAsString()) || call.getScope().isEmpty()
                     || !CodeContexts.isRepeatedOverData(call) || TestClasses.isInside(call)
                     || !isCopyOnWrite(call.getScope().get())) {

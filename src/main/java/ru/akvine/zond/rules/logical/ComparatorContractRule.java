@@ -54,7 +54,7 @@ public class ComparatorContractRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (isComparisonMethod(method) && method.getBody().isPresent()) {
                 List<Expression> results = method.getBody().get().findAll(ReturnStmt.class).stream()
                         .filter(statement -> !Nodes.isInNestedScope(statement, method))
@@ -63,7 +63,7 @@ public class ComparatorContractRule extends AbstractRule {
                 report(sourceFile, method, results, violations);
             }
         }
-        for (LambdaExpr lambda : sourceFile.unit().findAll(LambdaExpr.class)) {
+        for (LambdaExpr lambda : sourceFile.findAll(LambdaExpr.class)) {
             if (lambda.getParameters().size() == 2 && isComparatorLambda(lambda)) {
                 List<Expression> results = lambda.getExpressionBody().map(List::of)
                         .orElseGet(() -> lambda.getBody().findAll(ReturnStmt.class).stream()

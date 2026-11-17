@@ -59,10 +59,10 @@ public class WaitNotifyOutsideSynchronizedRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Свой метод wait(long) с другим смыслом: тогда вызовы с аргументами к Object.wait не относятся
-        boolean ownWait = sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        boolean ownWait = sourceFile.findAll(MethodDeclaration.class).stream()
                 .anyMatch(method -> WAIT.equals(method.getNameAsString()));
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!isMonitorCall(call, ownWait)) {
                 continue;
             }

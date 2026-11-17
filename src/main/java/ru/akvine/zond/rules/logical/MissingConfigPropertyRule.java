@@ -45,7 +45,7 @@ public class MissingConfigPropertyRule extends AbstractContextRule {
         // здесь не создается, и его свойства в настройках этого приложения не нужны
         ScanRoots roots = ScanRoots.of(context.sources());
         for (SourceFile sourceFile : context.sources()) {
-            for (AnnotationExpr annotation : sourceFile.unit().findAll(AnnotationExpr.class)) {
+            for (AnnotationExpr annotation : sourceFile.findAll(AnnotationExpr.class)) {
                 if (!ValuePlaceholders.isValue(annotation) || TestClasses.isInside(annotation)
                         || annotation.findAncestor(ClassOrInterfaceDeclaration.class).filter(type -> !roots.isCreated(type)).isPresent()) {
                     continue;

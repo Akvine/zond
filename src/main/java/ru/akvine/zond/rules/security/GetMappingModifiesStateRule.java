@@ -81,7 +81,7 @@ public class GetMappingModifiesStateRule extends AbstractRule implements Project
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration handler : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration handler : sourceFile.findAll(MethodDeclaration.class)) {
                 // Адрес может быть объявлен в интерфейсе, который реализует контроллер
                 Optional<AnnotationExpr> mapping = Handlers.of(handler, classes).map(Handlers.Handler::mapping);
                 boolean isGet = mapping.filter(annotation -> GET.equals(Mappings.httpMethod(annotation))).isPresent();

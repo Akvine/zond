@@ -42,7 +42,7 @@ public class FetchJoinWithPaginationRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             Optional<String> query = Queries.find(method).flatMap(Queries::text);
             if (query.isEmpty() || !isPaged(method)) {
                 continue;

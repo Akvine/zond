@@ -44,19 +44,19 @@ public class HardcodedCredentialsRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Optional<Violation>> violations = new ArrayList<>();
 
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             variable.getInitializer()
                     .filter(value -> isSecret(variable.getNameAsString(), value))
                     .ifPresent(value -> violations.add(report(sourceFile, variable, variable.getNameAsString())));
         }
 
-        for (AssignExpr assign : sourceFile.unit().findAll(AssignExpr.class)) {
+        for (AssignExpr assign : sourceFile.findAll(AssignExpr.class)) {
             targetName(assign.getTarget())
                     .filter(name -> isSecret(name, assign.getValue()))
                     .ifPresent(name -> violations.add(report(sourceFile, assign, name)));
         }
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (SECRET_SETTER.matcher(call.getNameAsString()).matches()
                     && call.getArguments().size() == 1
                     && isSecretValue(call.getArgument(0), call.getNameAsString())) {

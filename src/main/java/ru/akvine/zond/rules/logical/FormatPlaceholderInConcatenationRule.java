@@ -49,7 +49,7 @@ public class FormatPlaceholderInConcatenationRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (StringLiteralExpr literal : sourceFile.unit().findAll(StringLiteralExpr.class)) {
+        for (StringLiteralExpr literal : sourceFile.findAll(StringLiteralExpr.class)) {
             if (!PLACEHOLDER.matcher(literal.getValue()).find() || TestClasses.isInside(literal)) {
                 continue;
             }

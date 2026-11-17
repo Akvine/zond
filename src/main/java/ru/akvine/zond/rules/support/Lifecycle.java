@@ -77,12 +77,12 @@ public final class Lifecycle {
             if (TestPaths.isTest(source.path())) {
                 continue;
             }
-            for (MethodCallExpr call : source.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : source.findAll(MethodCallExpr.class)) {
                 if (!graph.isLinked(call)) {
                     unlinked.computeIfAbsent(call.getNameAsString(), name -> new ArrayList<>()).add(call);
                 }
             }
-            for (MethodReferenceExpr reference : source.unit().findAll(MethodReferenceExpr.class)) {
+            for (MethodReferenceExpr reference : source.findAll(MethodReferenceExpr.class)) {
                 referenced.computeIfAbsent(reference.getIdentifier(), name -> new ArrayList<>()).add(reference);
             }
         }

@@ -41,7 +41,7 @@ public class UncheckedResultInTestRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             boolean isTest = TestClasses.annotationNames(method).stream().anyMatch(TEST_ANNOTATIONS::contains);
             List<MethodCallExpr> calls = method.findAll(MethodCallExpr.class);
             boolean checksMocks = calls.stream().anyMatch(call -> MOCK_CHECKS.contains(call.getNameAsString()));

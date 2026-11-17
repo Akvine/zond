@@ -33,7 +33,7 @@ public class ManualThreadInBeanRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(ObjectCreationExpr.class).stream()
+        return sourceFile.findAll(ObjectCreationExpr.class).stream()
                 .filter(creation -> THREAD.equals(creation.getType().getNameAsString()))
                 .filter(this::isInsideBean)
                 .filter(creation -> !isCreatedOnce(creation))

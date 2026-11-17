@@ -30,10 +30,10 @@ public class ProjectWords {
         }
         Set<String> words = new HashSet<>();
         for (SourceFile source : sources) {
-            source.unit().findAll(SimpleName.class).forEach(name -> words.add(name.getIdentifier()));
+            source.findAll(SimpleName.class).forEach(name -> words.add(name.getIdentifier()));
             // Имена аннотаций и импортов в дереве - отдельный вид узла
-            source.unit().findAll(Name.class).forEach(name -> words.add(name.getIdentifier()));
-            source.unit().findAll(StringLiteralExpr.class).forEach(literal -> words.add(literal.getValue()));
+            source.findAll(Name.class).forEach(name -> words.add(name.getIdentifier()));
+            source.findAll(StringLiteralExpr.class).forEach(literal -> words.add(literal.getValue()));
         }
         cachedSources = new WeakReference<>(sources);
         cachedWords = Set.copyOf(words);

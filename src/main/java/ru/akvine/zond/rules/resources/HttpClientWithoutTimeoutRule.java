@@ -36,12 +36,12 @@ public class HttpClientWithoutTimeoutRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        String text = sourceFile.unit().toString();
+        String text = sourceFile.text();
         if (TIMEOUT_MARKERS.stream().anyMatch(text::contains)) {
             return List.of();
         }
 
-        return sourceFile.unit().findAll(Expression.class).stream()
+        return sourceFile.findAll(Expression.class).stream()
                 .flatMap(expression -> describeClient(expression)
                         .map(client -> violation(sourceFile, expression,
                                 "'" + client + "' без таймаутов: по умолчанию клиент ждет ответа бесконечно,"

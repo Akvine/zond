@@ -52,7 +52,7 @@ public class DuplicateEndpointRule extends AbstractRule implements ProjectRule {
         Modules modules = Modules.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!Annotations.hasAny(type, CONTROLLER_ANNOTATIONS)) {
                     continue;
                 }

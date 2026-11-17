@@ -71,7 +71,7 @@ public class CircularDependencyRule extends AbstractRule implements ProjectRule,
         Map<String, Bean> beans = new TreeMap<>();
         Map<String, Set<String>> implementations = new HashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!SpringBeans.isBean(type)) {
                     continue;
                 }

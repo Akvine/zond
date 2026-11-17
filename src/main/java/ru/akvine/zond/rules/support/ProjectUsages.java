@@ -170,12 +170,12 @@ public final class ProjectUsages {
                 sampleUnits.add(source.unit());
             }
             moduleOf.put(source.unit(), moduleOf(source.path()));
-            for (Node node : source.unit().findAll(Node.class)) {
+            for (Node node : source.findAll(Node.class)) {
                 index(node);
             }
         }
         for (SourceFile source : sources) {
-            for (Node node : source.unit().findAll(Node.class)) {
+            for (Node node : source.findAll(Node.class)) {
                 collectCalls(node, graph);
             }
         }

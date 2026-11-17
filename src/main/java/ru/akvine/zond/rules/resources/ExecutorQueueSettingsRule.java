@@ -68,7 +68,7 @@ public class ExecutorQueueSettingsRule extends AbstractContextRule {
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : context.sources()) {
             boolean handlesRejection = handlesRejection(sourceFile);
-            for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+            for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
                 if (TestClasses.isInside(creation)) {
                     continue;
                 }
@@ -108,7 +108,7 @@ public class ExecutorQueueSettingsRule extends AbstractContextRule {
     }
 
     private boolean handlesRejection(SourceFile sourceFile) {
-        String text = sourceFile.unit().toString();
+        String text = sourceFile.text();
         return REJECTION_HANDLING.stream().anyMatch(text::contains);
     }
 

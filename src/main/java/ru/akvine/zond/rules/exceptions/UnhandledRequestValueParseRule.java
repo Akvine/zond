@@ -101,12 +101,12 @@ public class UnhandledRequestValueParseRule extends AbstractTaintRule {
         Set<String> declared = new HashSet<>();
         Set<String> handled = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            sourceFile.unit().findAll(EnumDeclaration.class).forEach(found -> declared.add(found.getNameAsString()));
-            sourceFile.unit().findAll(AnnotationExpr.class).stream()
+            sourceFile.findAll(EnumDeclaration.class).forEach(found -> declared.add(found.getNameAsString()));
+            sourceFile.findAll(AnnotationExpr.class).stream()
                     .filter(annotation -> EXCEPTION_HANDLER.equals(annotation.getName().getIdentifier()))
                     .forEach(annotation -> handled.addAll(handledBy(annotation)));
             // class DateParseMapper implements ExceptionMapper<DateTimeParseException> - обработчик JAX-RS
-            sourceFile.unit().findAll(ClassOrInterfaceType.class).stream()
+            sourceFile.findAll(ClassOrInterfaceType.class).stream()
                     .filter(type -> EXCEPTION_MAPPER.equals(type.getNameAsString()))
                     .flatMap(type -> type.getTypeArguments().stream().flatMap(List::stream))
                     .forEach(argument -> handled.add(LocalTypes.typeName(argument)));
@@ -121,7 +121,7 @@ public class UnhandledRequestValueParseRule extends AbstractTaintRule {
     @Override
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Optional<Parsing> parsing = parsingOf(call);
             if (parsing.isEmpty() || parsing.get().text().isStringLiteralExpr() || isExpected(call, parsing.get())) {
                 continue;

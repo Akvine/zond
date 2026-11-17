@@ -57,6 +57,24 @@ class FlowCheckRulesTest {
     }
 
     @Test
+    void nullUnboxingOfContainerElement() {
+        // Значение, которое Optional или Mono отдает в лямбду, не бывает null; записанный тип Boolean - может
+        assertThat(RuleTests.lines(new NullUnboxingRule(), """
+                class Sample {
+                    void run(Optional<Boolean> force, Mono<Boolean> taken, List<Boolean> flags) {
+                        force.ifPresent(value -> {
+                            if (value) {}
+                        });
+                        taken.flatMap(inUse -> inUse ? Mono.empty() : Mono.just(1));
+                        flags.forEach((Boolean flag) -> {
+                            if (flag) {}
+                        });
+                    }
+                }
+                """)).containsExactly(8);
+    }
+
+    @Test
     void castWithoutInstanceof() {
         assertThat(RuleTests.lines(new CastWithoutInstanceofRule(), """
                 class Sample {

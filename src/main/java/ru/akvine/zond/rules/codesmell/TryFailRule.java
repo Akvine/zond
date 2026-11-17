@@ -28,7 +28,7 @@ public class TryFailRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(TryStmt.class).stream()
+        return sourceFile.findAll(TryStmt.class).stream()
                 .filter(tryStmt -> !tryStmt.getCatchClauses().isEmpty() && endsWithFail(tryStmt))
                 .map(tryStmt -> violation(sourceFile, tryStmt,
                         "Исключение проверяется через try / fail() / catch: если забыть fail(), тест пройдет и без"

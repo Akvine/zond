@@ -106,7 +106,7 @@ public class LazyRelationInMappingRule extends AbstractContextRule {
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sources) {
             Set<Integer> reportedLines = new HashSet<>();
-            for (Node site : sourceFile.unit().findAll(Node.class)) {
+            for (Node site : sourceFile.findAll(Node.class)) {
                 Optional<Relation> relation = perElementRead(site, readers, project);
                 if (relation.isEmpty() || TestClasses.isInside(site)
                         || !reportedLines.add(site.getBegin().map(position -> position.line).orElse(0))) {
@@ -177,7 +177,7 @@ public class LazyRelationInMappingRule extends AbstractContextRule {
     private Map<Node, Relation> findReaders(List<SourceFile> sources, Project project) {
         List<CallableDeclaration<?>> callables = new ArrayList<>();
         for (SourceFile source : sources) {
-            source.unit().findAll(CallableDeclaration.class).stream()
+            source.findAll(CallableDeclaration.class).stream()
                     .filter(callable -> !TestClasses.isInside(callable))
                     .forEach(callables::add);
         }
@@ -315,7 +315,7 @@ public class LazyRelationInMappingRule extends AbstractContextRule {
     private Set<String> fetchedSomewhere(List<SourceFile> sources) {
         Set<String> fetched = new HashSet<>();
         for (SourceFile source : sources) {
-            for (AnnotationExpr annotation : source.unit().findAll(AnnotationExpr.class)) {
+            for (AnnotationExpr annotation : source.findAll(AnnotationExpr.class)) {
                 String text = annotation.toString();
                 Matcher join = JOIN_FETCH.matcher(text);
                 while (join.find()) {

@@ -60,7 +60,7 @@ public class ConnectionBypassesTransactionRule extends AbstractRule implements P
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         boolean usesAwareProxy = sourceFiles.stream()
-                .anyMatch(source -> source.unit().findAll(ClassOrInterfaceType.class).stream()
+                .anyMatch(source -> source.findAll(ClassOrInterfaceType.class).stream()
                         .anyMatch(type -> TRANSACTION_AWARE_PROXY.equals(type.getNameAsString())));
         if (usesAwareProxy) {
             return List.of();
@@ -71,7 +71,7 @@ public class ConnectionBypassesTransactionRule extends AbstractRule implements P
             if (TestPaths.isTest(sourceFile.path())) {
                 continue;
             }
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (!GET_CONNECTION.equals(call.getNameAsString()) || !call.getArguments().isEmpty()
                         || call.getScope().isEmpty()) {
                     continue;

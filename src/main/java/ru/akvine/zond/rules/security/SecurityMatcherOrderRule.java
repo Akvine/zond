@@ -67,7 +67,7 @@ public class SecurityMatcherOrderRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             boolean configures = method.findAll(MethodCallExpr.class).stream()
                     .anyMatch(call -> AUTHORIZE_METHODS.contains(call.getNameAsString()));
             if (configures) {

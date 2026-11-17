@@ -63,13 +63,13 @@ public class RemoteFileIntoMemoryRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (readsWholeResponse(call) && !TestClasses.isInside(call) && !isSmall(call)) {
                 violations.add(violation(sourceFile, call.getName(), message("'" + Nodes.text(call) + "' читает")));
             }
         }
         // Клиент, описанный интерфейсом: тип ответа задан типом метода
-        for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             if (!Handlers.isClient(type) || TestClasses.isInside(type)) {
                 continue;
             }

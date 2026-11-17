@@ -91,7 +91,7 @@ public class RandomUuidInParallelTaskRule extends AbstractRule implements Projec
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         List<Site> sites = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (isRandomUuidInLoop(call)) {
                     sites.add(new Site(sourceFile, call));
                 }
@@ -150,18 +150,18 @@ public class RandomUuidInParallelTaskRule extends AbstractRule implements Projec
         Set<Node> tasks = identitySet();
         Set<MethodDeclaration> entries = identitySet();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 if (Annotations.has(method, ASYNC)) {
                     entries.add(method);
                 }
             }
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 for (Expression code : submitted(call, graph, forwarders)) {
                     collect(code, graph, tasks, entries);
                 }
             }
             // items.parallelStream().map(item -> ...)
-            for (LambdaExpr lambda : sourceFile.unit().findAll(LambdaExpr.class)) {
+            for (LambdaExpr lambda : sourceFile.findAll(LambdaExpr.class)) {
                 if (isInParallelStream(lambda)) {
                     collect(lambda, graph, tasks, entries);
                 }
@@ -220,7 +220,7 @@ public class RandomUuidInParallelTaskRule extends AbstractRule implements Projec
     private Map<MethodDeclaration, Set<Integer>> forwarders(List<SourceFile> sourceFiles) {
         Map<MethodDeclaration, Set<Integer>> forwarders = new IdentityHashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 Set<Integer> positions = forwarded(method);
                 if (!positions.isEmpty()) {
                     forwarders.put(method, positions);

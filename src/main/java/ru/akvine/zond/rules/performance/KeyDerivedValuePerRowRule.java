@@ -129,7 +129,7 @@ public class KeyDerivedValuePerRowRule extends AbstractRule implements ProjectRu
     private List<KeyIteration> findIterations(SourceFile sourceFile) {
         List<KeyIteration> iterations = new ArrayList<>();
         // for (Map.Entry<String, Object> entry : row.entrySet()), for (String column : row.keySet())
-        for (ForEachStmt loop : sourceFile.unit().findAll(ForEachStmt.class)) {
+        for (ForEachStmt loop : sourceFile.findAll(ForEachStmt.class)) {
             Expression source = Nodes.unwrap(loop.getIterable());
             if (source.isMethodCallExpr() && loop.getVariable().getVariables().size() == 1) {
                 String method = source.asMethodCallExpr().getNameAsString();
@@ -139,7 +139,7 @@ public class KeyDerivedValuePerRowRule extends AbstractRule implements ProjectRu
                 }
             }
         }
-        for (LambdaExpr lambda : sourceFile.unit().findAll(LambdaExpr.class)) {
+        for (LambdaExpr lambda : sourceFile.findAll(LambdaExpr.class)) {
             Optional<MethodCallExpr> operation = lambda.getParentNode()
                     .filter(MethodCallExpr.class::isInstance)
                     .map(MethodCallExpr.class::cast);

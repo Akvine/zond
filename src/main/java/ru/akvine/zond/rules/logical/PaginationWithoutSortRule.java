@@ -80,7 +80,7 @@ public class PaginationWithoutSortRule extends AbstractRule implements ProjectRu
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (isUnsortedPage(call) && !TestClasses.isInside(call) && !isSortedByQuery(call, classes)) {
                     violations.add(violation(sourceFile, call,
                             "'" + Nodes.text(call) + "' - страница без сортировки" + CONSEQUENCE
@@ -98,7 +98,7 @@ public class PaginationWithoutSortRule extends AbstractRule implements ProjectRu
                                     + " однозначно задает порядок").withConfidence(Confidence.CONFIRMED));
                 }
             }
-            for (Parameter parameter : sourceFile.unit().findAll(Parameter.class)) {
+            for (Parameter parameter : sourceFile.findAll(Parameter.class)) {
                 if (isUnsortedHandlerPage(parameter)) {
                     violations.add(violation(sourceFile, parameter,
                             "Параметр '" + parameter.getNameAsString() + "' обработчика запроса без сортировки по"

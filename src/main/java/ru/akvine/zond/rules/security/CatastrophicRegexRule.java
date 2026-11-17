@@ -53,14 +53,14 @@ public class CatastrophicRegexRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             Predicate<String> catastrophic = SEARCH_METHODS.contains(call.getNameAsString())
                     ? RegexShape::isCatastrophicOnSearch
                     : RegexShape::isCatastrophic;
             regexOf(call).filter(catastrophic).filter(regex -> !TestClasses.isInside(call))
                     .ifPresent(regex -> violations.add(violation(sourceFile, call, message(regex))));
         }
-        for (AnnotationExpr annotation : sourceFile.unit().findAll(AnnotationExpr.class)) {
+        for (AnnotationExpr annotation : sourceFile.findAll(AnnotationExpr.class)) {
             if (!VALIDATION_ANNOTATIONS.contains(annotation.getName().getIdentifier())) {
                 continue;
             }

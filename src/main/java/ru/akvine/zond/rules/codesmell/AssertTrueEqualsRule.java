@@ -32,7 +32,7 @@ public class AssertTrueEqualsRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> BOOLEAN_ASSERTIONS.contains(call.getNameAsString()))
                 .filter(call -> call.getArguments().stream().anyMatch(this::comparesValues))
                 .map(call -> violation(sourceFile, call,

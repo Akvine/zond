@@ -37,7 +37,7 @@ public class TooManyParametersRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // У переопределенного метода сигнатуру диктует интерфейс или родительский класс
-        return sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        return sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(method -> method.getParameters().size() > value(MAX_PARAMETERS))
                 .filter(method -> !Annotations.has(method, OVERRIDE))
                 .map(method -> violation(sourceFile, method,

@@ -44,7 +44,7 @@ public class SwallowedInterruptRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(CatchClause.class).stream()
+        return sourceFile.findAll(CatchClause.class).stream()
                 .filter(this::catchesInterrupt)
                 .filter(clause -> !restoresInterrupt(clause))
                 .filter(clause -> !stopsThread(clause))

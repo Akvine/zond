@@ -84,7 +84,7 @@ public class EqualsInstanceofInHierarchyRule extends AbstractRule implements Pro
         Set<String> compared = comparedTypes(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 Optional<ClassOrInterfaceDeclaration> parent = classes.parent(type);
                 Optional<String> added = addedField(type);
                 // У абстрактного предка своих объектов нет: сравнивать наследника не с кем
@@ -134,7 +134,7 @@ public class EqualsInstanceofInHierarchyRule extends AbstractRule implements Pro
     private Set<String> comparedTypes(List<SourceFile> sourceFiles) {
         Set<String> types = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceType type : sourceFile.unit().findAll(ClassOrInterfaceType.class)) {
+            for (ClassOrInterfaceType type : sourceFile.findAll(ClassOrInterfaceType.class)) {
                 String collection = type.getNameAsString();
                 if (HASH_COLLECTION.matcher(collection).matches()) {
                     // У Map сравниваются ключи, у Set - элементы
@@ -144,7 +144,7 @@ public class EqualsInstanceofInHierarchyRule extends AbstractRule implements Pro
                             .forEach(types::add));
                 }
             }
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (COMPARING_CALLS.contains(call.getNameAsString())) {
                     call.getScope().flatMap(LocalTypes::typeOf).ifPresent(types::add);
                     call.getArguments().forEach(argument -> LocalTypes.typeOf(argument).ifPresent(types::add));

@@ -65,7 +65,7 @@ public class ThisEscapeInConstructorRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ConstructorDeclaration constructor : sourceFile.unit().findAll(ConstructorDeclaration.class)) {
+        for (ConstructorDeclaration constructor : sourceFile.findAll(ConstructorDeclaration.class)) {
             // Одна лямбда может обращаться к this несколько раз - сообщаем о ней один раз
             Set<Node> reported = Collections.newSetFromMap(new IdentityHashMap<>());
 

@@ -79,7 +79,7 @@ public class ListenerWithoutIdempotencyRule extends AbstractRule implements Proj
         CallGraph graph = CallGraph.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration listener : Messaging.listeners(sourceFile.unit())) {
+            for (MethodDeclaration listener : Messaging.listeners(sourceFile)) {
                 Set<MethodDeclaration> reached = Reachability.within(graph, listener, value(MAX_CALL_DEPTH));
                 Optional<MethodCallExpr> insert = reached.stream()
                         .flatMap(method -> method.findAll(MethodCallExpr.class).stream())

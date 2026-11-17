@@ -37,14 +37,14 @@ public class EntityAsRequestBodyRule extends AbstractRule implements ProjectRule
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         Set<String> entities = new HashSet<>();
         for (SourceFile sourceFile : sourceFiles) {
-            JpaEntities.findEntities(sourceFile.unit()).stream()
+            JpaEntities.findEntities(sourceFile).stream()
                     .map(ClassOrInterfaceDeclaration::getNameAsString)
                     .forEach(entities::add);
         }
 
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (Parameter parameter : sourceFile.unit().findAll(Parameter.class)) {
+            for (Parameter parameter : sourceFile.findAll(Parameter.class)) {
                 String type = LocalTypes.typeName(parameter.getType());
                 if (Annotations.hasAny(parameter, BODY_ANNOTATIONS) && entities.contains(type)) {
                     violations.add(violation(sourceFile, parameter,

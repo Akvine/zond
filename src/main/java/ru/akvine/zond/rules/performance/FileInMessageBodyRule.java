@@ -56,14 +56,14 @@ public class FileInMessageBodyRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             boolean builds = BUILDER_METHODS.contains(call.getNameAsString())
                     && call.getScope().filter(scope -> scope.toString().contains(MESSAGE_BUILDER)).isPresent();
             if (builds || Messaging.describeSend(call).isPresent()) {
                 report(sourceFile, call.getName(), call.getArguments(), violations);
             }
         }
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (MESSAGE_TYPES.contains(creation.getType().getNameAsString())) {
                 report(sourceFile, creation, creation.getArguments(), violations);
             }

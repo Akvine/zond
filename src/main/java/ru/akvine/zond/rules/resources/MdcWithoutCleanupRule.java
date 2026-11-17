@@ -43,7 +43,7 @@ public class MdcWithoutCleanupRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             List<MethodCallExpr> puts = calls(method, Set.of(PUT));
             // Контекст, заданный при запуске, остается на все время работы приложения намеренно
             if (puts.isEmpty() || CodeContexts.isStartup(puts.get(0))) {

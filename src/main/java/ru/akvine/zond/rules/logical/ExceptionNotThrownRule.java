@@ -31,7 +31,7 @@ public class ExceptionNotThrownRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // new IllegalStateException("...") отдельным оператором: объект создан и тут же забыт
-        return sourceFile.unit().findAll(ExpressionStmt.class).stream()
+        return sourceFile.findAll(ExpressionStmt.class).stream()
                 .filter(statement -> statement.getExpression().isObjectCreationExpr())
                 // orElseThrow(() -> new NotFoundException()): тело лямбды-выражения тоже хранится как оператор,
                 // но созданное исключение там возвращается, а не теряется

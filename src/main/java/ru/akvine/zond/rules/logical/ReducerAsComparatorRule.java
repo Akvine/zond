@@ -52,7 +52,7 @@ public class ReducerAsComparatorRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             String operation = call.getNameAsString();
             // Math.max(a, b) и reduce(Integer::max) - обычные вызовы; интересен только компаратор у стрима и коллекции
             if (!COMPARING_OPERATIONS.contains(operation) || call.getArguments().isEmpty() || call.getScope().isEmpty()) {

@@ -33,7 +33,7 @@ public class ConditionAwaitOutsideLoopRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> AWAIT_METHODS.contains(call.getNameAsString()))
                 .filter(call -> call.getScope().filter(this::isCondition).isPresent())
                 .filter(call -> Nodes.enclosingLoop(call).isEmpty())

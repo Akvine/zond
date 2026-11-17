@@ -124,7 +124,7 @@ public class UsuallyCheckedResultIgnoredRule extends AbstractRule implements Pro
         Map<String, Usage> libraryUsages = new HashMap<>();
         Map<MethodCallExpr, SourceFile> files = new IdentityHashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 String method = call.getNameAsString();
                 if (ACTION_METHODS.contains(method) || REPORTED_ELSEWHERE.contains(method)
                         || startsWithWord(method, ACTION_PREFIXES) || TestClasses.isInside(call)) {

@@ -54,7 +54,7 @@ public class LayerViolationRule extends AbstractRule implements ProjectRule {
         // Имя класса -> слой; одноименные классы из разных слоев не учитываем
         Map<String, Optional<Layer>> layers = new HashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 layerOf(type).ifPresent(layer -> layers.merge(type.getNameAsString(), Optional.of(layer),
                         (known, added) -> known.equals(added) ? known : Optional.empty()));
             }
@@ -62,7 +62,7 @@ public class LayerViolationRule extends AbstractRule implements ProjectRule {
 
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 Optional<Layer> layer = layerOf(type);
                 if (layer.isEmpty() || TestClasses.isInside(type)) {
                     continue;

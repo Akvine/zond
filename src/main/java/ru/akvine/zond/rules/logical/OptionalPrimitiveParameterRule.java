@@ -54,7 +54,7 @@ public class OptionalPrimitiveParameterRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (Parameter parameter : sourceFile.unit().findAll(Parameter.class)) {
+        for (Parameter parameter : sourceFile.findAll(Parameter.class)) {
             String type = parameter.getType().asString();
             Optional<AnnotationExpr> source = Annotations.find(parameter, REQUEST_VALUES);
             if (!WRAPPERS.containsKey(type) || source.isEmpty() || !isOptionalWithoutDefault(source.get())) {

@@ -31,7 +31,7 @@ public final class BeanGraph {
     public static BeanGraph of(List<SourceFile> sources) {
         BeanGraph graph = new BeanGraph();
         for (SourceFile source : sources) {
-            for (ClassOrInterfaceDeclaration type : source.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : source.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!SpringBeans.isBean(type)) {
                     continue;
                 }

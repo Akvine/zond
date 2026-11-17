@@ -29,7 +29,7 @@ public class AsyncVoidRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        return sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(method -> method.getType().isVoidType())
                 .filter(this::isAsync)
                 .map(method -> violation(sourceFile, method,

@@ -35,7 +35,7 @@ public class EqualsHashCodeRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+        for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
             if (type.isInterface()
                     || TestClasses.annotationNames(type).stream().anyMatch(GENERATING_ANNOTATIONS::contains)) {
                 continue;

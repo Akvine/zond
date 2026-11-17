@@ -61,14 +61,14 @@ public class SsrfRule extends AbstractTaintRule {
     @Override
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             boolean takesAddress = REQUEST_METHODS.contains(call.getNameAsString())
                     || MethodCalls.isCallOn(call, URI, CREATE);
             if (takesAddress && !call.getArguments().isEmpty() && !isOnlyInspected(call)) {
                 report(sourceFile, taint, call, call.getArgument(0), violations);
             }
         }
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             // new URI(link); без использования результата - проверка формата адреса, а не обращение по нему
             if (ADDRESS_TYPES.contains(creation.getType().getNameAsString()) && !creation.getArguments().isEmpty()
                     && !(creation.getParentNode().orElse(null) instanceof ExpressionStmt) && !isOnlyInspected(creation)) {

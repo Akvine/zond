@@ -45,7 +45,7 @@ public class StaticContainerHolderRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             Optional<TypeDeclaration<?>> owner = field.findAncestor(TypeDeclaration.class).map(type -> (TypeDeclaration<?>) type);
             // Главный класс держит контекст, чтобы перезапустить приложение, - это не раздача бинов
             if (!SpringContainer.isStaticContainer(field) || TestClasses.isInside(field)

@@ -52,7 +52,7 @@ public class BroadCatchRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (CatchClause clause : sourceFile.unit().findAll(CatchClause.class)) {
+        for (CatchClause clause : sourceFile.findAll(CatchClause.class)) {
             // Пустой catch ловит отдельное правило
             if (clause.getBody().getStatements().isEmpty()) {
                 continue;

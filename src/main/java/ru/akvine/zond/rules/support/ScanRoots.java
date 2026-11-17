@@ -37,7 +37,7 @@ public final class ScanRoots {
         Set<String> roots = new HashSet<>();
         Set<String> imported = new HashSet<>();
         for (SourceFile source : sources) {
-            for (AnnotationExpr annotation : source.unit().findAll(AnnotationExpr.class)) {
+            for (AnnotationExpr annotation : source.findAll(AnnotationExpr.class)) {
                 String name = annotation.getName().getIdentifier();
                 if (SPRING_BOOT_APPLICATION.equals(name)) {
                     Set<String> packages = packagesOf(annotation);

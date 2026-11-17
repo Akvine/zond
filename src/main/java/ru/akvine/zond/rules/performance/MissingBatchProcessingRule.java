@@ -49,7 +49,7 @@ public class MissingBatchProcessingRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Вызовы репозиториев в цикле ловит отдельное правило
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(Loops::isRepeated)
                 .flatMap(call -> findAdvice(call)
                         .map(advice -> violation(sourceFile, call,

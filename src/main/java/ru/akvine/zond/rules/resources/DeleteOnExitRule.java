@@ -37,7 +37,7 @@ public class DeleteOnExitRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> DELETE_ON_EXIT.equals(call.getNameAsString())
                         && call.getArguments().isEmpty() && call.getScope().isPresent())
                 // Один файл на весь срок работы приложения и утилита командной строки - не утечка

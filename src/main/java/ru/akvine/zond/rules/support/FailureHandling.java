@@ -70,11 +70,11 @@ public final class FailureHandling {
     private FailureHandling(List<SourceFile> sources) {
         graph = CallGraph.of(sources);
         for (SourceFile source : sources) {
-            source.unit().findAll(AnnotationExpr.class).stream()
+            source.findAll(AnnotationExpr.class).stream()
                     .filter(annotation -> EXCEPTION_HANDLER.equals(annotation.getName().getIdentifier()))
                     .forEach(annotation -> answered.addAll(handledBy(annotation)));
             // class LockMapper implements ExceptionMapper<PessimisticLockException> - обработчик JAX-RS
-            source.unit().findAll(ClassOrInterfaceType.class).stream()
+            source.findAll(ClassOrInterfaceType.class).stream()
                     .filter(type -> EXCEPTION_MAPPER.equals(type.getNameAsString()))
                     .flatMap(type -> type.getTypeArguments().stream().flatMap(List::stream))
                     .forEach(argument -> answered.add(LocalTypes.typeName(argument)));

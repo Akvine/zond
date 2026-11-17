@@ -74,7 +74,7 @@ public class ManualIdEntitySaveRule extends AbstractRule implements ProjectRule 
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr save : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr save : sourceFile.findAll(MethodCallExpr.class)) {
                 if (!SAVE_METHODS.contains(save.getNameAsString()) || save.getArguments().size() != 1
                         || !Repositories.isRepositoryCall(save) || TestClasses.isInside(save)) {
                     continue;

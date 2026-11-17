@@ -1,6 +1,5 @@
 package ru.akvine.zond.rules.support;
 
-import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
@@ -13,6 +12,7 @@ import com.github.javaparser.ast.stmt.Statement;
 import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.type.Type;
 import lombok.experimental.UtilityClass;
+import ru.akvine.zond.models.SourceFile;
 
 import java.util.List;
 import java.util.Optional;
@@ -55,8 +55,8 @@ public class Messaging {
     /**
      * @return методы, которые получают сообщения из очереди или топика
      */
-    public List<MethodDeclaration> listeners(CompilationUnit unit) {
-        return unit.findAll(MethodDeclaration.class).stream().filter(Messaging::isListener).toList();
+    public List<MethodDeclaration> listeners(SourceFile sourceFile) {
+        return sourceFile.findAll(MethodDeclaration.class).stream().filter(Messaging::isListener).toList();
     }
 
     public boolean isListener(MethodDeclaration method) {

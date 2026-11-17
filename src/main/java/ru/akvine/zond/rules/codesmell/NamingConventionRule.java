@@ -62,7 +62,7 @@ public class NamingConventionRule extends AbstractRule {
                 .ifPresent(declaration -> violations.add(violation(sourceFile, declaration,
                         "Имя пакета '" + declaration.getNameAsString() + "' должно быть в нижнем регистре")));
 
-        for (Node node : unit.findAll(Node.class)) {
+        for (Node node : sourceFile.findAll(Node.class)) {
             if (node instanceof TypeDeclaration<?> type) {
                 check(sourceFile, type, type.getNameAsString(), UPPER_CAMEL_CASE,
                         "Имя типа", "UpperCamelCase", violations);

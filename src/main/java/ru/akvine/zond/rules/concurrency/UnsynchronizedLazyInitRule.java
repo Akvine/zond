@@ -63,7 +63,7 @@ public class UnsynchronizedLazyInitRule extends AbstractRule implements ProjectR
 
     private List<Violation> checkFile(SourceFile sourceFile, ThreadReach reach) {
         List<Violation> violations = new ArrayList<>();
-        for (IfStmt ifStmt : sourceFile.unit().findAll(IfStmt.class)) {
+        for (IfStmt ifStmt : sourceFile.findAll(IfStmt.class)) {
             Optional<String> checked = nullCheckedName(ifStmt.getCondition());
             if (checked.isEmpty() || !assigns(ifStmt, checked.get()) || isSynchronized(ifStmt)) {
                 continue;

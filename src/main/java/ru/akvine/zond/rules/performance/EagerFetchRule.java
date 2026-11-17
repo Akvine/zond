@@ -37,7 +37,7 @@ public class EagerFetchRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (AnnotationExpr annotation : sourceFile.unit().findAll(AnnotationExpr.class)) {
+        for (AnnotationExpr annotation : sourceFile.findAll(AnnotationExpr.class)) {
             String name = annotation.getName().getIdentifier();
             if (!JpaEntities.RELATION_ANNOTATIONS.contains(name)) {
                 continue;

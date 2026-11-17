@@ -67,7 +67,7 @@ public class CachedValueModifiedRule extends AbstractContextRule {
         }
         CallGraph graph = CallGraph.of(context.sources());
         for (SourceFile sourceFile : context.sources()) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 Optional<MethodDeclaration> cached = graph.targetsOf(call).stream()
                         .filter(target -> CacheAnnotations.has(target, Set.of(CacheAnnotations.CACHEABLE)))
                         .findFirst();

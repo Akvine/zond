@@ -56,7 +56,7 @@ public class ModifyingWithoutClearRule extends AbstractRule implements ProjectRu
         Map<String, List<MethodCallExpr>> calls = callsByName(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 if (Annotations.find(method, MODIFYING)
                         .filter(annotation -> !annotation.toString().contains(CLEAR_AUTOMATICALLY))
                         .isEmpty()) {
@@ -89,7 +89,7 @@ public class ModifyingWithoutClearRule extends AbstractRule implements ProjectRu
     private Map<String, List<MethodCallExpr>> callsByName(List<SourceFile> sourceFiles) {
         Map<String, List<MethodCallExpr>> calls = new HashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 if (call.getScope().isPresent()) {
                     calls.computeIfAbsent(call.getNameAsString(), key -> new ArrayList<>()).add(call);
                 }

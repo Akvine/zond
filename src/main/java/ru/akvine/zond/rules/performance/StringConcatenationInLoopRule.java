@@ -35,7 +35,7 @@ public class StringConcatenationInLoopRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (AssignExpr assign : sourceFile.unit().findAll(AssignExpr.class)) {
+        for (AssignExpr assign : sourceFile.findAll(AssignExpr.class)) {
             Optional<Node> loop = Nodes.enclosingLoop(assign);
             if (loop.isEmpty() || !assign.getTarget().isNameExpr() || !isAccumulation(assign)) {
                 continue;

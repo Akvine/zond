@@ -95,7 +95,7 @@ public class ObjectAccessWithoutOwnerCheckRule extends AbstractRule implements P
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         CallGraph graph = CallGraph.of(sourceFiles);
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration controller : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration controller : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!Annotations.hasAny(controller, CONTROLLERS) || Annotations.hasAny(controller, ACCESS_ANNOTATIONS)) {
                     continue;
                 }

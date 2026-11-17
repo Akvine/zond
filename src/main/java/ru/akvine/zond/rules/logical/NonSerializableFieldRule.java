@@ -44,7 +44,7 @@ public class NonSerializableFieldRule extends AbstractRule implements ProjectRul
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (ClassOrInterfaceDeclaration type : sourceFile.unit().findAll(ClassOrInterfaceDeclaration.class)) {
+            for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (type.isInterface() || TestClasses.isInside(type)
                         || !isSerializable(type, classes, new HashSet<>()).orElse(false)) {
                     continue;

@@ -68,7 +68,7 @@ public class LostUpdateRule extends AbstractRule implements ProjectRule {
         ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
-            for (MethodCallExpr setter : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr setter : sourceFile.findAll(MethodCallExpr.class)) {
                 describe(setter, classes).ifPresent(place -> violations.add(violation(sourceFile, setter,
                         "Значение '" + place + "' читается, меняется и записывается обратно без блокировки"
                                 + " и без @Version: два одновременных запроса прочитают одно и то же значение,"

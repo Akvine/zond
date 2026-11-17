@@ -41,7 +41,7 @@ public class NonShortCircuitLogicRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(BinaryExpr.class).stream()
+        return sourceFile.findAll(BinaryExpr.class).stream()
                 .filter(expression -> expression.getOperator() == BinaryExpr.Operator.BINARY_AND
                         || expression.getOperator() == BinaryExpr.Operator.BINARY_OR)
                 .filter(expression -> isCondition(expression.getLeft()) && isCondition(expression.getRight()))

@@ -62,7 +62,7 @@ public class LazyAccessOutsideTransactionRule extends AbstractRule implements Pr
 
     private List<Violation> check(SourceFile sourceFile, CallGraph graph) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+        for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             if (method.getBody().isEmpty() || isTransactional(method) || TestClasses.isInside(method)) {
                 continue;
             }

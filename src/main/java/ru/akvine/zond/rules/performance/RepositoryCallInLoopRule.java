@@ -60,7 +60,7 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
         for (SourceFile sourceFile : sourceFiles) {
             Set<Integer> reportedLines = new HashSet<>();
             // ids.stream().map(repository::findById): вызова в коде нет, но запрос уходит на каждый элемент
-            for (MethodReferenceExpr reference : sourceFile.unit().findAll(MethodReferenceExpr.class)) {
+            for (MethodReferenceExpr reference : sourceFile.findAll(MethodReferenceExpr.class)) {
                 if (MethodReferences.perElementOperation(reference).isEmpty() || CodeContexts.isInCatch(reference)) {
                     continue;
                 }
@@ -72,7 +72,7 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
                                 + " загрузите или сохраните данные одним запросом: findAllById, saveAll,"
                                 + " запрос с IN").withConfidence(problem.confidence())));
             }
-            for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+            for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
                 // В цикле повторных попыток запрос повторяется по числу попыток, а не по числу элементов
                 // Запрос в catch выполняется, только когда обработка элемента сорвалась, а не для каждого
                 // Загрузка справочников при запуске выполняется один раз, в том числе из start(), который вызывает

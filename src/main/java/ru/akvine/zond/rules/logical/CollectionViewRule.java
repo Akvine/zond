@@ -66,7 +66,7 @@ public class CollectionViewRule extends AbstractRule {
 
     // Представление сохраняют в поле, как будто это копия
     private void checkStoredViews(SourceFile sourceFile, List<Violation> violations) {
-        for (AssignExpr assignment : sourceFile.unit().findAll(AssignExpr.class)) {
+        for (AssignExpr assignment : sourceFile.findAll(AssignExpr.class)) {
             Expression value = Nodes.unwrap(assignment.getValue());
             if (!value.isMethodCallExpr() || !isField(assignment.getTarget())) {
                 continue;
@@ -93,7 +93,7 @@ public class CollectionViewRule extends AbstractRule {
 
     // return items.subList(0, 10), где items - поле: наружу уходит окно во внутренний список
     private void checkReturnedViews(SourceFile sourceFile, List<Violation> violations) {
-        for (ReturnStmt statement : sourceFile.unit().findAll(ReturnStmt.class)) {
+        for (ReturnStmt statement : sourceFile.findAll(ReturnStmt.class)) {
             Optional<MethodCallExpr> view = statement.getExpression().map(Nodes::unwrap)
                     .filter(Expression::isMethodCallExpr)
                     .map(Expression::asMethodCallExpr)
@@ -109,7 +109,7 @@ public class CollectionViewRule extends AbstractRule {
 
     // List<Order> head = orders.subList(0, 10); orders.add(order); head.size() -> исключение
     private void checkChangesUnderView(SourceFile sourceFile, List<Violation> violations) {
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             Optional<MethodCallExpr> view = variable.getInitializer().map(Nodes::unwrap)
                     .filter(Expression::isMethodCallExpr)
                     .map(Expression::asMethodCallExpr)

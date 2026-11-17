@@ -39,7 +39,7 @@ public class BigDecimalMisuseRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (BIG_DECIMAL.equals(creation.getType().getNameAsString())
                     && creation.getArguments().size() == 1
                     && isFloating(creation.getArgument(0))) {
@@ -50,7 +50,7 @@ public class BigDecimalMisuseRule extends AbstractRule {
             }
         }
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!EQUALS.equals(call.getNameAsString()) || call.getArguments().size() != 1) {
                 continue;
             }

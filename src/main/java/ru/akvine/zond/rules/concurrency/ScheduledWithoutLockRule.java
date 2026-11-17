@@ -77,7 +77,7 @@ public class ScheduledWithoutLockRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodDeclaration.class).stream()
+        return sourceFile.findAll(MethodDeclaration.class).stream()
                 .filter(method -> Annotations.hasAny(method, SCHEDULED_ANNOTATIONS))
                 .filter(method -> !Annotations.has(method, SCHEDULER_LOCK) && !hasLockAnnotation(method))
                 .filter(method -> !method.isSynchronized() && !hasManualGuard(method))

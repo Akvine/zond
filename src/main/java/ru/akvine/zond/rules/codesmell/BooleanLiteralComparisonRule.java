@@ -34,7 +34,7 @@ public class BooleanLiteralComparisonRule extends AbstractRule implements Projec
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         boolean negationByComparison = prefersComparisonWithFalse(sourceFiles);
         return sourceFiles.stream()
-                .flatMap(sourceFile -> sourceFile.unit().findAll(BinaryExpr.class).stream()
+                .flatMap(sourceFile -> sourceFile.findAll(BinaryExpr.class).stream()
                         .filter(this::comparesWithLiteral)
                         .filter(comparison -> !negationByComparison || !isComparisonWithFalse(comparison))
                         .filter(comparison -> !TestClasses.isInside(comparison))
@@ -77,10 +77,10 @@ public class BooleanLiteralComparisonRule extends AbstractRule implements Projec
         long comparisons = 0;
         long complements = 0;
         for (SourceFile sourceFile : sourceFiles) {
-            comparisons += sourceFile.unit().findAll(BinaryExpr.class).stream()
+            comparisons += sourceFile.findAll(BinaryExpr.class).stream()
                     .filter(this::isComparisonWithFalse)
                     .count();
-            complements += sourceFile.unit().findAll(UnaryExpr.class).stream()
+            complements += sourceFile.findAll(UnaryExpr.class).stream()
                     .filter(unary -> unary.getOperator() == UnaryExpr.Operator.LOGICAL_COMPLEMENT)
                     .count();
         }

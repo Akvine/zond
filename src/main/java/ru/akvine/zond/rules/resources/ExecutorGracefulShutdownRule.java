@@ -87,7 +87,7 @@ public class ExecutorGracefulShutdownRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
         // Ожиданий в одном методе обычно два - до и после shutdownNow(): находка о них одна
         Set<String> reported = new HashSet<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             String name = call.getNameAsString();
             boolean tracked = SHUTDOWN.equals(name) || SHUTDOWN_NOW.equals(name) || AWAIT_TERMINATION.equals(name);
             if (!tracked || call.getScope().isEmpty() || !isExecutor(call.getScope().get())) {

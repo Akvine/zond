@@ -1,6 +1,5 @@
 package ru.akvine.zond.rules.logical;
 
-import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
@@ -71,14 +70,14 @@ public class MoneyInFloatingPointRule extends AbstractRule implements ProjectRul
 
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
-        long moneyFiles = sourceFiles.stream().filter(sourceFile -> hasMoneyContext(sourceFile.unit(), false)).count();
+        long moneyFiles = sourceFiles.stream().filter(sourceFile -> hasMoneyContext(sourceFile, false)).count();
         boolean moneyProject = moneyFiles >= Math.max(1, sourceFiles.size() * MONEY_PROJECT_SHARE);
         return sourceFiles.stream().flatMap(sourceFile -> check(sourceFile, moneyProject).stream()).toList();
     }
 
     private List<Violation> check(SourceFile sourceFile, boolean moneyProject) {
         List<Violation> violations = new ArrayList<>();
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             if (isApiDocumentation(field)) {
                 continue;
             }
@@ -88,7 +87,7 @@ public class MoneyInFloatingPointRule extends AbstractRule implements ProjectRul
                 if (FLOATING_TYPES.contains(type) && MONEY_NAME.matcher(name).matches()
                         && !COEFFICIENT.matcher(name).matches() && !isQuantity(variable, field)
                         && (!AMBIGUOUS_NAME.matcher(name).matches() || moneyProject
-                        || hasMoneyContext(sourceFile.unit(), true))) {
+                        || hasMoneyContext(sourceFile, true))) {
                     violations.add(violation(sourceFile, variable,
                             "Денежное поле '" + variable.getNameAsString() + "' типа " + type + ": двоичная дробь"
                                     + " не может точно представить 0.1, при сложении и округлении копейки"
@@ -101,8 +100,8 @@ public class MoneyInFloatingPointRule extends AbstractRule implements ProjectRul
 
     // В файле есть что-то еще про деньги: цена, валюта, платеж, BigDecimal. По проекту BigDecimal не считаем:
     // им пользуются и для обычной точной арифметики
-    private boolean hasMoneyContext(CompilationUnit unit, boolean withBigDecimal) {
-        return unit.findAll(SimpleName.class).stream()
+    private boolean hasMoneyContext(SourceFile sourceFile, boolean withBigDecimal) {
+        return sourceFile.findAll(SimpleName.class).stream()
                 .map(SimpleName::getIdentifier)
                 .anyMatch(name -> MONEY_TYPES.contains(name) && (withBigDecimal || !BIG_DECIMAL.equals(name))
                         || Arrays.stream(WORD_BOUNDARY.split(name))

@@ -43,7 +43,7 @@ public class KafkaSendResultIgnoredRule extends AbstractRule implements ProjectR
             return violations;
         }
         for (SourceFile sourceFile : sourceFiles) {
-            for (ExpressionStmt statement : sourceFile.unit().findAll(ExpressionStmt.class)) {
+            for (ExpressionStmt statement : sourceFile.findAll(ExpressionStmt.class)) {
                 Expression expression = Nodes.unwrap(statement.getExpression());
                 if (!expression.isMethodCallExpr()) {
                     continue;

@@ -69,7 +69,7 @@ public class StrictIsolationWithoutRetryRule extends AbstractRule implements Pro
             // Аннотация на классе действует на все его открытые методы: о ней сообщаем один раз
             Map<AnnotationExpr, List<MethodDeclaration>> unprotected = new IdentityHashMap<>();
             List<AnnotationExpr> order = new ArrayList<>();
-            for (MethodDeclaration method : sourceFile.unit().findAll(MethodDeclaration.class)) {
+            for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
                 Optional<AnnotationExpr> transaction = strictTransaction(method);
                 if (transaction.isEmpty() || TestClasses.isInside(method)
                         || !handling.escapesFrom(method, FailureHandling.LOCK_FAILURES, value(MAX_CALL_DEPTH))) {

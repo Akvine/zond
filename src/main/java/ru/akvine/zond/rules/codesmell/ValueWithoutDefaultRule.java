@@ -38,7 +38,7 @@ public class ValueWithoutDefaultRule extends AbstractContextRule {
     public List<Violation> checkContext(ScanContext context) {
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : context.sources()) {
-            for (AnnotationExpr annotation : sourceFile.unit().findAll(AnnotationExpr.class)) {
+            for (AnnotationExpr annotation : sourceFile.findAll(AnnotationExpr.class)) {
                 if (!ValuePlaceholders.isValue(annotation)) {
                     continue;
                 }

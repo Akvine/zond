@@ -36,7 +36,7 @@ public class DeadCodeRule extends AbstractRule {
         List<Violation> violations = new ArrayList<>();
 
         // Оператор после return / throw / break / continue в том же блоке
-        for (BlockStmt block : sourceFile.unit().findAll(BlockStmt.class)) {
+        for (BlockStmt block : sourceFile.findAll(BlockStmt.class)) {
             List<Statement> statements = block.getStatements();
             for (int index = 0; index < statements.size() - 1; index++) {
                 if (isJump(statements.get(index))) {
@@ -49,12 +49,12 @@ public class DeadCodeRule extends AbstractRule {
         }
 
         // if (false) { ... }, if (true) { ... } else { ... }, while (false) { ... }
-        for (IfStmt ifStmt : sourceFile.unit().findAll(IfStmt.class)) {
+        for (IfStmt ifStmt : sourceFile.findAll(IfStmt.class)) {
             if (isConstant(ifStmt.getCondition())) {
                 violations.add(reportConstantCondition(sourceFile, ifStmt, ifStmt.getCondition()));
             }
         }
-        for (WhileStmt loop : sourceFile.unit().findAll(WhileStmt.class)) {
+        for (WhileStmt loop : sourceFile.findAll(WhileStmt.class)) {
             // while (true) - обычный бесконечный цикл, его не трогаем
             if (isConstant(loop.getCondition()) && !loop.getCondition().asBooleanLiteralExpr().getValue()) {
                 violations.add(reportConstantCondition(sourceFile, loop, loop.getCondition()));

@@ -42,7 +42,7 @@ public class FilterAfterSortRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr filter : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr filter : sourceFile.findAll(MethodCallExpr.class)) {
             if (FILTER.equals(filter.getNameAsString()) && filter.getArguments().size() == 1
                     && isRightAfterSort(filter) && !TestClasses.isInside(filter)
                     && !ORDER_DEPENDENT.matcher(filter.getArgument(0).toString()).find()) {

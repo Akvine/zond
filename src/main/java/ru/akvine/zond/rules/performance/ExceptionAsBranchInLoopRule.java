@@ -62,7 +62,7 @@ public class ExceptionAsBranchInLoopRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (TryStmt attempt : sourceFile.unit().findAll(TryStmt.class)) {
+        for (TryStmt attempt : sourceFile.findAll(TryStmt.class)) {
             if (!isTriedForEveryElement(attempt) || TestClasses.isInside(attempt)) {
                 continue;
             }

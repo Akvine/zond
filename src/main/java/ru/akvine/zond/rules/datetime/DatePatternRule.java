@@ -42,7 +42,7 @@ public class DatePatternRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (StringLiteralExpr literal : sourceFile.unit().findAll(StringLiteralExpr.class)) {
+        for (StringLiteralExpr literal : sourceFile.findAll(StringLiteralExpr.class)) {
             if (!isDatePattern(literal)) {
                 continue;
             }

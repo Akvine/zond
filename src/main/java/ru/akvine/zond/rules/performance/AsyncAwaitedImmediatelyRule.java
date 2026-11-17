@@ -53,7 +53,7 @@ public class AsyncAwaitedImmediatelyRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr wait : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr wait : sourceFile.findAll(MethodCallExpr.class)) {
             if (!WAITS.contains(wait.getNameAsString()) || !wait.getArguments().isEmpty()
                     || wait.getScope().isEmpty() || Loops.isRepeated(wait) || TestClasses.isInside(wait)) {
                 continue;

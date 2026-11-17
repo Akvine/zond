@@ -37,7 +37,7 @@ public class LoggingInLoopRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // debug и trace не трогаем: в рабочей среде они обычно выключены
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(Loggers::isLogCall)
                 .filter(Loggers::isEnabledLevel)
                 // Итерации цикла повторных попыток - это попытки, а не элементы данных: их считаные единицы

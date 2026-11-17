@@ -46,7 +46,7 @@ public class UnbufferedFileStreamRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (ObjectCreationExpr wrapper : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr wrapper : sourceFile.findAll(ObjectCreationExpr.class)) {
             String type = wrapper.getType().getNameAsString();
             if (!SMALL_PORTIONS.matcher(type).matches() || wrapper.getArguments().isEmpty()
                     || hasOwnBufferSize(wrapper) || TestClasses.isInside(wrapper)) {

@@ -54,7 +54,7 @@ public class DateTimeFormatterLocaleRule implements Rule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (!MethodCalls.isCallOn(call, DATE_TIME_FORMATTER, OF_PATTERN)
                     || call.getArguments().isEmpty()
                     || !call.getArgument(0).isStringLiteralExpr()) {

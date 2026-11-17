@@ -69,7 +69,7 @@ public class NonAssociativeReduceRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr reduce : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr reduce : sourceFile.findAll(MethodCallExpr.class)) {
             int arguments = reduce.getArguments().size();
             if (!REDUCE.equals(reduce.getNameAsString()) || arguments == 0 || arguments > 3 || !isOnStream(reduce)) {
                 continue;

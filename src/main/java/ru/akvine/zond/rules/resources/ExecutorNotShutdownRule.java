@@ -39,7 +39,7 @@ public class ExecutorNotShutdownRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (VariableDeclarator variable : sourceFile.unit().findAll(VariableDeclarator.class)) {
+        for (VariableDeclarator variable : sourceFile.findAll(VariableDeclarator.class)) {
             if (variable.getInitializer().filter(ExecutorCreations::creates).isEmpty()) {
                 continue;
             }
@@ -72,7 +72,7 @@ public class ExecutorNotShutdownRule extends AbstractRule {
 
     // Поле: достаточно, чтобы пул завершали хоть где-то в файле, например в @PreDestroy
     private boolean isShutdownAnywhere(SourceFile sourceFile, String executor) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> SHUTDOWN_METHODS.contains(call.getNameAsString()))
                 .anyMatch(call -> call.getScope()
                         .filter(scope -> MethodCalls.receiverName(scope).equals(executor))

@@ -27,7 +27,7 @@ public class UnsafeDeserializationRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(ObjectCreationExpr.class).stream()
+        return sourceFile.findAll(ObjectCreationExpr.class).stream()
                 .filter(creation -> OBJECT_INPUT_STREAM.equals(creation.getType().getNameAsString()))
                 .map(creation -> violation(sourceFile, creation,
                         "Десериализация через ObjectInputStream: если данные приходят извне, подобранный поток"

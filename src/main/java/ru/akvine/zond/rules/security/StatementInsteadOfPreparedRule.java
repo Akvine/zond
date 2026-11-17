@@ -38,7 +38,7 @@ public class StatementInsteadOfPreparedRule extends AbstractTaintRule {
     @Override
     protected List<Violation> check(SourceFile sourceFile, Taint taint) {
         List<Violation> violations = new ArrayList<>();
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             boolean isExecution = EXECUTE_METHODS.contains(call.getNameAsString()) && !call.getArguments().isEmpty()
                     && call.getScope().filter(this::isStatement).isPresent();
             if (!isExecution || StringLiterals.textOf(Nodes.unwrap(call.getArgument(0))).isPresent()) {

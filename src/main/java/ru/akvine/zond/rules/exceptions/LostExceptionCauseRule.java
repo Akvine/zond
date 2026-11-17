@@ -66,7 +66,7 @@ public class LostExceptionCauseRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (CatchClause clause : sourceFile.unit().findAll(CatchClause.class)) {
+        for (CatchClause clause : sourceFile.findAll(CatchClause.class)) {
             String caught = clause.getParameter().getNameAsString();
             // Исключение записано в лог целиком: стек и причина сохранены, хоть и не едут дальше
             // Неверный ввод (не число, не дата): причина - сама строка, а место видно по стеку нового исключения

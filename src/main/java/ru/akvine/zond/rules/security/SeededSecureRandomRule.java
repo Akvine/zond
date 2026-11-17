@@ -38,7 +38,7 @@ public class SeededSecureRandomRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
 
-        for (MethodCallExpr call : sourceFile.unit().findAll(MethodCallExpr.class)) {
+        for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             if (SET_SEED.equals(call.getNameAsString())
                     && call.getScope().filter(this::isSecureRandom).isPresent()) {
                 violations.add(report(sourceFile, call, call.getScope().get() + ".setSeed(...)"));
@@ -46,7 +46,7 @@ public class SeededSecureRandomRule extends AbstractRule {
         }
 
         // new SecureRandom(seed)
-        for (ObjectCreationExpr creation : sourceFile.unit().findAll(ObjectCreationExpr.class)) {
+        for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (SECURE_RANDOM.equals(creation.getType().getNameAsString()) && !creation.getArguments().isEmpty()) {
                 violations.add(report(sourceFile, creation, "new SecureRandom(seed)"));
             }

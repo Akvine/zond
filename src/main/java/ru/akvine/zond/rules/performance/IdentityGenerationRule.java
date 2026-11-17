@@ -28,7 +28,7 @@ public class IdentityGenerationRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(AnnotationExpr.class).stream()
+        return sourceFile.findAll(AnnotationExpr.class).stream()
                 .filter(annotation -> GENERATED_VALUE.equals(annotation.getName().getIdentifier()))
                 .filter(annotation -> annotation.toString().contains(IDENTITY))
                 .map(annotation -> violation(sourceFile, annotation,

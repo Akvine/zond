@@ -36,7 +36,7 @@ public class ArrayMethodsRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> REPLACEMENTS.containsKey(call.getNameAsString()))
                 .filter(call -> call.getScope().filter(this::isArray).isPresent())
                 .map(call -> violation(sourceFile, call,

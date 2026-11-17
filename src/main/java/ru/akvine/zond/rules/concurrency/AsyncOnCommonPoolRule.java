@@ -32,7 +32,7 @@ public class AsyncOnCommonPoolRule extends AbstractRule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         // Второй аргумент - это как раз пул, в котором выполнится задача
-        return sourceFile.unit().findAll(MethodCallExpr.class).stream()
+        return sourceFile.findAll(MethodCallExpr.class).stream()
                 .filter(call -> ASYNC_METHODS.contains(call.getNameAsString()) && call.getArguments().size() == 1)
                 .filter(call -> MethodCalls.isCallOn(call, COMPLETABLE_FUTURE, call.getNameAsString()))
                 .filter(call -> !TestClasses.isInside(call))

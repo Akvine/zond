@@ -54,7 +54,7 @@ public class FieldInjectionRule implements Rule {
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
-        for (FieldDeclaration field : sourceFile.unit().findAll(FieldDeclaration.class)) {
+        for (FieldDeclaration field : sourceFile.findAll(FieldDeclaration.class)) {
             // Статические не учитываем: в них внедрение не работает в принципе, это ловит отдельное правило.
             // В тестах внедрение через поле - обычная практика: экземпляр создает тестовый фреймворк, а не Spring
             if (field.isStatic() || TestClasses.isInside(field) || isCreatedByFramework(field)) {
