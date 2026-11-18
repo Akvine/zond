@@ -133,14 +133,18 @@ public class Messaging {
 
     // Объявление вызванного метода проекта; вызов своего метода без объекта находится и без решателя типов
     private Optional<MethodDeclaration> declarationOf(MethodCallExpr call) {
-        return Types.declaration(call).or(() -> call.getScope().filter(scope -> !scope.isThisExpr()).isPresent()
-                ? Optional.empty()
-                : ownerOf(call).flatMap(owner -> {
-                    List<MethodDeclaration> candidates = owner.getMethodsByName(call.getNameAsString()).stream()
-                            .filter(method -> method.getParameters().size() == call.getArguments().size())
-                            .toList();
-                    return candidates.size() == 1 ? Optional.of(candidates.get(0)) : Optional.empty();
-                }));
+        Optional<MethodDeclaration> solved = Types.declaration(call);
+        if (solved.isPresent() || call.getScope().filter(scope -> !scope.isThisExpr()).isPresent()) {
+            return solved;
+        }
+        Optional<ClassOrInterfaceDeclaration> owner = ownerOf(call);
+        if (owner.isEmpty()) {
+            return Optional.empty();
+        }
+        List<MethodDeclaration> candidates = owner.get().getMethodsByName(call.getNameAsString()).stream()
+                .filter(method -> method.getParameters().size() == call.getArguments().size())
+                .toList();
+        return candidates.size() == 1 ? Optional.of(candidates.getFirst()) : Optional.empty();
     }
 
     // Последняя команда метода - throw, и выйти из него через return нельзя
