@@ -30,7 +30,6 @@ import com.github.javaparser.ast.stmt.Statement;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.models.SourceFile;
 
-import java.lang.ref.WeakReference;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -150,6 +149,11 @@ public final class Taint {
     // Приведение к числу, UUID или enum: если значение не подошло, будет исключение, а не инъекция
     private static final Set<String> CONVERTERS = TaintLibrary.names("converters");
     private static final String VALUE_OF = "valueOf";
+    // FilenameUtils.getExtension(name), StringUtils.getFilenameExtension(name), FileUtil.extName(name)
+    private static final Set<String> EXTENSION_METHODS = TaintLibrary.names("extension-methods");
+    private static final String SUBSTRING = "substring";
+    private static final String LAST_INDEX_OF = "lastIndexOf";
+    private static final Set<String> DOT_LITERALS = Set.of("\".\"", "'.'");
 
     // Проверки значения в условии: по списку допустимых, по шаблону, сравнением с константой
     private static final Set<String> VALIDATION_METHODS = TaintLibrary.names("validation-methods");
@@ -168,8 +172,7 @@ public final class Taint {
             "^(validate|check|assert|require|ensure|verify).*", Pattern.CASE_INSENSITIVE);
     private static final Set<String> CONSTRUCTOR_ANNOTATIONS = Set.of("AllArgsConstructor", "Data", "Value");
 
-    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
-    private static Taint cached;
+    private static final PerSources<Taint> CACHE = new PerSources<>();
 
     /**
      * Куда попадает значение: от этого зависит, какое экранирование его обезвреживает. В сессию (SESSION)
@@ -202,9 +205,11 @@ public final class Taint {
     /**
      * Найденный источник
      *
-     * @param text как источник записан в коде: имя параметра либо вызов
+     * @param text     как источник записан в коде: имя параметра либо вызов
+     * @param callable метод, в котором значение пришло извне: по нему видно, проверяют ли значение там же,
+     *                 до передачи дальше
      */
-    public record Source(String text, Kind kind) {
+    public record Source(String text, Kind kind, Node callable) {
 
         public Confidence confidence() {
             return kind.confidence;
@@ -336,12 +341,8 @@ public final class Taint {
         });
     }
 
-    public static synchronized Taint of(List<SourceFile> sources) {
-        if (cachedSources.get() != sources) {
-            cached = new Taint(sources);
-            cachedSources = new WeakReference<>(sources);
-        }
-        return cached;
+    public static Taint of(List<SourceFile> sources) {
+        return CACHE.get(sources, Taint::new);
     }
 
     /**
@@ -358,7 +359,7 @@ public final class Taint {
                     ? declaration.getNameAsString()
                     : "";
             String text = sameMethod || method.isEmpty() ? result.text() : result.text() + " из метода " + method;
-            return new Source(text, result.kind());
+            return new Source(text, result.kind(), result.callable());
         });
         source.ifPresent(result -> {
             Confidence best = found.get();
@@ -1112,7 +1113,7 @@ public final class Taint {
         if (isSanitizer(method) && !protects(method) || reversible) {
             return firstSource(call.getArguments(), depth, visited);
         }
-        if (isSanitizer(method) || isConversion(call)) {
+        if (isSanitizer(method) || isConversion(call) || sink.get() == Sink.PATH && isExtensionOnly(call)) {
             return Optional.empty();
         }
         Optional<Optional<Origin>> keyed = sourceOfKeyedRead(call, depth, visited);
@@ -1329,6 +1330,21 @@ public final class Taint {
         }
         return VALUE_OF.equals(call.getNameAsString())
                 && call.getScope().filter(scope -> !STRING.equals(scope.toString())).isPresent();
+    }
+
+    /**
+     * От присланного имени файла взято только расширение: {@code name.substring(name.lastIndexOf("."))},
+     * {@code FilenameUtils.getExtension(name)}. После последней точки второй точки быть не может, а значит,
+     * и перехода на каталог выше ("..") - тоже
+     */
+    private boolean isExtensionOnly(MethodCallExpr call) {
+        if (EXTENSION_METHODS.contains(call.getNameAsString())) {
+            return true;
+        }
+        return SUBSTRING.equals(call.getNameAsString()) && call.getArguments().size() == 1
+                && call.getArgument(0).findAll(MethodCallExpr.class).stream()
+                .anyMatch(index -> LAST_INDEX_OF.equals(index.getNameAsString()) && index.getArguments().size() == 1
+                        && DOT_LITERALS.contains(index.getArgument(0).toString()));
     }
 
     private Optional<Origin> sourceOfProperty(

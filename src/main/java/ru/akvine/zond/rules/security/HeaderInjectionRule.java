@@ -28,6 +28,14 @@ public class HeaderInjectionRule extends AbstractRule {
 
     // Константа - не пользовательский ввод
     private static final Pattern CONSTANT_NAME = Pattern.compile("^[A-Z][A-Z0-9_]*$");
+    // Authorization, Proxy-Authorization, X-Api-Key, X-Auth-Token, Cookie: ими приложение представляется другому
+    // сервису
+    private static final Pattern CREDENTIAL_HEADER = Pattern.compile(
+            "(?i)authorization|api[-_]?key|auth[-_]?token|access[-_]?token|x-auth|secret|signature|cookie");
+    private static final Pattern SET_COOKIE = Pattern.compile("(?i)set[-_]?cookie");
+    private static final Pattern OUTGOING_RECEIVER = Pattern.compile(
+            "(?i)request|client|connection|unirest|http(get|post|put|patch|delete)|\\.ur[il]\\(");
+    private static final Pattern RESPONSE_RECEIVER = Pattern.compile("(?i)response");
 
     private static final int HEADER_ARGUMENTS = 2;
 
@@ -45,7 +53,8 @@ public class HeaderInjectionRule extends AbstractRule {
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
         for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
-            if (!HEADER_METHODS.contains(call.getNameAsString()) || call.getArguments().size() < HEADER_ARGUMENTS) {
+            if (!HEADER_METHODS.contains(call.getNameAsString()) || call.getArguments().size() < HEADER_ARGUMENTS
+                    || isOutgoingRequest(call)) {
                 continue;
             }
 
@@ -65,6 +74,20 @@ public class HeaderInjectionRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.SECURITY;
+    }
+
+    /**
+     * Заголовок исходящего запроса: {@code request.header("Authorization", "Bearer " + token)},
+     * {@code new Request.Builder().url(url).addHeader("X-Api-Key", prefix + key)}. Значение в нем задает само
+     * приложение - ключ или токен из настроек, - а не клиент, и ответ приложения оно не затрагивает
+     */
+    private boolean isOutgoingRequest(MethodCallExpr call) {
+        String name = Nodes.unwrap(call.getArgument(0)).toString();
+        if (CREDENTIAL_HEADER.matcher(name).find() && !SET_COOKIE.matcher(name).find()) {
+            return true;
+        }
+        String receiver = call.getScope().map(Expression::toString).orElse("");
+        return OUTGOING_RECEIVER.matcher(receiver).find() && !RESPONSE_RECEIVER.matcher(receiver).find();
     }
 
     /**

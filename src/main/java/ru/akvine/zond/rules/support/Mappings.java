@@ -1,10 +1,12 @@
 package ru.akvine.zond.rules.support;
 
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MemberValuePair;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import lombok.experimental.UtilityClass;
+import ru.akvine.zond.loaders.ProjectDeclarations;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -30,10 +32,38 @@ public class Mappings {
             "DeleteMapping", "DELETE",
             "PatchMapping", "PATCH");
 
+    /**
+     * @return аннотация адреса на узле: @GetMapping и подобные либо составная аннотация проекта, которая несет
+     * одну из них ({@code @AnonymousGetMapping("/code")}, объявленная с {@code @RequestMapping(method = GET)})
+     */
     public Optional<AnnotationExpr> find(NodeWithAnnotations<?> node) {
-        return node.getAnnotations().stream()
-                .filter(annotation -> REQUEST_MAPPING.equals(name(annotation)) || HTTP_METHODS.containsKey(name(annotation)))
-                .findFirst();
+        for (AnnotationExpr annotation : node.getAnnotations()) {
+            if (isMapping(annotation)) {
+                return Optional.of(annotation);
+            }
+        }
+        for (AnnotationExpr annotation : node.getAnnotations()) {
+            if (carried(annotation).isPresent()) {
+                return Optional.of(annotation);
+            }
+        }
+        return Optional.empty();
+    }
+
+    private boolean isMapping(AnnotationExpr annotation) {
+        return REQUEST_MAPPING.equals(name(annotation)) || HTTP_METHODS.containsKey(name(annotation));
+    }
+
+    // Аннотация адреса, которую несет составная аннотация проекта: в ней записан HTTP-метод
+    private Optional<AnnotationExpr> carried(AnnotationExpr annotation) {
+        if (isMapping(annotation)) {
+            return Optional.empty();
+        }
+        ProjectDeclarations declarations = ProjectDeclarations.of(annotation);
+        if (!declarations.declaresAnnotation(name(annotation))) {
+            return Optional.empty();
+        }
+        return declarations.metaAnnotations(annotation).stream().filter(Mappings::isMapping).findFirst();
     }
 
     public boolean isRequestMapping(AnnotationExpr annotation) {
@@ -52,6 +82,7 @@ public class Mappings {
         return member(annotation, Set.of(METHOD))
                 .map(Expression::toString)
                 .map(text -> text.substring(text.lastIndexOf('.') + 1))
+                .or(() -> carried(annotation).map(Mappings::httpMethod))
                 .orElse("");
     }
 
@@ -60,9 +91,7 @@ public class Mappings {
      */
     public List<String> paths(AnnotationExpr annotation) {
         List<String> paths = new ArrayList<>();
-        Optional<Expression> value = annotation.isSingleMemberAnnotationExpr()
-                ? Optional.of(annotation.asSingleMemberAnnotationExpr().getMemberValue())
-                : member(annotation, Set.of(VALUE, PATH));
+        Optional<Expression> value = pathValue(annotation);
         value.ifPresent(expression -> {
             if (expression.isArrayInitializerExpr()) {
                 expression.asArrayInitializerExpr().getValues()
@@ -83,9 +112,7 @@ public class Mappings {
      * дает один и тот же адрес, а разные константы не сливаются в пустой адрес "/"
      */
     public List<String> pathKeys(AnnotationExpr annotation) {
-        Optional<Expression> value = annotation.isSingleMemberAnnotationExpr()
-                ? Optional.of(annotation.asSingleMemberAnnotationExpr().getMemberValue())
-                : member(annotation, Set.of(VALUE, PATH));
+        Optional<Expression> value = pathValue(annotation);
         if (value.isEmpty()) {
             return List.of("");
         }
@@ -93,16 +120,41 @@ public class Mappings {
                 ? value.get().asArrayInitializerExpr().getValues()
                 : List.of(value.get());
         List<String> keys = items.stream()
-                .map(item -> StringLiterals.textOf(item).orElse("<" + item + ">"))
+                .map(Mappings::pathKey)
                 .toList();
         return keys.isEmpty() ? List.of("") : keys;
     }
 
+    /**
+     * Адрес строкой либо, если он задан константой, ее значение: static final String PATH = "/auth/ott" в том же
+     * файле вычисляется. Константа, значения которой не видно, остается именем, и к имени без класса (PATH)
+     * добавляется класс, где оно записано: у двух классов свои PATH - это два разных адреса
+     */
+    private String pathKey(Expression item) {
+        Optional<String> text = StringLiterals.textOf(item)
+                .or(() -> ConstantValues.evaluate(item).filter(String.class::isInstance).map(String.class::cast));
+        if (text.isPresent()) {
+            return text.get();
+        }
+        String owner = "";
+        if (item.isNameExpr()) {
+            Optional<ClassOrInterfaceDeclaration> type = item.findAncestor(ClassOrInterfaceDeclaration.class);
+            owner = type.isPresent() ? type.get().getNameAsString() + "." : "";
+        }
+        return "<" + owner + item + ">";
+    }
+
     public boolean hasUnknownPath(AnnotationExpr annotation) {
-        Optional<Expression> value = annotation.isSingleMemberAnnotationExpr()
+        Optional<Expression> value = pathValue(annotation);
+        return value.isPresent() && paths(annotation).equals(List.of(""));
+    }
+
+    // Адрес записан на самой аннотации; у составной без адреса он может быть задан в ее объявлении
+    private Optional<Expression> pathValue(AnnotationExpr annotation) {
+        Optional<Expression> own = annotation.isSingleMemberAnnotationExpr()
                 ? Optional.of(annotation.asSingleMemberAnnotationExpr().getMemberValue())
                 : member(annotation, Set.of(VALUE, PATH));
-        return value.isPresent() && paths(annotation).equals(List.of(""));
+        return own.isPresent() ? own : carried(annotation).flatMap(Mappings::pathValue);
     }
 
     public boolean hasMember(AnnotationExpr annotation, Set<String> names) {

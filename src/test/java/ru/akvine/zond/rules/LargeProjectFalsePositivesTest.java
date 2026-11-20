@@ -570,7 +570,7 @@ class LargeProjectFalsePositivesTest {
                         try {
                             cache.get(id);
                         } catch (Exception e) {
-                            log.warn("Failed to decode sessions", e);
+                            log.warn("Failed to decode sessions: {}", e.getMessage());
                         }
                     }
                 }

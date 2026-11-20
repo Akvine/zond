@@ -32,7 +32,12 @@ public class DuplicateEndpointRule extends AbstractRule implements ProjectRule {
     private static final Set<String> CONTROLLER_ANNOTATIONS = Set.of("Controller", "RestController");
 
     // Обработчики с одним адресом могут различаться по этим условиям - сравнивать их только по адресу нельзя
-    private static final Set<String> NARROWING_MEMBERS = Set.of("params", "headers", "consumes", "produces");
+    private static final Set<String> NARROWING_MEMBERS = Set.of("params", "headers", "consumes", "produces", "version");
+    // Контроллер включается по условию: два таких с одним адресом одновременно могут и не работать
+    private static final Set<String> CONDITIONAL_ANNOTATIONS = Set.of(
+            "Profile", "Conditional", "ConditionalOnProperty", "ConditionalOnBean", "ConditionalOnMissingBean",
+            "ConditionalOnClass", "ConditionalOnMissingClass", "ConditionalOnExpression",
+            "ConditionalOnBooleanProperty", "ConditionalOnWebApplication", "ConditionalOnCloudPlatform");
     private static final String SLASH = "/";
 
     @Override
@@ -53,7 +58,11 @@ public class DuplicateEndpointRule extends AbstractRule implements ProjectRule {
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
-                if (!Annotations.hasAny(type, CONTROLLER_ANNOTATIONS)) {
+                boolean narrowedByType = Mappings.find(type)
+                        .filter(mapping -> Mappings.hasMember(mapping, NARROWING_MEMBERS))
+                        .isPresent();
+                if (!Annotations.hasAny(type, CONTROLLER_ANNOTATIONS)
+                        || Annotations.hasAny(type, CONDITIONAL_ANNOTATIONS) || narrowedByType) {
                     continue;
                 }
                 List<String> prefixes = Mappings.find(type).map(Mappings::pathKeys).orElse(List.of(""));

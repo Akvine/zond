@@ -19,6 +19,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.ElementTypes;
 import ru.akvine.zond.rules.support.Guards;
 import ru.akvine.zond.rules.support.LocalTypes;
@@ -33,6 +34,9 @@ import java.util.Set;
 public class ListGetFirstWithoutCheckRule extends AbstractRule {
     private static final String GET = "get";
     private static final String FIRST_INDEX = "0";
+    private static final Set<String> CAUGHT = Set.of(
+            "IndexOutOfBoundsException", "ArrayIndexOutOfBoundsException", "RuntimeException", "Exception",
+            "Throwable");
     private static final Set<String> LIST_TYPES = Set.of("List", "ArrayList", "LinkedList");
 
     // Методы, которые заведомо возвращают список: stream.toList().get(0), repository.findAll().get(0)
@@ -68,6 +72,8 @@ public class ListGetFirstWithoutCheckRule extends AbstractRule {
                 .filter(call -> call.getScope().filter(scope -> isUncheckedList(scope, call)).isPresent())
                 // В тестах размер списка проверяют утверждением (hasSize, assertEquals), а не условием
                 .filter(call -> !TestClasses.isInside(call))
+                // try { value = list.get(0); } catch (IndexOutOfBoundsException e) { ... }: пустой список уже учтен
+                .filter(call -> !CodeContexts.isCaught(call, CAUGHT))
                 .map(call -> violation(sourceFile, call,
                         "'" + call + "' без проверки на пустоту: на пустом списке будет IndexOutOfBoundsException;"
                                 + " проверьте isEmpty() либо используйте stream().findFirst()"))

@@ -1,5 +1,6 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -55,6 +56,11 @@ public class AssertionOnlyInCatchRule extends AbstractRule {
                 if (!tryStatement.getTryBlock().findAll(ThrowStmt.class).isEmpty()) {
                     continue;
                 }
+                // try { run(); assertThat(state()).isEqualTo(DONE); } catch (...) { assertThat(state())... }:
+                // тест описывает оба исхода, и без исключения проверка тоже выполнится
+                if (hasAssertion(tryStatement.getTryBlock())) {
+                    continue;
+                }
                 for (CatchClause clause : tryStatement.getCatchClauses()) {
                     if (hasAssertion(clause)) {
                         violations.add(violation(sourceFile, clause,
@@ -78,8 +84,8 @@ public class AssertionOnlyInCatchRule extends AbstractRule {
         return ErrorType.LOGICAL;
     }
 
-    private boolean hasAssertion(CatchClause clause) {
-        return clause.findAll(MethodCallExpr.class).stream()
+    private boolean hasAssertion(Node block) {
+        return block.findAll(MethodCallExpr.class).stream()
                 .anyMatch(call -> call.getNameAsString().startsWith(ASSERT_PREFIX) && !alwaysFails(call));
     }
 

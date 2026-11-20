@@ -114,6 +114,12 @@ public class UnusedConfigPropertyRule extends AbstractContextRule {
         return violations;
     }
 
+    // Свойство из общего файла настроек лишнее, только если его не читает ни одна часть проекта
+    @Override
+    public boolean judgesByAbsenceInCode() {
+        return true;
+    }
+
     @Override
     public ErrorLevel errorLevel() {
         return ErrorLevel.INFO;

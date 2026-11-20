@@ -113,8 +113,11 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
 
     private Optional<Problem> describe(MethodCallExpr call, CallGraph graph) {
         if (Repositories.isRepositoryCall(call)) {
+            // Репозиторий, опознанный только по имени объекта (параметр лямбды repository без типа), - не улика
+            // уровня "подтверждено"
             return Optional.of(new Problem(
-                    "Обращение к репозиторию '" + describeCall(call) + "' в цикле", Confidence.CONFIRMED));
+                    "Обращение к репозиторию '" + describeCall(call) + "' в цикле",
+                    Repositories.isRepositoryByType(call) ? Confidence.CONFIRMED : Confidence.PROBABLE));
         }
 
         // enrich(order) в цикле, а запрос к БД - внутри enrich или еще глубже

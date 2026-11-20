@@ -1,6 +1,5 @@
 package ru.akvine.zond.rules.security;
 
-import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -12,10 +11,9 @@ import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.JpaEntities;
-import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.ProjectClasses;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -35,23 +33,19 @@ public class EntityAsRequestBodyRule extends AbstractRule implements ProjectRule
 
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
-        Set<String> entities = new HashSet<>();
-        for (SourceFile sourceFile : sourceFiles) {
-            JpaEntities.findEntities(sourceFile).stream()
-                    .map(ClassOrInterfaceDeclaration::getNameAsString)
-                    .forEach(entities::add);
-        }
-
+        ProjectClasses classes = ProjectClasses.of(sourceFiles);
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             for (Parameter parameter : sourceFile.findAll(Parameter.class)) {
-                String type = LocalTypes.typeName(parameter.getType());
-                if (Annotations.hasAny(parameter, BODY_ANNOTATIONS) && entities.contains(type)) {
-                    violations.add(violation(sourceFile, parameter,
-                            "Сущность '" + type + "' принимается в теле запроса: клиент может задать любое ее"
-                                    + " поле, включая id, роль и владельца (mass assignment); принимайте DTO"
-                                    + " только с теми полями, которые разрешено менять"));
+                if (!Annotations.hasAny(parameter, BODY_ANNOTATIONS)) {
+                    continue;
                 }
+                // Сама сущность либо список сущностей: @RequestBody List<Order> orders
+                JpaEntities.entityIn(parameter.getType(), classes).ifPresent(entity -> violations.add(violation(
+                        sourceFile, parameter,
+                        "Сущность '" + entity.getNameAsString() + "' принимается в теле запроса: клиент может задать"
+                                + " любое ее поле, включая id, роль и владельца (mass assignment); принимайте DTO"
+                                + " только с теми полями, которые разрешено менять")));
             }
         }
         return violations;

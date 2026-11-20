@@ -13,6 +13,7 @@ import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Loggers;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.StringLiterals;
 import ru.akvine.zond.rules.support.Types;
 
@@ -31,11 +32,14 @@ public class LogPlaceholderMismatchRule extends AbstractRule {
     // Исключение в конце списка аргументов узнаем по типу, а если тип определить не удалось - по имени
     private static final Set<String> THROWABLE = Set.of("Throwable");
 
+    // err -> log.error("error", err) в subscribe(...), ioEx, rootCause: тип параметра лямбды в коде не записан
     private static final Pattern EXCEPTION_NAME = Pattern.compile(
-            "^(e|ex|exc|t|th|thr|cause|error|failure|throwable)$|.*(exception|error|throwable)$", Pattern.CASE_INSENSITIVE);
+            "^(?i:e|e\\d|ee|ex|exc|exp|err|t|th|thr|cause|error|failure|throwable|problem)$"
+                    + "|.*(?i:exception|error|throwable)$|.*[a-z](Ex|Err|Cause|Failure)$");
     private static final Pattern EXCEPTION_TYPE = Pattern.compile(".*(Exception|Error|Throwable)$");
-    private static final Pattern EXCEPTION_METHOD =
-            Pattern.compile(".*(Exception|Throwable)$|getCause|getRootCause|getMostSpecificCause");
+    // ErrorHandler.findMostSpecificException(e), signal.failure(), Exceptions.unwrap(t), e.getCause()
+    private static final Pattern EXCEPTION_METHOD = Pattern.compile(
+            ".*(Exception|Throwable|Cause|Failure)$|failure|cause|unwrap|getError|getMostSpecificCause");
 
     @Override
     public String code() {
@@ -128,6 +132,14 @@ public class LogPlaceholderMismatchRule extends AbstractRule {
             }
             current = current.getParentNode().orElse(null);
         }
-        return EXCEPTION_NAME.matcher(name).matches();
+        if (EXCEPTION_NAME.matcher(name).matches()) {
+            return true;
+        }
+        // var unwrapped = Exceptions.unwrap(t); log.error("Failed to backup", unwrapped)
+        return LocalTypes.findInitializer(argument)
+                .map(Nodes::unwrap)
+                .filter(initializer -> initializer.isMethodCallExpr()
+                        && EXCEPTION_METHOD.matcher(initializer.asMethodCallExpr().getNameAsString()).matches())
+                .isPresent();
     }
 }

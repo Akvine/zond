@@ -8,7 +8,6 @@ import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import ru.akvine.zond.models.SourceFile;
 
-import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,8 +21,7 @@ import java.util.Optional;
 public final class ProtectedProperties {
     private static final String GETTER_PREFIX = "get";
 
-    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
-    private static ProtectedProperties cached;
+    private static final PerSources<ProtectedProperties> CACHE = new PerSources<>();
 
     private enum Assigned { PROTECTED, PLAIN, UNKNOWN }
 
@@ -38,12 +36,8 @@ public final class ProtectedProperties {
     // "Тип.свойство" либо просто "свойство", если тип получателя неизвестен
     private final Map<String, Usage> usages = new HashMap<>();
 
-    public static synchronized ProtectedProperties of(List<SourceFile> sources) {
-        if (cachedSources.get() != sources) {
-            cached = new ProtectedProperties(sources);
-            cachedSources = new WeakReference<>(sources);
-        }
-        return cached;
+    public static ProtectedProperties of(List<SourceFile> sources) {
+        return CACHE.get(sources, ProtectedProperties::new);
     }
 
     private ProtectedProperties(List<SourceFile> sources) {

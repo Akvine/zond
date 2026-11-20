@@ -7,6 +7,7 @@ import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import lombok.experimental.UtilityClass;
+import ru.akvine.zond.loaders.ProjectDeclarations;
 
 import java.util.List;
 import java.util.Optional;
@@ -15,6 +16,7 @@ import java.util.Set;
 @UtilityClass
 public class TransactionalAnnotations {
     private final static String TRANSACTIONAL = "Transactional";
+    private final static Set<String> NAMES = Set.of(TRANSACTIONAL);
     private final static String READ_ONLY = "readOnly";
 
     // Режимы, при которых метод обязан получить собственное поведение, а не просто присоединиться к транзакции
@@ -24,11 +26,13 @@ public class TransactionalAnnotations {
     // rollbackFor / rollbackForClassName - spring, rollbackOn - jakarta / javax
     private final static Set<String> ROLLBACK_ATTRIBUTES = Set.of("rollbackFor", "rollbackForClassName", "rollbackOn");
 
-    // Сравниваем по простому имени, чтобы поймать и @Transactional, и полное имя (spring / jakarta / javax)
+    /**
+     * Сравниваем по простому имени, чтобы поймать и @Transactional, и полное имя (spring / jakarta / javax).
+     * Составная аннотация проекта ({@code @TransactionalService}, объявленная с {@code @Transactional}) дает ту
+     * же транзакцию: возвращается {@code @Transactional} из ее объявления - по ней читаются параметры
+     */
     public Optional<AnnotationExpr> find(NodeWithAnnotations<?> node) {
-        return node.getAnnotations().stream()
-                .filter(annotation -> TRANSACTIONAL.equals(annotation.getName().getIdentifier()))
-                .findFirst();
+        return Annotations.findEffective(node, NAMES);
     }
 
     public boolean isPresent(NodeWithAnnotations<?> node) {
@@ -37,6 +41,8 @@ public class TransactionalAnnotations {
 
     /**
      * Аннотация на методе полностью заменяет аннотацию на классе; аннотация на классе действует на public-методы.
+     * Spring ищет ее так же, как здесь: на самом методе, на методе интерфейса или предка, который он
+     * переопределяет, на классе, а затем на предках и интерфейсах класса ({@code @Transactional} наследуется)
      *
      * @return аннотация, которая определяет транзакцию метода
      */
@@ -45,12 +51,35 @@ public class TransactionalAnnotations {
         if (onMethod.isPresent()) {
             return onMethod;
         }
-
-        return method.getParentNode()
+        Optional<TypeDeclaration<?>> owner = method.getParentNode()
                 .filter(parent -> parent instanceof TypeDeclaration<?>)
-                .map(parent -> (TypeDeclaration<?>) parent)
-                .filter(type -> method.isPublic() || isInterface(type))
-                .flatMap(TransactionalAnnotations::find);
+                .map(parent -> (TypeDeclaration<?>) parent);
+        if (owner.isEmpty()) {
+            return Optional.empty();
+        }
+        List<TypeDeclaration<?>> ancestors = ProjectDeclarations.of(method).ancestors(owner.get());
+        if (!method.isPrivate() && !method.isStatic()) {
+            Optional<AnnotationExpr> onOverridden = ancestors.stream()
+                    .flatMap(ancestor -> ancestor.getMethodsByName(method.getNameAsString()).stream())
+                    .filter(declared -> declared.getParameters().size() == method.getParameters().size())
+                    .map(TransactionalAnnotations::find)
+                    .flatMap(Optional::stream)
+                    .findFirst();
+            if (onOverridden.isPresent()) {
+                return onOverridden;
+            }
+        }
+        if (!method.isPublic() && !isInterface(owner.get())) {
+            return Optional.empty();
+        }
+        Optional<AnnotationExpr> onType = find(owner.get());
+        if (onType.isPresent()) {
+            return onType;
+        }
+        return ancestors.stream()
+                .map(TransactionalAnnotations::find)
+                .flatMap(Optional::stream)
+                .findFirst();
     }
 
     public boolean isReadOnly(AnnotationExpr annotation) {

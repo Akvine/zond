@@ -2,6 +2,7 @@ package ru.akvine.zond.rules.files;
 
 import com.github.javaparser.ast.Node;
 import ru.akvine.zond.models.ScanContext;
+import ru.akvine.zond.models.TestPaths;
 import ru.akvine.zond.models.TextFile;
 import ru.akvine.zond.rules.support.Modules;
 
@@ -10,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -63,6 +65,8 @@ public final class DbSchema {
     private static final Pattern UNIQUE_KEY = Pattern.compile(
             "\\b(?:unique(?:\\s+(?:key|index))?(?:\\s+(?!key\\b|index\\b)[\\w\"`]+)?|primary\\s+key)\\s*\\(([^)]*)\\)", FLAGS);
     private static final Pattern UNIQUE = Pattern.compile("\\bunique\\b", FLAGS);
+    private static final String NAME_OPENINGS = "`\"[";
+    private static final String NAME_CLOSINGS = "`\"]";
     private static final Pattern IDENTIFIER = Pattern.compile("[\\w\"`]+");
     private static final String COLUMNS_DELIMITER = ",";
 
@@ -158,6 +162,8 @@ public final class DbSchema {
         private final List<Key> keys = new ArrayList<>();
         private boolean primaryKey;
         private boolean opaque;
+        // Состав колонок в других CREATE TABLE с тем же именем: вторая база хранилища либо другая версия схемы
+        private final List<Set<String>> otherDefinitions = new ArrayList<>();
 
         private Table(String name, Path file, int line) {
             this.name = name;
@@ -189,7 +195,37 @@ public final class DbSchema {
          * @return true, если состав таблицы по миграциям установить не удалось: сверять с ней код нельзя
          */
         public boolean isOpaque() {
-            return opaque;
+            return opaque || isAmbiguous();
+        }
+
+        /**
+         * В хранилище две базы с одноименной таблицей (ServerConfig и у базы настроек, и у базы портала) либо
+         * несколько полных снимков схемы разных версий: таблица создается не один раз и с разным составом колонок.
+         * К какому из определений относится код, по миграциям не видно
+         *
+         * @return true, если у таблицы есть другое определение с иным набором колонок
+         */
+        public boolean isAmbiguous() {
+            if (otherDefinitions.isEmpty()) {
+                return false;
+            }
+            Set<String> current = looseNames(columns.values());
+            return otherDefinitions.stream().anyMatch(other -> !other.equals(current));
+        }
+
+        /**
+         * @return true, если строку однозначно определяет уникальный индекс или ограничение на обязательных
+         * колонках: это тот же ключ, только объявленный иначе
+         */
+        public boolean hasUniqueKey() {
+            return keys.stream()
+                    .filter(Key::unique)
+                    .anyMatch(key -> !key.columns().isEmpty() && key.columns().stream().allMatch(this::isNotNull));
+        }
+
+        private boolean isNotNull(String looseName) {
+            return columns.values().stream()
+                    .anyMatch(column -> column.notNull() && loose(column.name()).equals(looseName));
         }
 
         /**
@@ -238,6 +274,10 @@ public final class DbSchema {
 
     private record Pending(Change change, Path file, int line) {
     }
+
+    // Удаленные таблицы: если таблицу с тем же именем создадут снова, прежний состав колонок станет вторым
+    // ее определением
+    private final Map<String, Table> dropped = new HashMap<>();
 
     // Заполнены только у схемы всего проекта: по ним строятся схемы отдельных приложений
     private List<TextFile> allMigrations = List.of();
@@ -291,10 +331,14 @@ public final class DbSchema {
      * @return миграции в порядке применения: V2__x.sql идет раньше V10__y.sql
      */
     public static List<TextFile> migrations(ScanContext context) {
-        return context.textFiles().stream()
+        List<TextFile> found = context.textFiles().stream()
                 .filter(TextFiles::isMigration)
                 .sorted(Comparator.comparing((TextFile file) -> file.path().toString(), DbSchema::compareNaturally))
                 .toList();
+        // src/test/resources/import.sql и schema.sql для тестов описывают базу, которую поднимают тесты: она
+        // бывает урезанной и устаревшей. Когда у проекта есть настоящие миграции, схему задают только они
+        List<TextFile> production = found.stream().filter(file -> !TestPaths.isTest(file.path())).toList();
+        return production.isEmpty() ? found : production;
     }
 
     public boolean isEmpty() {
@@ -576,7 +620,7 @@ public final class DbSchema {
 
     // id bigint not null primary key
     private static Column column(String definition) {
-        int space = definition.indexOf(' ');
+        int space = nameEnd(definition);
         if (space < 0) {
             return null;
         }
@@ -591,6 +635,19 @@ public final class DbSchema {
                 REFERENCES.matcher(rest).find(),
                 null,
                 0);
+    }
+
+    // Где кончается имя колонки: у имени в кавычках - на закрывающей кавычке (`id`INT NOT NULL пишут и без
+    // пробела), у обычного - на первом пробеле. Возвращается место, после которого идет тип
+    private static int nameEnd(String definition) {
+        if (!definition.isEmpty() && NAME_OPENINGS.indexOf(definition.charAt(0)) >= 0) {
+            char closing = NAME_CLOSINGS.charAt(NAME_OPENINGS.indexOf(definition.charAt(0)));
+            int end = definition.indexOf(closing, 1);
+            if (end > 0 && end + 1 < definition.length()) {
+                return Character.isWhitespace(definition.charAt(end + 1)) ? end + 1 : end;
+            }
+        }
+        return definition.indexOf(' ');
     }
 
     private static String typeOf(String definition) {
@@ -614,16 +671,33 @@ public final class DbSchema {
         return new Column(column.name(), column.type(), column.length(), column.notNull(), true, column.file(), column.line());
     }
 
+    private static Set<String> looseNames(Collection<Column> columns) {
+        Set<String> names = new HashSet<>();
+        columns.forEach(column -> names.add(loose(column.name())));
+        return names;
+    }
+
     private void apply(Change change, Path file, int line) {
         Table table = tables.get(change.table());
         switch (change.kind()) {
             case CREATE_TABLE -> {
-                // create table if not exists для уже известной таблицы ее не меняет
+                // create table if not exists для уже известной таблицы ее не меняет, но ее состав запоминается:
+                // второе определение с другими колонками делает таблицу неоднозначной
+                if (table != null && !change.opaque() && !change.columns().isEmpty()) {
+                    table.otherDefinitions.add(looseNames(change.columns()));
+                }
                 if (table == null) {
                     Table created = new Table(change.table(), file, line);
                     created.opaque = change.opaque();
                     created.primaryKey = change.primaryKey();
                     change.columns().forEach(column -> created.columns.put(column.name(), placed(column, file, line)));
+                    // DROP TABLE IF EXISTS x; CREATE TABLE x (...) в полном снимке схемы: прежнее определение
+                    // не забывается
+                    Table previous = dropped.remove(change.table());
+                    if (previous != null) {
+                        created.otherDefinitions.addAll(previous.otherDefinitions);
+                        created.otherDefinitions.add(looseNames(previous.columns.values()));
+                    }
                     tables.put(change.table(), created);
                     // Изменения, которые встретились раньше самой таблицы: файлы Liquibase подключаются через include
                     // в своем порядке, а не в порядке путей
@@ -633,7 +707,12 @@ public final class DbSchema {
                     pending.remove(change.table());
                 }
             }
-            case DROP_TABLE -> tables.remove(change.table());
+            case DROP_TABLE -> {
+                Table removed = tables.remove(change.table());
+                if (removed != null) {
+                    dropped.put(change.table(), removed);
+                }
+            }
             // Индекс удаляют по имени, не называя таблицу: ищем его во всех
             case DROP_KEY -> (table == null ? tables.values() : List.of(table))
                     .forEach(found -> found.keys.removeIf(key -> change.value().equals(key.name())));

@@ -39,6 +39,14 @@ public class ScheduledWithoutLockRule extends AbstractRule {
 
     // Защита от повторного входа, написанная вручную
     private static final Set<String> GUARD_METHODS = Set.of("tryLock", "compareAndSet", "tryAcquire");
+    // lock, acquireLock, withLock, executeWithLock, runInLock, doWithLock
+    private static final Pattern LOCK_CALL = Pattern.compile("lock|\\w*(With|In|Under|Acquire|Obtain|Get|Take)Lock\\w*"
+            + "|(acquire|obtain|take|with)Lock\\w*");
+    private static final Pattern UNLOCK = Pattern.compile("(?i)unlock\\w*|release\\w*");
+    private static final String OBTAIN = "obtain";
+    private static final Pattern LOCK_OWNER = Pattern.compile("(?i).*lock.*");
+    // if (!leaderService.isLeader()) return;
+    private static final Pattern LEADER_CHECK = Pattern.compile("is(Leader|Master|Primary|Active(Node|Instance))\\w*");
 
     // Защита на стороне БД: каждый экземпляр забирает строки, которые не забрал другой, либо берет advisory-замок
     private static final Pattern DATABASE_GUARD =
@@ -105,9 +113,25 @@ public class ScheduledWithoutLockRule extends AbstractRule {
         return ErrorType.CONCURRENCY;
     }
 
+    // Защита стоит в самом методе либо в своем методе, который он вызывает
     private boolean hasManualGuard(MethodDeclaration method) {
-        return method.findAll(MethodCallExpr.class).stream()
-                .anyMatch(call -> GUARD_METHODS.contains(call.getNameAsString()));
+        return withOwnCallees(method).stream()
+                .flatMap(part -> part.findAll(MethodCallExpr.class).stream())
+                .anyMatch(this::isGuard);
+    }
+
+    // lockProvider.lock(id, () -> ...), lockRegistry.obtain(key), lockingTaskExecutor.executeWithLock(...),
+    // leaderElection.isLeader(): блокировку берут вызовом, а не аннотацией
+    private boolean isGuard(MethodCallExpr call) {
+        String name = call.getNameAsString();
+        if (GUARD_METHODS.contains(name) || LEADER_CHECK.matcher(name).matches()) {
+            return true;
+        }
+        if (UNLOCK.matcher(name).matches()) {
+            return false;
+        }
+        return LOCK_CALL.matcher(name).matches()
+                || OBTAIN.equals(name) && LOCK_OWNER.matcher(receiverOf(call)).matches();
     }
 
     /**

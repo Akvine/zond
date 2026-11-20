@@ -14,6 +14,7 @@ class LoggingRulesTest {
 
     @Test
     void logConcatenation() {
+        // warn и error включены всегда: вне цикла подстановка там ничего не экономит
         assertThat(RuleTests.lines(new LogConcatenationRule(), """
                 class Sample {
                     void run(Long id, Exception e) {
@@ -24,8 +25,13 @@ class LoggingRulesTest {
                         log.info("Line one " + "line two");
                         printer.info("User " + id);
                     }
+                    void runAll(List<Long> ids) {
+                        for (Long id : ids) {
+                            log.warn("Skipped " + id);
+                        }
+                    }
                 }
-                """)).containsExactly(3, 4, 5);
+                """)).containsExactly(3, 4, 12);
     }
 
     @Test

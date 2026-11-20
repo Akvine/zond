@@ -12,7 +12,6 @@ import com.github.javaparser.ast.nodeTypes.NodeWithImplements;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import ru.akvine.zond.models.SourceFile;
 
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,8 +50,7 @@ public final class CallGraph {
     private final Set<MethodCallExpr> exactSites = Collections.newSetFromMap(new IdentityHashMap<>());
 
     // Граф нужен нескольким правилам подряд на одном и том же списке файлов - строим его один раз на сканирование
-    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
-    private static CallGraph cachedGraph;
+    private static final PerSources<CallGraph> CACHE = new PerSources<>();
 
     /**
      * @param site   место вызова
@@ -62,12 +60,8 @@ public final class CallGraph {
     public record Call(MethodCallExpr site, MethodDeclaration caller, MethodDeclaration target) {
     }
 
-    public static synchronized CallGraph of(List<SourceFile> sources) {
-        if (cachedSources.get() != sources) {
-            cachedGraph = new CallGraph(sources);
-            cachedSources = new WeakReference<>(sources);
-        }
-        return cachedGraph;
+    public static CallGraph of(List<SourceFile> sources) {
+        return CACHE.get(sources, CallGraph::new);
     }
 
     private CallGraph(List<SourceFile> sources) {
@@ -160,6 +154,13 @@ public final class CallGraph {
                 Call call = new Call(site, caller, target);
                 outgoing.computeIfAbsent(caller, method -> new ArrayList<>()).add(call);
                 incoming.computeIfAbsent(target, method -> new ArrayList<>()).add(call);
+            }
+            // Метод без тела - запрос репозитория Spring Data, метод клиента - сам никого не вызывает, но знать,
+            // откуда вызывают его, нужно: исходящих вызовов у него нет, входящие записываются на него самого
+            for (MethodDeclaration target : declared) {
+                if (target.getBody().isEmpty()) {
+                    incoming.computeIfAbsent(target, method -> new ArrayList<>()).add(new Call(site, caller, target));
+                }
             }
         }
     }

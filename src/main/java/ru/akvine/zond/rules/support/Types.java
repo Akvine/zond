@@ -63,6 +63,8 @@ public class Types {
     };
     private static final DataKey<Optional<AnnotationDeclaration>> ANNOTATION_DECLARATION = new DataKey<>() {
     };
+    private static final DataKey<Optional<Set<String>>> THROWN = new DataKey<>() {
+    };
 
     // Решатель ищет имя, перебирая предыдущие операторы блока и сравнивая их по содержимому. В блоке из тысячи
     // похожих строк (таблица проверок в тесте) одно разрешение занимает десятки миллисекунд, а весь метод - минуты.
@@ -307,6 +309,32 @@ public class Types {
         return target(call).declaration()
                 .filter(node -> node instanceof MethodDeclaration)
                 .map(node -> (MethodDeclaration) node);
+    }
+
+    /**
+     * @return простые имена исключений из throws вызванного метода - своего либо библиотечного; пусто, если
+     * вызов не удалось разрешить. Нужен редко, поэтому считается отдельно от цели вызова и только по запросу
+     */
+    public synchronized Optional<Set<String>> thrownBy(MethodCallExpr call) {
+        if (call.containsData(THROWN)) {
+            return call.getData(THROWN);
+        }
+        Optional<Set<String>> thrown = Optional.empty();
+        if (hasSolver(call)) {
+            try {
+                Set<String> names = new HashSet<>();
+                for (ResolvedType type : call.resolve().getSpecifiedExceptions()) {
+                    names.add(type.isReferenceType()
+                            ? lastName(type.asReferenceType().getQualifiedName())
+                            : type.describe());
+                }
+                thrown = Optional.of(names);
+            } catch (RuntimeException | StackOverflowError exception) {
+                // Метод не найден либо его класса нет в classpath
+            }
+        }
+        call.setData(THROWN, thrown);
+        return thrown;
     }
 
     /**

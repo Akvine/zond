@@ -33,6 +33,10 @@ public class QueryParameterMismatchRule extends AbstractRule {
     private static final Pattern NAMED_PARAMETER = Pattern.compile("(?<![:\\w]):([A-Za-z_]\\w*)");
     // Не больше четырех цифр: номер заведомо помещается в int
     private static final Pattern POSITIONAL_PARAMETER = Pattern.compile("\\?(\\d{1,4})");
+    private static final Pattern ZERO_PARAMETER = Pattern.compile("\\?0(?!\\d)");
+    private static final Pattern DOCUMENT_QUERY = Pattern.compile("^\\s*[{\\[]");
+    private static final Pattern CYPHER_QUERY =
+            Pattern.compile("(?i)\\b(match|merge|create)\\s*\\(|^\\s*(unwind|call)\\b");
     private static final String IN_PREFIX = "\\bin\\s*\\(?\\s*";
     private static final String EQUALS_PREFIX = "(=|<>|!=)\\s*";
 
@@ -88,7 +92,10 @@ public class QueryParameterMismatchRule extends AbstractRule {
         }
 
         List<String> problems = new ArrayList<>();
-        Matcher named = NAMED_PARAMETER.matcher(query);
+        // { 'name': ?0 } у MongoDB и Elasticsearch, MATCH (p:Person) у Neo4j: двоеточие там - часть языка запроса,
+        // а не имя параметра
+        boolean namesApply = !DOCUMENT_QUERY.matcher(query).find() && !CYPHER_QUERY.matcher(query).find();
+        Matcher named = NAMED_PARAMETER.matcher(namesApply ? query : "");
         Set<String> used = new LinkedHashSet<>();
         while (named.find()) {
             used.add(named.group(1));
@@ -101,16 +108,19 @@ public class QueryParameterMismatchRule extends AbstractRule {
         }
         // #{#name} - обращение к параметру из SpEL
         parameters.forEach((name, parameter) -> {
-            if (Annotations.has(parameter, PARAM) && !used.contains(name) && !query.contains("#" + name)) {
+            if (namesApply && Annotations.has(parameter, PARAM) && !used.contains(name)
+                    && !query.contains("#" + name)) {
                 problems.add("параметр @Param(\"" + name + "\") в запросе не используется - условие по нему"
                         + " забыли либо в имени опечатка");
             }
         });
 
+        // В JPQL и SQL номера идут с ?1; в запросах MongoDB, Cassandra, Couchbase и Elasticsearch - с ?0
+        int first = ZERO_PARAMETER.matcher(query).find() ? 0 : 1;
         Matcher positional = POSITIONAL_PARAMETER.matcher(query);
         while (positional.find()) {
             int number = Integer.parseInt(positional.group(1));
-            if (number < 1 || number > parameters.size()) {
+            if (number < first || number >= first + parameters.size()) {
                 problems.add("параметра '?" + number + "' нет: у метода " + parameters.size() + " параметров");
             }
         }

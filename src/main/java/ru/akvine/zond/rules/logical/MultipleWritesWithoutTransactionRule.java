@@ -3,6 +3,7 @@ package ru.akvine.zond.rules.logical;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.Confidence;
@@ -14,16 +15,19 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Branches;
 import ru.akvine.zond.rules.support.CallChains;
 import ru.akvine.zond.rules.support.CallGraph;
 import ru.akvine.zond.rules.support.CodeContexts;
+import ru.akvine.zond.rules.support.ProjectClasses;
+import ru.akvine.zond.rules.support.ProjectWords;
 import ru.akvine.zond.rules.support.Repositories;
+import ru.akvine.zond.rules.support.RepositoryEntities;
 import ru.akvine.zond.rules.support.SpringBeans;
 import ru.akvine.zond.rules.support.TestClasses;
-import ru.akvine.zond.rules.support.TransactionalAnnotations;
+import ru.akvine.zond.rules.support.TransactionScopes;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -38,8 +42,8 @@ public class MultipleWritesWithoutTransactionRule extends AbstractRule implement
     private static final List<String> WRITE_PREFIXES =
             List.of("save", "delete", "update", "insert", "remove", "persist", "merge");
     private static final int MIN_WRITES = 2;
-    // На столько вызовов вверх ищется метод, начавший транзакцию
-    private static final int CALLER_DEPTH = 4;
+    private static final Set<String> MONGO_TRANSACTION_MANAGERS =
+            Set.of("MongoTransactionManager", "ReactiveMongoTransactionManager");
 
     @Override
     public List<RuleParameter> parameters() {
@@ -59,6 +63,8 @@ public class MultipleWritesWithoutTransactionRule extends AbstractRule implement
     @Override
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         CallGraph graph = CallGraph.of(sourceFiles);
+        Stores stores = new Stores(ProjectClasses.of(sourceFiles),
+                ProjectWords.hasAny(sourceFiles, MONGO_TRANSACTION_MANAGERS));
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
@@ -66,7 +72,9 @@ public class MultipleWritesWithoutTransactionRule extends AbstractRule implement
                     continue;
                 }
                 for (MethodDeclaration method : type.getMethods()) {
-                    Set<String> writes = isCandidate(method, graph) ? findWrites(method, graph) : Set.of();
+                    Set<String> writes = isCandidate(method, graph)
+                            ? writtenTogether(findWrites(method, graph, stores))
+                            : Set.of();
                     if (writes.size() >= MIN_WRITES) {
                         String text = "Метод '" + method.getNameAsString() + "' делает несколько записей в БД без общей"
                                 + " транзакции (" + String.join(", ", writes) + "): если вторая не удастся,"
@@ -94,61 +102,102 @@ public class MultipleWritesWithoutTransactionRule extends AbstractRule implement
         return ErrorType.LOGICAL;
     }
 
-    // Приватный метод оценивается вместе с тем, кто его вызывает; метод, который вызывают только
-    // из транзакции, уже выполняется в ней
-    private boolean isCandidate(MethodDeclaration method, CallGraph graph) {
-        if (method.isPrivate() || method.getBody().isEmpty() || isTransactional(method)) {
-            return false;
-        }
-        return !isAlwaysInTransaction(method, graph, CALLER_DEPTH, new HashSet<>());
+    /**
+     * @param operation что записывается: orderRepository.save
+     * @param site      место в проверяемом методе, с которого запись начинается
+     */
+    private record Write(String operation, Node site) {
     }
 
     /**
-     * Транзакция действует на всю цепочку вызовов, а не только на прямого вызывающего:
-     * {@code OrderFacade.@Transactional place() -> orderService.create() -> stockService.reserve()} -
-     * reserve() выполняется в транзакции, хотя ни он, ни create() не помечены
-     *
-     * @return true, если каждая цепочка вызовов метода проходит через транзакционный метод
+     * @param classes           классы проекта: по ним находится интерфейс репозитория и его сущность
+     * @param mongoTransactions объявлен ли в проекте MongoTransactionManager
      */
-    private boolean isAlwaysInTransaction(MethodDeclaration method, CallGraph graph, int depth, Set<MethodDeclaration> seen) {
-        List<CallGraph.Call> callers = graph.callsTo(method);
-        // Метод без вызовов в проекте вызывает кто-то снаружи; замкнутая цепочка транзакцию не начинает
-        if (callers.isEmpty() || depth == 0 || !seen.add(method)) {
-            return false;
-        }
-        return callers.stream().allMatch(call -> isTransactional(call.caller())
-                || isAlwaysInTransaction(call.caller(), graph, depth - 1, seen));
+    private record Stores(ProjectClasses classes, boolean mongoTransactions) {
     }
 
-    private Set<String> findWrites(MethodDeclaration method, CallGraph graph) {
-        Set<String> writes = new LinkedHashSet<>();
+    // Приватный метод оценивается вместе с тем, кто его вызывает; метод, который вызывают только
+    // из транзакции, уже выполняется в ней. Транзакцию дает и аннотация (своя, предка, составная), и
+    // transactionTemplate.execute(...) выше по цепочке вызовов, и ручное управление через getTransaction / commit
+    private boolean isCandidate(MethodDeclaration method, CallGraph graph) {
+        if (method.isPrivate() || method.getBody().isEmpty()) {
+            return false;
+        }
+        return !TransactionScopes.isInTransaction(method.getBody().get(), graph);
+    }
+
+    private List<Write> findWrites(MethodDeclaration method, CallGraph graph, Stores stores) {
+        List<Write> writes = new ArrayList<>();
         for (MethodCallExpr call : method.findAll(MethodCallExpr.class)) {
-            describeWrite(call).ifPresent(writes::add);
+            describeWrite(call, stores)
+                    .filter(operation -> isOutsideCallback(call))
+                    .ifPresent(operation -> writes.add(new Write(operation, call)));
         }
         // Записи во вспомогательных методах того же класса - часть этого же действия. Вызовы других бинов
         // не считаем: у них свои границы транзакций, и судить о них отсюда нельзя
         Node owner = method.getParentNode().orElse(null);
         for (CallGraph.Call call : graph.callsFrom(method)) {
-            if (call.target() != method) {
+            if (call.target() != method && isOutsideCallback(call.site())) {
                 CallChains.find(graph, call.target(), value(MAX_CALL_DEPTH),
-                                callee -> callee.getParentNode().orElse(null) != owner, this::describeWrite)
-                        .ifPresent(found -> writes.add(found.operation()));
+                                callee -> callee.getParentNode().orElse(null) != owner
+                                        || TransactionScopes.isTransactional(callee),
+                                node -> describeWrite(node, stores))
+                        .ifPresent(found -> writes.add(new Write(found.operation(), call.site())));
             }
         }
         return writes;
     }
 
-    private Optional<String> describeWrite(Node node) {
+    // transactionTemplate.execute(status -> { a.save(x); b.save(y); }): транзакция уже есть, и ее границы
+    // автор выбрал сам
+    private boolean isOutsideCallback(Node site) {
+        return TransactionScopes.enclosingCallback(site).isEmpty();
+    }
+
+    /**
+     * Записи в разных ветках if / else либо до и после раннего return за один вызов вместе не выполняются:
+     * общая транзакция им не нужна
+     *
+     * @return записи, у которых есть пара - другая запись, выполняемая в том же проходе метода
+     */
+    private Set<String> writtenTogether(List<Write> writes) {
+        Set<String> together = new LinkedHashSet<>();
+        for (Write write : writes) {
+            for (Write other : writes) {
+                if (!other.operation().equals(write.operation())
+                        && !Branches.areExclusive(write.site(), other.site())) {
+                    together.add(write.operation());
+                    break;
+                }
+            }
+        }
+        return together;
+    }
+
+    private Optional<String> describeWrite(Node node, Stores stores) {
         if (!(node instanceof MethodCallExpr call) || !Repositories.isRepositoryCall(call)) {
             return Optional.empty();
         }
         String name = call.getNameAsString();
         boolean isWrite = WRITE_PREFIXES.stream().anyMatch(prefix -> name.startsWith(prefix)
                 && (name.length() == prefix.length() || Character.isUpperCase(name.charAt(prefix.length()))));
-        return isWrite ? Optional.of(call.getScope().get() + "." + name) : Optional.empty();
+        return isWrite && hasTransactions(call.getScope().get(), stores)
+                ? Optional.of(call.getScope().get() + "." + name)
+                : Optional.empty();
     }
 
-    private boolean isTransactional(MethodDeclaration method) {
-        return TransactionalAnnotations.findEffective(method).isPresent();
+    // У Cassandra, Elasticsearch и Redis транзакций нет, у MongoDB - только с объявленным менеджером транзакций:
+    // совет "объедините одним @Transactional" для них невыполним
+    private boolean hasTransactions(Expression scope, Stores stores) {
+        Optional<ClassOrInterfaceDeclaration> repository = RepositoryEntities.repositoryOf(scope, stores.classes());
+        if (repository.isEmpty()) {
+            return true;
+        }
+        List<Node> declarations = new ArrayList<>();
+        declarations.add(repository.get());
+        RepositoryEntities.entityOf(repository.get(), stores.classes()).ifPresent(declarations::add);
+        Repositories.Store store = Repositories.storeOf(declarations);
+        return store == Repositories.Store.TRANSACTIONAL
+                || store == Repositories.Store.MONGO && stores.mongoTransactions();
     }
 }

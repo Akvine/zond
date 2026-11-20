@@ -12,7 +12,6 @@ import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.TestPaths;
 
-import java.lang.ref.WeakReference;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -86,8 +85,7 @@ public final class ThreadReach {
     // Столько методов хватает, чтобы дойти до точек входа; дальше ответ считается неизвестным
     private static final int MAX_METHODS = 400;
 
-    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
-    private static ThreadReach cached;
+    private static final PerSources<ThreadReach> CACHE = new PerSources<>();
 
     private final CallGraph graph;
     // Вызовы, которых нет в графе: тип получателя не определен либо вызов стоит в конструкторе или инициализаторе
@@ -96,12 +94,8 @@ public final class ThreadReach {
     private final Set<CompilationUnit> testUnits = Collections.newSetFromMap(new IdentityHashMap<>());
     private final Map<MethodDeclaration, Reach> known = Collections.synchronizedMap(new IdentityHashMap<>());
 
-    public static synchronized ThreadReach of(List<SourceFile> sources) {
-        if (cachedSources.get() != sources) {
-            cached = new ThreadReach(sources);
-            cachedSources = new WeakReference<>(sources);
-        }
-        return cached;
+    public static ThreadReach of(List<SourceFile> sources) {
+        return CACHE.get(sources, ThreadReach::new);
     }
 
     private ThreadReach(List<SourceFile> sources) {

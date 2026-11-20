@@ -15,6 +15,7 @@ import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Annotations;
+import ru.akvine.zond.rules.support.Handlers;
 import ru.akvine.zond.rules.support.Constraints;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.ProjectClasses;
@@ -30,8 +31,6 @@ import java.util.Set;
 public class RequestBodyWithoutValidRule extends AbstractRule implements ProjectRule {
     private static final String REQUEST_BODY = "RequestBody";
     private static final Set<String> VALIDATION_TRIGGERS = Set.of("Valid", "Validated");
-    private static final Set<String> HTTP_CLIENTS =
-            Set.of("FeignClient", "ReactiveFeignClient", "HttpExchange", "RegisterRestClient");
 
     // Простые тела запроса, у которых нет полей для проверки
     private static final Set<String> NOT_VALIDATED_TYPES = Set.of("String", "JsonNode", "Map", "Object");
@@ -103,9 +102,7 @@ public class RequestBodyWithoutValidRule extends AbstractRule implements Project
 
     // @FeignClient и @HttpExchange описывают запрос, который приложение само отправляет другому сервису
     private boolean isOutgoing(Parameter parameter) {
-        return parameter.findAncestor(ClassOrInterfaceDeclaration.class)
-                .filter(type -> Annotations.hasAny(type, HTTP_CLIENTS))
-                .isPresent();
+        return parameter.findAncestor(ClassOrInterfaceDeclaration.class).filter(Handlers::isClient).isPresent();
     }
 
     // List<OrderDto> -> OrderDto

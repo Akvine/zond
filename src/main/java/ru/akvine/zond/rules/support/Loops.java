@@ -32,7 +32,9 @@ public class Loops {
             "mapToInt", "mapToLong", "mapToDouble", "mapToObj", "removeIf", "replaceAll", "computeIfAbsent",
             // Функции коллекторов: Collectors.toMap(s -> UUID.randomUUID(), identity()) - ключ на каждый элемент
             "toMap", "toConcurrentMap", "toUnmodifiableMap", "groupingBy", "groupingByConcurrent", "partitioningBy",
-            "mapping", "filtering", "flatMapping", "reduce");
+            "mapping", "filtering", "flatMapping", "reduce",
+            // Операции, которые есть только у потока Reactor (Flux): лямбда выполняется для каждого элемента
+            "concatMap", "flatMapSequential", "switchMap");
 
     // Методы, которые есть и у стрима, и у Optional
     private final static Set<String> OPTIONAL_METHODS = Set.of("map", "flatMap", "filter");
@@ -44,6 +46,23 @@ public class Loops {
     private final static String OPTIONAL = "Optional";
     private final static Set<String> OPTIONAL_TYPES = Set.of("Optional", "OptionalInt", "OptionalLong", "OptionalDouble");
     private final static Pattern OPTIONAL_NAME = Pattern.compile("(?i).*optional$|^(optional|maybe).*|.*Opt$");
+
+    // Обертки над одним значением: их map, flatMap и filter выполняют лямбду не больше одного раза
+    private final static Set<String> SINGLE_VALUE_TYPES = Set.of(
+            "Mono", "CompletableFuture", "CompletionStage", "Single", "Maybe", "Uni", "Try", "Either", "Option",
+            "Validation", "ListenableFuture");
+    // Операции Reactor, после которых от потока остается одно значение (Mono): flux.collectList().map(list -> ...)
+    private final static Set<String> SINGLE_VALUE_SOURCES = Set.of(
+            "collectList", "collectSortedList", "collectMap", "collectMultimap", "next", "single", "singleOrEmpty",
+            "last", "elementAt", "count", "hasElements", "hasElement", "then", "thenReturn", "bodyToMono", "toEntity",
+            "toBodilessEntity", "exchangeToMono", "justOrEmpty", "fromCallable", "fromSupplier", "fromFuture");
+    // Операции, после которых Mono остается Mono
+    private final static Set<String> SINGLE_VALUE_PRESERVING = Set.of(
+            "map", "flatMap", "filter", "filterWhen", "doOnNext", "doOnSuccess", "doOnError", "doOnSubscribe",
+            "doOnTerminate", "doFinally", "doOnCancel", "onErrorResume", "onErrorReturn", "onErrorMap", "switchIfEmpty",
+            "defaultIfEmpty", "log", "timeout", "retry", "retryWhen", "subscribeOn", "publishOn", "cache", "checkpoint",
+            "contextWrite", "zipWith", "zipWhen", "delayElement", "cast", "ofType", "handle", "tap", "hide", "name",
+            "tag");
 
     /**
      * @return цикл или лямбда, внутри которых узел выполняется на каждой итерации
@@ -116,6 +135,55 @@ public class Loops {
     }
 
     /**
+     * mono.flatMap(post -> findPrevious(post)), client.fetch(name).filter(...).map(...): у Mono, CompletableFuture
+     * и других оберток над одним значением лямбда выполняется не больше одного раза - это не перебор. Обертка
+     * узнается по типу, по началу цепочки (Mono.just(...), flux.collectList()) либо по тому, что цепочку
+     * без сворачивающих операций возвращает метод с результатом Mono
+     */
+    private boolean isOnSingleValue(MethodCallExpr call) {
+        return OPTIONAL_METHODS.contains(call.getNameAsString())
+                && (call.getScope().filter(Loops::isSingleValue).isPresent() || endsAsSingleValue(call));
+    }
+
+    private boolean isSingleValue(Expression expression) {
+        Expression value = Nodes.unwrap(expression);
+        if (LocalTypes.typeOf(value).filter(SINGLE_VALUE_TYPES::contains).isPresent()) {
+            return true;
+        }
+        if (!value.isMethodCallExpr()) {
+            return false;
+        }
+        MethodCallExpr source = value.asMethodCallExpr();
+        if (SINGLE_VALUE_SOURCES.contains(source.getNameAsString())
+                || source.getScope().map(MethodCalls::receiverName).filter(SINGLE_VALUE_TYPES::contains).isPresent()) {
+            return true;
+        }
+        return SINGLE_VALUE_PRESERVING.contains(source.getNameAsString())
+                && source.getScope().filter(Loops::isSingleValue).isPresent();
+    }
+
+    private boolean endsAsSingleValue(MethodCallExpr call) {
+        MethodCallExpr last = call;
+        for (MethodCallExpr next : StreamChains.callsAfter(call)) {
+            // flux.map(...).collectList(): результат - Mono, но лямбду выполнили для каждого элемента потока
+            if (!SINGLE_VALUE_PRESERVING.contains(next.getNameAsString())) {
+                return false;
+            }
+            last = next;
+        }
+        Node holder = last.getParentNode().orElse(null);
+        if (holder instanceof ReturnStmt) {
+            return Nodes.enclosingCallable(last)
+                    .filter(callable -> callable instanceof MethodDeclaration)
+                    .map(callable -> LocalTypes.typeName(((MethodDeclaration) callable).getType()))
+                    .filter(SINGLE_VALUE_TYPES::contains)
+                    .isPresent();
+        }
+        return holder instanceof VariableDeclarator variable
+                && SINGLE_VALUE_TYPES.contains(LocalTypes.typeName(variable.getType()));
+    }
+
+    /**
      * Чем цепочка кончается: found.flatMap(...).map(...).orElse(...), ...isPresent(), return ...map(...) из метода
      * с результатом Optional. У стрима таких продолжений нет, поэтому источник цепочки можно и не знать
      */
@@ -163,7 +231,8 @@ public class Loops {
         return lambda.getParentNode()
                 .filter(parent -> parent instanceof MethodCallExpr)
                 .map(parent -> (MethodCallExpr) parent)
-                .filter(call -> ITERATING_METHODS.contains(call.getNameAsString()) && !isOnOptional(call))
+                .filter(call -> ITERATING_METHODS.contains(call.getNameAsString()) && !isOnOptional(call)
+                        && !isOnSingleValue(call))
                 .isPresent();
     }
 }

@@ -20,7 +20,6 @@ import ru.akvine.zond.models.TestPaths;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
-import java.lang.ref.WeakReference;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -129,8 +128,7 @@ public final class ProjectUsages {
     private final Set<String> liveCalledNames = new HashSet<>();
 
     // Обе проверки (методы и классы) идут подряд по одному списку файлов - считаем один раз
-    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
-    private static ProjectUsages cached;
+    private static final PerSources<ProjectUsages> CACHE = new PerSources<>();
 
     /**
      * Вызовы из одного метода
@@ -152,12 +150,8 @@ public final class ProjectUsages {
     private record SiteOutsideMethod(Node site, Calls calls) {
     }
 
-    public static synchronized ProjectUsages of(List<SourceFile> sources) {
-        if (cachedSources.get() != sources) {
-            cached = new ProjectUsages(sources);
-            cachedSources = new WeakReference<>(sources);
-        }
-        return cached;
+    public static ProjectUsages of(List<SourceFile> sources) {
+        return CACHE.get(sources, ProjectUsages::new);
     }
 
     private ProjectUsages(List<SourceFile> sources) {

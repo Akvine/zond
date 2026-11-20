@@ -4,11 +4,16 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.ConditionalExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.MethodReferenceExpr;
+import com.github.javaparser.ast.stmt.CatchClause;
 import com.github.javaparser.ast.stmt.ForEachStmt;
+import com.github.javaparser.ast.stmt.IfStmt;
+import com.github.javaparser.ast.stmt.SwitchEntry;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -16,6 +21,8 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.Branches;
+import ru.akvine.zond.rules.support.ElementTypes;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
@@ -24,11 +31,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class WaitWithoutTimeoutRule extends AbstractRule {
     private static final String AWAIT = "await";
     private static final String IS_DONE = "isDone";
+    private static final String INVOKE_ALL = "invokeAll";
+    private static final Set<String> COMPLETED_SOURCES = Set.of("take", "poll");
+    private static final Set<String> COMPLETION_SERVICES = Set.of("CompletionService", "ExecutorCompletionService");
+    private static final Pattern COMPLETION_NAME = Pattern.compile("(?i).*completion.*");
     private static final Set<String> FUTURE_WAIT_METHODS = Set.of("get", "join");
 
     private static final Set<String> LATCH_TYPES = Set.of("CountDownLatch", "CyclicBarrier");
@@ -91,7 +103,7 @@ public class WaitWithoutTimeoutRule extends AbstractRule {
             }
 
             if (FUTURE_WAIT_METHODS.contains(method) && isFuture(scope, type) && !isCheckedForCompletion(scope, call)
-                    && !isDelegation(scope, call)) {
+                    && !isDelegation(scope, call) && !isAlreadyComplete(scope, call)) {
                 violations.add(violation(sourceFile, call,
                         "'" + call + "' без таймаута: если задача зависнет, поток будет ждать вечно;"
                                 + " используйте get(timeout, unit) или orTimeout(...)"));
@@ -191,6 +203,71 @@ public class WaitWithoutTimeoutRule extends AbstractRule {
                         || method.getParameters().stream()
                         .anyMatch(parameter -> parameter.getNameAsString().equals(scope.toString()))))
                 .isPresent();
+    }
+
+    /**
+     * Задача к этому месту уже завершена, и get() вернет результат сразу: ее отдал
+     * {@code completionService.take()}, она из списка, который вернул {@code invokeAll}, либо ее уже дождались
+     * строкой выше
+     */
+    private boolean isAlreadyComplete(Expression scope, MethodCallExpr call) {
+        if (isCompletedSource(scope)) {
+            return true;
+        }
+        if (!scope.isNameExpr()) {
+            return false;
+        }
+        String future = scope.asNameExpr().getNameAsString();
+        Optional<Node> callable = Nodes.enclosingCallable(call);
+        if (LocalTypes.findInitializer(scope).map(Nodes::unwrap).filter(this::isCompletedSource).isPresent()
+                || callable.isPresent() && callable.get().findAll(AssignExpr.class).stream()
+                .anyMatch(assignment -> assignment.getTarget().toString().equals(future)
+                        && isCompletedSource(Nodes.unwrap(assignment.getValue())))) {
+            return true;
+        }
+        // for (Future<T> done : executor.invokeAll(tasks)) done.get()
+        boolean fromInvokeAll = LocalTypes.findDeclaration(scope)
+                .flatMap(ElementTypes::collectionOf)
+                .map(Nodes::unwrap)
+                .map(collection -> collection.isNameExpr()
+                        ? LocalTypes.findInitializer(collection).map(Nodes::unwrap).orElse(collection)
+                        : collection)
+                .filter(collection -> collection.isMethodCallExpr()
+                        && INVOKE_ALL.equals(collection.asMethodCallExpr().getNameAsString()))
+                .isPresent();
+        if (fromInvokeAll) {
+            return true;
+        }
+        // profile.join(); ... profile.join(): второе ожидание той же задачи ничего не ждет
+        return callable.isPresent() && callable.get().findAll(MethodCallExpr.class).stream()
+                .filter(earlier -> earlier != call && earlier.getArguments().isEmpty()
+                        && FUTURE_WAIT_METHODS.contains(earlier.getNameAsString()))
+                .filter(earlier -> earlier.getScope().filter(waited -> waited.toString().equals(future)).isPresent())
+                .filter(earlier -> earlier.getBegin().isPresent() && call.getBegin().isPresent()
+                        && earlier.getBegin().get().isBefore(call.getBegin().get()))
+                .anyMatch(earlier -> Nodes.enclosingCallable(earlier).orElse(null) == callable.get()
+                        && !Branches.areExclusive(earlier, call) && !isInsideConditional(earlier, call));
+    }
+
+    // completionService.take(), completionService.poll(1, SECONDS): очередь отдает только завершенные задачи
+    private boolean isCompletedSource(Expression source) {
+        return source.isMethodCallExpr() && COMPLETED_SOURCES.contains(source.asMethodCallExpr().getNameAsString())
+                && source.asMethodCallExpr().getScope()
+                .filter(queue -> LocalTypes.isAnyOf(queue, COMPLETION_SERVICES,
+                        () -> COMPLETION_NAME.matcher(MethodCalls.receiverName(queue)).matches()))
+                .isPresent();
+    }
+
+    // Первое ожидание стоит под условием, в которое второе не входит: до второго можно дойти и без первого
+    private boolean isInsideConditional(MethodCallExpr earlier, MethodCallExpr later) {
+        for (Node current = earlier.getParentNode().orElse(null); current != null && !Nodes.isInside(later, current);
+             current = current.getParentNode().orElse(null)) {
+            if (current instanceof IfStmt || current instanceof ConditionalExpr || current instanceof SwitchEntry
+                    || current instanceof CatchClause || current instanceof LambdaExpr) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // if (future.isDone()) future.get() - результат уже готов, ожидания не будет

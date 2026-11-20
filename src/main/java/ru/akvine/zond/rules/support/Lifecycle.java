@@ -14,7 +14,6 @@ import com.github.javaparser.ast.type.Type;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.TestPaths;
 
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -51,8 +50,7 @@ public final class Lifecycle {
     // Длина цепочки вызовов от запуска: MasterServer.@PostConstruct -> workflowEngine.start() -> coordinator.start()
     private static final int MAX_CALL_DEPTH = 4;
 
-    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
-    private static Lifecycle cached;
+    private static final PerSources<Lifecycle> CACHE = new PerSources<>();
 
     private final CallGraph graph;
     // Вызовы, которые граф не сопоставил ни с одним методом проекта: тип получателя не определен, и такой вызов
@@ -62,12 +60,8 @@ public final class Lifecycle {
     private final Map<String, List<MethodReferenceExpr>> referenced = new HashMap<>();
     private final Map<MethodDeclaration, Boolean> known = Collections.synchronizedMap(new IdentityHashMap<>());
 
-    public static synchronized Lifecycle of(List<SourceFile> sources) {
-        if (cachedSources.get() != sources) {
-            cached = new Lifecycle(sources);
-            cachedSources = new WeakReference<>(sources);
-        }
-        return cached;
+    public static Lifecycle of(List<SourceFile> sources) {
+        return CACHE.get(sources, Lifecycle::new);
     }
 
     private Lifecycle(List<SourceFile> sources) {

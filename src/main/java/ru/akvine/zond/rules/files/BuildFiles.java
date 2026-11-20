@@ -51,6 +51,7 @@ public class BuildFiles {
     // implementation 'group:artifact:1.0', testImplementation("group:artifact"), api platform("group:bom:1.0")
     private static final Pattern GRADLE_DEPENDENCY = Pattern.compile(
             "^\\s*(\\w+)\\s*\\(?\\s*(?:(?:enforcedPlatform|platform)\\s*\\(\\s*)?['\"]([^:'\"\\s]+):([^:'\"\\s]+)(?::([^'\"@\\s]+))?");
+    private static final Pattern GRADLE_PLATFORM = Pattern.compile("\\b(enforcedPlatform|platform)\\s*\\(");
     private static final Set<String> GRADLE_CONFIGURATIONS = Set.of(
             "implementation", "api", "compileOnly", "compileOnlyApi", "runtimeOnly", "annotationProcessor",
             "developmentOnly", "compile", "runtime", "kapt", "testImplementation", "testCompileOnly",
@@ -61,7 +62,8 @@ public class BuildFiles {
      * @param scope   область в Maven (compile, test, provided) либо конфигурация в Gradle (implementation)
      * @param version версия либо пустая строка, если она задается не здесь; ${...} уже заменено значением,
      *                если его удалось найти
-     * @param managed объявлена в dependencyManagement: это не сама зависимость, а только ее версия
+     * @param managed объявлена в dependencyManagement либо как platform(...) в Gradle: это не сама зависимость,
+     *                а только ее версия
      */
     public record Dependency(String group, String artifact, String version, String scope, int line, boolean managed) {
 
@@ -218,8 +220,10 @@ public class BuildFiles {
             Matcher matcher = GRADLE_DEPENDENCY.matcher(file.lines().get(index));
             if (matcher.find() && GRADLE_CONFIGURATIONS.contains(matcher.group(1))) {
                 String version = Optional.ofNullable(matcher.group(4)).orElse("");
+                // platform("org.junit:junit-bom:6.0.0") задает только версии: сама библиотека так не подключается
+                boolean platform = GRADLE_PLATFORM.matcher(file.lines().get(index)).find();
                 dependencies.add(new Dependency(
-                        matcher.group(2), matcher.group(3), version, matcher.group(1), index + 1, false));
+                        matcher.group(2), matcher.group(3), version, matcher.group(1), index + 1, platform));
             }
         }
         return dependencies;

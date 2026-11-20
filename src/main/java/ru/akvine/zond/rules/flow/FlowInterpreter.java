@@ -129,6 +129,7 @@ public final class FlowInterpreter {
     private static final Pattern THROWING_HELPER = Pattern.compile(
             "(re)?throw(?!If|When|Unless|On)[A-Z]\\w*|rethrow|sneakyThrow");
     private static final Set<String> NULL_POINTER = Set.of("NullPointerException");
+    private static final String PEEK = "peek";
     // Вызовы, после которых тот же метод вернет другое значение: iterator.next(), queue.poll(), reader.readLine()
     private static final Pattern ADVANCING_CALL = Pattern.compile(
             "(next|poll|pop|read|take|remove|pull|advance|skip|generate|random|increment|decrement|getAnd|peek)\\w*"
@@ -136,6 +137,9 @@ public final class FlowInterpreter {
     // orderBy >= 0, index > -1, position != -1
     private static final Pattern INDEX_COMPARISON = Pattern.compile("\\w+\\s*(>=\\s*0|>\\s*-1|!=\\s*-1)");
     private static final String INDEX_SEARCH_REASON = "результат поиска";
+    // Верхняя граница индекса, выше которой она не найдена, а получена из неизвестной величины: i < data.length
+    // при неизвестной длине дает "до Integer.MAX_VALUE - 1" - это не улика
+    private static final long UNBOUNDED_FROM = FlowValue.MAX / 2;
     private static final String GROUP = "group";
     private static final String IS_EMPTY = "isEmpty";
     private static final String IS_PRESENT = "isPresent";
@@ -1444,15 +1448,22 @@ public final class FlowInterpreter {
                     "Индекс здесь всегда отрицательный (" + range(index) + "): обращение завершится исключением",
                     Confidence.CONFIRMED);
         } else if (index.min() == -1 && INDEX_SEARCH_REASON.equals(index.reason())
-                && !isSearchGuarded(place, searchedText(index)) && !isFoundEarlier(place, index)) {
+                && !isSearchGuarded(place, searchedText(index)) && !isFoundEarlier(place, index)
+                && !isGuardedAtOrigin(index)) {
             report(FlowAnalysis.Kind.INDEX_OUT_OF_BOUNDS, place,
                     "Индекс - " + INDEX_SEARCH_REASON + " (indexOf), а он равен -1, когда ничего не найдено:"
                             + " обращение завершится исключением; сначала проверьте, что индекс не отрицательный");
-        } else if (length != FlowValue.NO_LENGTH && index.max() < FlowValue.MAX && index.max() >= length) {
+        } else if (length != FlowValue.NO_LENGTH && index.max() < UNBOUNDED_FROM && index.max() >= length) {
             report(FlowAnalysis.Kind.INDEX_OUT_OF_BOUNDS, place,
                     "Индекс может достигать " + index.max() + ", а длина массива - " + length
                             + ": допустимы индексы от 0 до " + (length - 1) + "; проверьте границу, обычно это <= вместо <");
         }
+    }
+
+    // url.substring(0, url.contains("?") ? url.indexOf("?") : url.length()): проверка стоит не вокруг места, где
+    // индекс используют, а вокруг самого поиска
+    private boolean isGuardedAtOrigin(FlowValue index) {
+        return index.origin() != null && isSearchGuarded(index.origin(), searchedText(index));
     }
 
     // if (text.contains(":")) { text.substring(text.indexOf(':')) }: наличие искомого уже проверено.
@@ -1465,7 +1476,8 @@ public final class FlowInterpreter {
         Node current = place.getParentNode().orElse(null);
         while (current != null && !(current instanceof CallableDeclaration)) {
             // boolean sorted = orderBy >= 0; ... sorted ? text.substring(0, orderBy) : text - проверка спрятана в флаге
-            String checked = conditionAround(current, place) + flagConditions(current);
+            String condition = conditionAround(current, place);
+            String checked = condition + flagConditions(current) + ownPredicates(current, condition);
             if (SEARCH_GUARDS.stream().anyMatch(checked::contains)
                     || searched.filter(text -> INDEX_SEARCH.stream().anyMatch(method -> checked.contains(text + "." + method + "("))).isPresent()) {
                 return true;
@@ -1512,6 +1524,35 @@ public final class FlowInterpreter {
         boolean afterLeft = current instanceof BinaryExpr binary && LOGICAL.contains(binary.getOperator())
                 && !Nodes.isInside(place, binary.getLeft()) && binary.getLeft() != place;
         return afterLeft ? ((BinaryExpr) current).getLeft().toString() : "";
+    }
+
+    // if (isGenericType(name)) { name.substring(0, name.indexOf("<")) }, где isGenericType - свой метод из одной
+    // строки "return name.contains("<")": проверка спрятана в нем
+    private String ownPredicates(Node branching, String condition) {
+        if (condition.isEmpty() || !(branching instanceof IfStmt || branching instanceof ConditionalExpr)) {
+            return "";
+        }
+        Expression expression = branching instanceof IfStmt statement
+                ? statement.getCondition()
+                : ((ConditionalExpr) branching).getCondition();
+        Optional<TypeDeclaration<?>> owner = branching.findAncestor(TypeDeclaration.class)
+                .map(type -> (TypeDeclaration<?>) type);
+        if (owner.isEmpty()) {
+            return "";
+        }
+        StringBuilder bodies = new StringBuilder();
+        for (MethodCallExpr call : expression.findAll(MethodCallExpr.class)) {
+            if (call.getScope().filter(scope -> !scope.isThisExpr()).isPresent()) {
+                continue;
+            }
+            for (MethodDeclaration method : owner.get().getMethodsByName(call.getNameAsString())) {
+                method.getBody()
+                        .filter(body -> body.getStatements().size() == 1 && body.getStatement(0).isReturnStmt())
+                        .flatMap(body -> body.getStatement(0).asReturnStmt().getExpression())
+                        .ifPresent(returned -> bodies.append(' ').append(returned));
+            }
+        }
+        return bodies.toString();
     }
 
     // Условия, которыми заданы логические переменные из условия if или ?:
@@ -2171,7 +2212,8 @@ public final class FlowInterpreter {
         String variable = key(subject(checked), state);
         if (variable == null) {
             FlowState whenNull = state.copy();
-            if (checked instanceof MethodCallExpr || checked instanceof FieldAccessExpr) {
+            boolean isRead = checked instanceof MethodCallExpr || checked instanceof FieldAccessExpr;
+            if (isRead && isRepeatableRead(checked)) {
                 state.learn(checked.toString(), value.withNullness(
                         FlowValue.Nullness.NOT_NULL, "значение уже проверено на null", check), namesIn(checked));
             }
@@ -2405,6 +2447,7 @@ public final class FlowInterpreter {
             Expression argument = unwrap(call.getArgument(index));
             String variable = key(argument, state);
             if (variable == null) {
+                learnCheckedExpression(call, index, argument, summary.isEmpty(), whenTrue, whenFalse);
                 continue;
             }
             Boolean resultForNull = summary.isPresent() ? summary.get().resultForNullParam().get(index) : null;
@@ -2428,6 +2471,32 @@ public final class FlowInterpreter {
         }
         learnEmptiness(call, whenTrue, whenFalse);
         return new Branches(whenTrue, whenFalse);
+    }
+
+    // if (Objects.nonNull(event.getMessage())) { handle(event.getMessage()); }: проверено не имя, а выражение.
+    // О нем запоминается факт, как и после event.getMessage() != null
+    private void learnCheckedExpression(MethodCallExpr call, int index, Expression argument, boolean isLibraryCheck,
+                                        FlowState whenTrue, FlowState whenFalse) {
+        if (!isLibraryCheck || !(argument instanceof MethodCallExpr || argument instanceof FieldAccessExpr)
+                || !isRepeatableRead(argument)) {
+            return;
+        }
+        Boolean resultForNull = libraryResultForNull(call, call.getNameAsString(), index, whenTrue);
+        if (resultForNull == null) {
+            return;
+        }
+        FlowState notNullState = resultForNull ? whenFalse : whenTrue;
+        notNullState.learn(argument.toString(), FlowValue.unknown().withNullness(
+                FlowValue.Nullness.NOT_NULL, "значение проверено вызовом " + call.getNameAsString(), call),
+                namesIn(argument));
+    }
+
+    // Повторный вызов даст то же значение: геттер, чтение по ключу, queue.peek(). reader.readLine(), queue.poll(),
+    // iterator.next() каждый раз отдают новое - проверка одного вызова ничего не говорит о следующем
+    private boolean isRepeatableRead(Expression expression) {
+        return expression.findAll(MethodCallExpr.class).stream()
+                .map(MethodCallExpr::getNameAsString)
+                .noneMatch(name -> !name.startsWith(PEEK) && ADVANCING_CALL.matcher(name).matches());
     }
 
     /**

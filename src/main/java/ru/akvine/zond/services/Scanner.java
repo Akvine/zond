@@ -87,8 +87,18 @@ public class Scanner {
         Map<Rule, Long> spent = new ConcurrentHashMap<>();
         // Отсчет времени проверки начинается здесь: код к этому моменту уже загружен и разобран
         long checkStartedAt = System.nanoTime();
-        for (List<Violation> found : run(activeRules, context, perFile, options.threadCount(), spent)) {
+        // Независимые проекты внутри каталога проверяются порознь: правила, которым нужен проект целиком,
+        // не должны сверять классы, адреса и таблицы одного проекта с другим
+        List<ScanContext> parts = ProjectParts.split(context);
+        for (List<Violation> found : run(activeRules, parts, perFile, options.threadCount(), spent)) {
             violations.addAll(found);
+        }
+        // Общие файлы (схема базы, docker-compose.yml в корне) видны нескольким частям сразу: находка в таком
+        // файле приходит от каждой из них, а в отчете она должна быть одна
+        if (parts.size() > 1) {
+            List<Violation> distinct = violations.stream().distinct().toList();
+            violations.clear();
+            violations.addAll(distinct);
         }
 
         long checkNanos = System.nanoTime() - checkStartedAt;
@@ -159,17 +169,19 @@ public class Scanner {
      * @return находки каждого правила в порядке самих правил: от числа потоков итог не зависит
      */
     private List<List<Violation>> run(
-            List<Rule> activeRules, ScanContext context, ScanContext perFile, int threads, Map<Rule, Long> spent) {
+            List<Rule> activeRules, List<ScanContext> parts, ScanContext perFile, int threads, Map<Rule, Long> spent) {
         AtomicInteger started = new AtomicInteger();
         if (threads <= 1) {
-            return activeRules.stream().map(rule -> run(rule, context, perFile, started, activeRules.size(), spent)).toList();
+            return activeRules.stream()
+                    .map(rule -> run(rule, parts, perFile, started, activeRules.size(), spent))
+                    .toList();
         }
 
         ExecutorService executor = Executors.newFixedThreadPool(threads);
         try {
             List<Future<List<Violation>>> futures = new ArrayList<>();
             for (Rule rule : activeRules) {
-                futures.add(executor.submit(() -> run(rule, context, perFile, started, activeRules.size(), spent)));
+                futures.add(executor.submit(() -> run(rule, parts, perFile, started, activeRules.size(), spent)));
             }
             List<List<Violation>> results = new ArrayList<>();
             for (Future<List<Violation>> future : futures) {
@@ -182,13 +194,15 @@ public class Scanner {
     }
 
     private List<Violation> run(
-            Rule rule, ScanContext context, ScanContext perFile, AtomicInteger started, int total, Map<Rule, Long> spent) {
+            Rule rule, List<ScanContext> parts, ScanContext perFile, AtomicInteger started, int total,
+            Map<Rule, Long> spent) {
         int number = started.incrementAndGet();
         progressListener.onRuleStarted(number, total, rule);
         // Время считается в том же потоке, где работает правило: ожидание в очереди в него не входит
         long startedAt = System.nanoTime();
         try {
-            return withLevel(ruleSettings.level(rule.code(), rule.name()), rule.confidence(), apply(rule, context, perFile));
+            return withLevel(
+                    ruleSettings.level(rule.code(), rule.name()), rule.confidence(), apply(rule, parts, perFile));
         } catch (RuntimeException | StackOverflowError failure) {
             // По самой ошибке не видно, какое правило работало, а текста у нее может не быть вовсе
             throw new RuleFailedException(rule, failure);
@@ -233,15 +247,18 @@ public class Scanner {
 
     // Правило проверяет либо все загруженное сразу, либо файлы настроек, либо проект целиком,
     // либо каждый Java-файл по отдельности
-    private List<Violation> apply(Rule rule, ScanContext context, ScanContext perFile) {
+    private List<Violation> apply(Rule rule, List<ScanContext> parts, ScanContext perFile) {
         if (rule instanceof ContextRule contextRule) {
-            return contextRule.checkContext(context);
+            List<Violation> found = parts.stream().flatMap(part -> contextRule.checkContext(part).stream()).toList();
+            return contextRule.judgesByAbsenceInCode() && parts.size() > 1
+                    ? ProjectParts.confirmedByEveryPart(found, parts)
+                    : found;
         }
         if (rule instanceof ConfigRule configRule) {
             return perFile.configFiles().stream().flatMap(file -> configRule.checkConfig(file).stream()).toList();
         }
         if (rule instanceof ProjectRule projectRule) {
-            return projectRule.checkProject(context.sources());
+            return parts.stream().flatMap(part -> projectRule.checkProject(part.sources()).stream()).toList();
         }
         return perFile.sources().stream().flatMap(source -> rule.check(source).stream()).toList();
     }

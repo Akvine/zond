@@ -1,9 +1,18 @@
 package ru.akvine.zond.rules.logical;
 
+import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.CastExpr;
+import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.MethodReferenceExpr;
+import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.nodeTypes.NodeWithSimpleName;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.IfStmt;
@@ -15,6 +24,7 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.flow.FlowLibrary;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
@@ -34,6 +44,12 @@ public class NullInsteadOfEmptyCollectionRule extends AbstractRule {
     private static final String ARRAY_SUFFIX = "[]";
     private static final String NULLABLE = "Nullable";
     private static final Pattern RETURNS_NULL = Pattern.compile("@return\\b[^@]*\\bnull\\b");
+    private static final String FILTER = "filter";
+    // filter(Objects::nonNull), filter(value -> value != null)
+    private static final Pattern NOT_NULL_FILTER = Pattern.compile("nonNull|!= null");
+    // Objects.requireNonNull(x), Optional.ofNullable(x), ObjectUtils.defaultIfNull(x, other), emptyIfNull(x)
+    private static final Pattern NULL_HANDLERS = Pattern.compile(
+            "requireNonNull\\w*|ofNullable|defaultIfNull|firstNonNull|emptyIfNull|nullToEmpty|\\w*OrEmpty");
 
     @Override
     public String code() {
@@ -51,7 +67,8 @@ public class NullInsteadOfEmptyCollectionRule extends AbstractRule {
         for (MethodDeclaration method : sourceFile.findAll(MethodDeclaration.class)) {
             String type = LocalTypes.typeName(method.getType());
             boolean returnsCollection = COLLECTION_TYPES.contains(type) || type.endsWith(ARRAY_SUFFIX);
-            if (!returnsCollection || documentsNull(method) || TestClasses.isInside(method)) {
+            if (!returnsCollection || documentsNull(method) || TestClasses.isInside(method)
+                    || isCheckedByEveryCaller(method)) {
                 continue;
             }
             for (ReturnStmt returned : method.findAll(ReturnStmt.class)) {
@@ -74,6 +91,85 @@ public class NullInsteadOfEmptyCollectionRule extends AbstractRule {
                 .map(comment -> comment.getContent())
                 .filter(text -> RETURNS_NULL.matcher(text).find())
                 .isPresent();
+    }
+
+    // Закрытый метод, результат которого проверяют на null в каждом месте вызова: null здесь - условный знак
+    // «значения нет», о котором знает весь вызывающий код (он в этом же файле). Забыть проверку некому
+    private boolean isCheckedByEveryCaller(MethodDeclaration method) {
+        Optional<CompilationUnit> unit = method.findCompilationUnit();
+        if (!method.isPrivate() || unit.isEmpty()) {
+            return false;
+        }
+        String name = method.getNameAsString();
+        List<Expression> uses = new ArrayList<>();
+        for (MethodCallExpr call : unit.get().findAll(MethodCallExpr.class)) {
+            if (call.getNameAsString().equals(name) && call.getArguments().size() == method.getParameters().size()) {
+                uses.add(call);
+            }
+        }
+        for (MethodReferenceExpr reference : unit.get().findAll(MethodReferenceExpr.class)) {
+            if (reference.getIdentifier().equals(name)) {
+                uses.add(reference);
+            }
+        }
+        return !uses.isEmpty() && uses.stream().allMatch(this::isResultCheckedForNull);
+    }
+
+    private boolean isResultCheckedForNull(Expression use) {
+        Node parent = outerOf(use);
+        if (use.isMethodReferenceExpr()) {
+            // .map(Meta::sanitize).filter(Objects::nonNull)
+            return parent instanceof MethodCallExpr mapping && outerOf(mapping) instanceof MethodCallExpr next
+                    && next.getScope().filter(scope -> Nodes.unwrap(scope) == mapping).isPresent()
+                    && FILTER.equals(next.getNameAsString())
+                    && NOT_NULL_FILTER.matcher(next.getArguments().toString()).find();
+        }
+        if (isNullCheck(parent, use)) {
+            return true;
+        }
+        Optional<String> variable = Optional.empty();
+        if (parent instanceof VariableDeclarator declarator) {
+            variable = Optional.of(declarator.getNameAsString());
+        } else if (parent instanceof AssignExpr assignment && assignment.getTarget().isNameExpr()) {
+            variable = Optional.of(assignment.getTarget().asNameExpr().getNameAsString());
+        }
+        Node owner = use.findAncestor(MethodDeclaration.class).map(Node.class::cast).orElse(null);
+        if (owner == null) {
+            owner = use.findAncestor(ConstructorDeclaration.class).map(Node.class::cast).orElse(null);
+        }
+        if (variable.isEmpty() || owner == null) {
+            return false;
+        }
+        String checked = variable.get();
+        return owner.findAll(NameExpr.class).stream()
+                .filter(mention -> mention.getNameAsString().equals(checked))
+                .anyMatch(mention -> isNullCheck(outerOf(mention), mention));
+    }
+
+    // value == null, Objects.nonNull(value), Optional.ofNullable(value), CollectionUtils.isEmpty(value)
+    private boolean isNullCheck(Node parent, Expression value) {
+        if (parent instanceof BinaryExpr comparison) {
+            boolean isEquality = comparison.getOperator() == BinaryExpr.Operator.EQUALS
+                    || comparison.getOperator() == BinaryExpr.Operator.NOT_EQUALS;
+            boolean withNull = comparison.getLeft().isNullLiteralExpr() || comparison.getRight().isNullLiteralExpr();
+            return isEquality && withNull;
+        }
+        if (!(parent instanceof MethodCallExpr check)) {
+            return false;
+        }
+        boolean isArgument = check.getArguments().stream().anyMatch(argument -> Nodes.unwrap(argument) == value);
+        String method = check.getNameAsString();
+        return isArgument && (FlowLibrary.isTrueForNull(method) || FlowLibrary.isFalseForNull(method)
+                || NULL_HANDLERS.matcher(method).matches());
+    }
+
+    // Ближайший узел, который не скобки и не приведение типа
+    private Node outerOf(Expression expression) {
+        Node parent = expression.getParentNode().orElse(null);
+        while (parent instanceof EnclosedExpr || parent instanceof CastExpr) {
+            parent = parent.getParentNode().orElse(null);
+        }
+        return parent;
     }
 
     // if (source == null) return null: на пустой ввод - пустой результат. Кто передал объект, null не получит

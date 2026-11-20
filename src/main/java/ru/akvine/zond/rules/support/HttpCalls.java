@@ -49,6 +49,16 @@ public class HttpCalls {
             "map", "flatMap", "filter", "orElse", "orElseGet", "orElseThrow", "isPresent", "isEmpty", "ifPresent",
             "ifPresentOrElse", "stream", "equals", "hashCode", "toString");
 
+    // Жизненный цикл и настройка клиента: сетевого запроса за ними нет
+    private static final Set<String> NOT_REQUEST_METHODS = Set.of(
+            "close", "shutdown", "shutdownNow", "destroy", "stop", "dispose", "connectionPool", "dispatcher",
+            "newBuilder", "mutate", "builder", "getConnectionManager", "closeExpiredConnections",
+            "closeIdleConnections", "evictAll");
+    private static final Set<String> LOCAL_RESOURCE_METHODS = Set.of(
+            "getResource", "findResource", "getSystemResource", "toURL", "getLocation");
+
+    private static final String EXCHANGE = "exchange";
+    private static final int MIN_EXCHANGE_ARGUMENTS = 2;
     private static final Set<String> HTTP_METHODS = Set.of(
             "getForObject", "getForEntity", "postForObject", "postForEntity", "postForLocation", "patchForObject",
             "exchange", "retrieve", "openConnection", "openStream");
@@ -94,6 +104,11 @@ public class HttpCalls {
 
     private boolean isHttpClient(MethodCallExpr call, Expression scope, String receiver, boolean guessByClientName) {
         String method = call.getNameAsString();
+        // client.close(), httpClient.connectionPool(): закрытие и настройка клиента - не запрос;
+        // getClass().getResource("x").openStream(): файл из своих ресурсов, а не обращение по сети
+        if (NOT_REQUEST_METHODS.contains(method) || isLocalResource(scope)) {
+            return false;
+        }
         if (Types.isKindOf(scope, URL_TYPES).orElse(false)) {
             return HTTP_METHODS.contains(method);
         }
@@ -116,7 +131,21 @@ public class HttpCalls {
             return isDeclarativeClient(projectType.get());
         }
 
-        return HTTP_METHODS.contains(method) || isClientByName(call, scope, receiver, guessByClientName);
+        // request.exchange() у ServerRequest и ServerWebExchange отдает сам обмен, а не выполняет запрос: у
+        // RestTemplate.exchange аргументов не меньше двух
+        boolean byMethod = HTTP_METHODS.contains(method)
+                && !(EXCHANGE.equals(method) && call.getArguments().size() < MIN_EXCHANGE_ARGUMENTS);
+        return byMethod || isClientByName(call, scope, receiver, guessByClientName);
+    }
+
+    // URL url = loader.getResource(name); url.openStream(): адрес указывает на файл в classpath или на диске
+    private boolean isLocalResource(Expression scope) {
+        Expression value = Nodes.unwrap(scope);
+        Expression source = value.isNameExpr()
+                ? LocalTypes.findInitializer(value).map(Nodes::unwrap).orElse(value)
+                : value;
+        return source.isMethodCallExpr()
+                && LOCAL_RESOURCE_METHODS.contains(source.asMethodCallExpr().getNameAsString());
     }
 
     // Тип неизвестен: судим по имени получателя - apiClient, paymentGateway

@@ -98,6 +98,13 @@ public final class Modules {
     }
 
     /**
+     * @return true, если модуль - приложение: в нем есть запускаемый класс
+     */
+    public boolean isApplication(Path module) {
+        return applications.contains(module);
+    }
+
+    /**
      * @return true, если в проекте больше одного приложения: только тогда их и нужно различать
      */
     public boolean hasSeveralApplications() {

@@ -1,8 +1,11 @@
 package ru.akvine.zond.rules.concurrency;
 
+import com.github.javaparser.ast.body.MethodDeclaration;
+import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import com.github.javaparser.ast.stmt.ExpressionStmt;
 import com.github.javaparser.ast.stmt.Statement;
 import org.springframework.stereotype.Component;
@@ -17,6 +20,7 @@ import ru.akvine.zond.rules.support.Loggers;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -84,14 +88,65 @@ public class IgnoredSubmitResultRule extends AbstractRule {
     // submit(() -> { log.trace(...); try { ... } catch (Exception e) { log.error(..., e); } }): задача сама ловит
     // любую ошибку, и в Future ей попасть не из чего
     private boolean catchesOwnErrors(Expression task) {
-        if (!(task instanceof LambdaExpr lambda) || !lambda.getBody().isBlockStmt()) {
-            return false;
+        return bodyOf(task).filter(this::catchesEverythingIn).isPresent();
+    }
+
+    // Тело задачи: блок лямбды либо свой метод, который она вызывает - submit(() -> send(host, key)),
+    // submit(this::watchConfigFile)
+    private Optional<List<Statement>> bodyOf(Expression task) {
+        if (task instanceof LambdaExpr lambda && lambda.getBody().isBlockStmt()) {
+            return Optional.of(lambda.getBody().asBlockStmt().getStatements());
         }
-        List<Statement> statements = lambda.getBody().asBlockStmt().getStatements();
-        boolean guarded = statements.stream().anyMatch(this::catchesEverything);
-        return guarded && statements.stream().allMatch(statement -> catchesEverything(statement)
+        String name = null;
+        int arguments = -1;
+        if (task instanceof LambdaExpr lambda
+                && lambda.getExpressionBody().filter(Expression::isMethodCallExpr).isPresent()) {
+            MethodCallExpr call = lambda.getExpressionBody().get().asMethodCallExpr();
+            if (call.getScope().filter(scope -> !scope.isThisExpr()).isEmpty()) {
+                name = call.getNameAsString();
+                arguments = call.getArguments().size();
+            }
+        } else if (task instanceof MethodReferenceExpr reference && reference.getScope().isThisExpr()) {
+            name = reference.getIdentifier();
+        }
+        if (name == null) {
+            return Optional.empty();
+        }
+        String wanted = name;
+        int count = arguments;
+        List<MethodDeclaration> own = task.findAncestor(TypeDeclaration.class).stream()
+                .flatMap(type -> ((TypeDeclaration<?>) type).getMethodsByName(wanted).stream())
+                .filter(method -> count < 0 || method.getParameters().size() == count)
+                .toList();
+        return own.size() == 1
+                ? own.get(0).getBody().map(body -> body.getStatements())
+                : Optional.empty();
+    }
+
+    private boolean catchesEverythingIn(List<Statement> statements) {
+        boolean guarded = statements.stream().anyMatch(this::isGuarded);
+        return guarded && statements.stream().allMatch(statement -> isGuarded(statement)
                 || statement.isExpressionStmt() && statement.asExpressionStmt().getExpression().isMethodCallExpr()
                 && Loggers.isLogCall(statement.asExpressionStmt().getExpression().asMethodCallExpr()));
+    }
+
+    // try с catch на любую ошибку либо рабочий цикл, каждый проход которого завернут в такой try:
+    // while (!stopped) { try { ... } catch (Exception e) { log.error(..., e); } }
+    private boolean isGuarded(Statement statement) {
+        if (catchesEverything(statement)) {
+            return true;
+        }
+        Statement body = null;
+        if (statement.isWhileStmt()) {
+            body = statement.asWhileStmt().getBody();
+        } else if (statement.isDoStmt()) {
+            body = statement.asDoStmt().getBody();
+        } else if (statement.isForStmt()) {
+            body = statement.asForStmt().getBody();
+        } else if (statement.isForEachStmt()) {
+            body = statement.asForEachStmt().getBody();
+        }
+        return body != null && body.isBlockStmt() && catchesEverythingIn(body.asBlockStmt().getStatements());
     }
 
     private boolean catchesEverything(Statement statement) {

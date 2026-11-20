@@ -6,10 +6,13 @@ import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
+import ru.akvine.zond.rules.ContextRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.files.JavaVersions;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 
@@ -19,7 +22,10 @@ import java.util.List;
 import java.util.Set;
 
 @Component
-public class DefaultCharsetRule extends AbstractRule {
+public class DefaultCharsetRule extends AbstractRule implements ContextRule {
+    // JEP 400: с Java 18 кодировка по умолчанию - UTF-8 на любой машине
+    private static final int UTF8_BY_DEFAULT_SINCE = 18;
+    private static final int LAST_ASCII = 127;
     private static final String GET_BYTES = "getBytes";
     private static final String STRING = "String";
     private static final String BYTE_ARRAY = "byte[]";
@@ -42,6 +48,18 @@ public class DefaultCharsetRule extends AbstractRule {
         return "Сканирует код и ищет преобразование между байтами и текстом без указания кодировки";
     }
 
+    /**
+     * Проект, который собирают под Java 18 и новее, запустить на более старой нельзя, а с Java 18 кодировка по
+     * умолчанию от машины не зависит: находке не о чем говорить
+     */
+    @Override
+    public List<Violation> checkContext(ScanContext context) {
+        if (JavaVersions.lowest(context.textFiles()).orElse(0) >= UTF8_BY_DEFAULT_SINCE) {
+            return List.of();
+        }
+        return context.sources().stream().flatMap(sourceFile -> check(sourceFile).stream()).toList();
+    }
+
     @Override
     public List<Violation> check(SourceFile sourceFile) {
         List<Violation> violations = new ArrayList<>();
@@ -49,7 +67,8 @@ public class DefaultCharsetRule extends AbstractRule {
         // text.getBytes() именно на строке: у MultipartFile.getBytes() кодировки нет
         for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
             boolean onString = call.getScope().flatMap(LocalTypes::typeOf).filter(STRING::equals).isPresent();
-            if (GET_BYTES.equals(call.getNameAsString()) && call.getArguments().isEmpty() && onString) {
+            if (GET_BYTES.equals(call.getNameAsString()) && call.getArguments().isEmpty() && onString
+                    && !isAsciiLiteral(call.getScope().get())) {
                 violations.add(report(sourceFile, call));
             }
         }
@@ -72,6 +91,13 @@ public class DefaultCharsetRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.LOGICAL;
+    }
+
+    // "".getBytes(), "OK".getBytes(): латиница и цифры кодируются одинаково в любой кодировке по умолчанию
+    private boolean isAsciiLiteral(Expression scope) {
+        Expression value = Nodes.unwrap(scope);
+        return value.isStringLiteralExpr()
+                && value.asStringLiteralExpr().asString().chars().allMatch(symbol -> symbol <= LAST_ASCII);
     }
 
     private Violation report(SourceFile sourceFile, Expression expression) {

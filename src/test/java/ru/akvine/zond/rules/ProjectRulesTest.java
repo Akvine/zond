@@ -3,6 +3,7 @@ package ru.akvine.zond.rules;
 import org.junit.jupiter.api.Test;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.logical.CircularDependencyRule;
+import ru.akvine.zond.rules.security.EntityAsRequestBodyRule;
 import ru.akvine.zond.rules.security.EntityInControllerRule;
 
 import java.util.LinkedHashMap;
@@ -98,9 +99,11 @@ class ProjectRulesTest {
 
         List<Violation> violations = RuleTests.checkProject(new EntityInControllerRule(), files);
 
-        assertThat(violations).extracting(Violation::line).containsExactly(3, 6);
+        // Сущность в теле запроса (строка 6) - находка отдельного правила jr:238, здесь она не повторяется
+        assertThat(violations).extracting(Violation::line).containsExactly(3);
         assertThat(violations).allMatch(violation -> violation.file().toString().equals("OrderController.java"));
         assertThat(violations.get(0).message()).contains("возвращает сущность 'Order'");
-        assertThat(violations.get(1).message()).contains("принимает сущность 'Order'");
+        assertThat(RuleTests.checkProject(new EntityAsRequestBodyRule(), files)).extracting(Violation::line)
+                .containsExactly(6);
     }
 }

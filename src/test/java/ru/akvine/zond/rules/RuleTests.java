@@ -3,6 +3,7 @@ package ru.akvine.zond.rules;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import lombok.experimental.UtilityClass;
+import ru.akvine.zond.loaders.ProjectDeclarations;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 
@@ -26,9 +27,20 @@ class RuleTests {
      * @param files имя файла -> его исходный код
      */
     List<Violation> checkProject(ProjectRule rule, Map<String, String> files) {
-        return rule.checkProject(files.entrySet().stream()
+        return rule.checkProject(project(files));
+    }
+
+    /**
+     * @param files имя файла -> его исходный код
+     * @return файлы одного проекта: как и после загрузчика, каждый знает объявления остальных
+     */
+    List<SourceFile> project(Map<String, String> files) {
+        List<SourceFile> sources = files.entrySet().stream()
                 .map(file -> parse(Path.of(file.getKey()), file.getValue()))
-                .toList());
+                .toList();
+        ProjectDeclarations declarations = ProjectDeclarations.of(sources.stream().map(SourceFile::unit).toList());
+        sources.forEach(source -> source.unit().setData(ProjectDeclarations.KEY, declarations));
+        return sources;
     }
 
     /**

@@ -1,8 +1,11 @@
 package ru.akvine.zond.rules.performance;
 
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.expr.AssignExpr;
+import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.IfStmt;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -42,12 +45,23 @@ public class LoggingInLoopRule extends AbstractRule {
                 .filter(Loggers::isEnabledLevel)
                 // Итерации цикла повторных попыток - это попытки, а не элементы данных: их считаные единицы
                 .filter(CodeContexts::isRepeatedOverData)
-                .filter(call -> !isErrorReport(call) && !isPrintedOnce(call))
+                .filter(call -> !isErrorReport(call) && !isPrintedOnce(call) && !leavesLoopAfter(call))
                 .map(call -> violation(sourceFile, call,
                         "Логирование " + call.getScope().get() + "." + call.getNameAsString() + "(...) в цикле:"
                                 + " на большом объеме это тысячи записей, которые забивают лог и тормозят обработку;"
                                 + " выведите одну итоговую запись после цикла либо понизьте уровень до debug"))
                 .toList();
+    }
+
+    // log.info("Нужен пароль: {}", path); throw new PasswordRequiredException(path); - после записи цикл
+    // заканчивается, вторая такая запись не появится
+    private boolean leavesLoopAfter(MethodCallExpr call) {
+        Optional<BlockStmt> block = call.findAncestor(BlockStmt.class);
+        // return в теле лямбды заканчивает один ее вызов, а не весь перебор
+        boolean isLambdaBody = block.flatMap(Node::getParentNode).filter(LambdaExpr.class::isInstance).isPresent();
+        return block.flatMap(statements -> statements.getStatements().getLast())
+                .filter(last -> last.isThrowStmt() || !isLambdaBody && (last.isReturnStmt() || last.isBreakStmt()))
+                .isPresent();
     }
 
     // if (!headerPrinted) { log.info("Cleaning started"); headerPrinted = true; }: запись одна на весь обход

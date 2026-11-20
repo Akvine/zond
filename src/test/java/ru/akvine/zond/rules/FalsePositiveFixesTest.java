@@ -351,7 +351,7 @@ class FalsePositiveFixesTest {
                         try {
                             work();
                         } catch (Exception e) {
-                            log.error("Work failed", e);
+                            log.error("Work failed: {}", e.getMessage());
                         }
                     }
                 }

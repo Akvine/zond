@@ -2,7 +2,10 @@ package ru.akvine.zond.rules;
 
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.BinaryExpr;
+import com.github.javaparser.ast.expr.ConditionalExpr;
+import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import com.github.javaparser.ast.stmt.BlockStmt;
 import com.github.javaparser.ast.stmt.IfStmt;
@@ -33,6 +36,10 @@ public abstract class AbstractFlowRule extends AbstractRule implements ProjectRu
     private static final Pattern CHECKED_ELSEWHERE = Pattern.compile(
             "^'([\\w.]+)' может быть null \\(значение проверено на null на строке (\\d+)\\)");
 
+    // 'protocol' может быть null (задано как null на строке 91)
+    private static final Pattern ASSIGNED_NULL = Pattern.compile(
+            "^'(\\w+)' может быть null \\(задано как null на строке (\\d+)\\)");
+
     protected abstract Set<FlowAnalysis.Kind> kinds();
 
     // Значение, вычисленное по всем путям, - факт; "на одном из путей" - только вероятность
@@ -50,6 +57,7 @@ public abstract class AbstractFlowRule extends AbstractRule implements ProjectRu
     public List<Violation> checkProject(List<SourceFile> sourceFiles) {
         return FlowAnalysis.of(sourceFiles).findings(kinds()).stream()
                 .filter(located -> !isGuardedThroughVariable(located.finding()))
+                .filter(located -> !isUsedUnderAssignmentCondition(located.finding()))
                 .map(located -> {
                     FlowAnalysis.Finding finding = located.finding();
                     Violation violation = violation(located.file(), finding.node(), finding.message());
@@ -89,6 +97,72 @@ public abstract class AbstractFlowRule extends AbstractRule implements ProjectRu
                 .map(check -> check.findAncestor(VariableDeclarator.class))
                 .flatMap(Optional::stream)
                 .anyMatch(guard -> isUnderGuard(use, guard.getNameAsString()));
+    }
+
+    /**
+     * Значение бывает null только при том же условии, под которым к нему не обращаются:
+     * <pre>
+     * Protocol protocol = position != null ? manager.getProtocol(position) : null;
+     * if (position != null) { protocol.send(command); }
+     * </pre>
+     * Анализ хода выполнения не связывает два одинаковых условия и считает, что protocol может быть null
+     */
+    private boolean isUsedUnderAssignmentCondition(FlowAnalysis.Finding finding) {
+        Matcher evidence = ASSIGNED_NULL.matcher(finding.message());
+        if (finding.kind() != FlowAnalysis.Kind.POSSIBLE_NULL_DEREFERENCE || !evidence.find()) {
+            return false;
+        }
+        String name = evidence.group(1);
+        int line = Integer.parseInt(evidence.group(2));
+        Node use = finding.node();
+        Optional<Node> callable = Nodes.enclosingCallable(use);
+        if (callable.isEmpty()) {
+            return false;
+        }
+        for (ConditionalExpr choice : callable.get().findAll(ConditionalExpr.class)) {
+            boolean here = choice.getBegin().filter(position -> position.line == line).isPresent();
+            boolean nullOtherwise = Nodes.unwrap(choice.getElseExpr()).isNullLiteralExpr();
+            if (here && nullOtherwise && isValueOf(choice, name)
+                    && isUnderCondition(use, Nodes.unwrap(choice.getCondition()).toString())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Тернарное выражение - начальное значение переменной либо то, что ей присваивают
+    private boolean isValueOf(ConditionalExpr choice, String name) {
+        Node holder = choice.getParentNode().orElse(null);
+        while (holder instanceof EnclosedExpr) {
+            holder = holder.getParentNode().orElse(null);
+        }
+        if (holder instanceof VariableDeclarator variable) {
+            return variable.getNameAsString().equals(name);
+        }
+        return holder instanceof AssignExpr assign && assign.getTarget().toString().equals(name);
+    }
+
+    // Обращение стоит в ветке if (условие) { ... }, в "условие ? ... : ..." либо справа от "условие && ..."
+    private boolean isUnderCondition(Node use, String condition) {
+        Node current = use;
+        Node parent = use.getParentNode().orElse(null);
+        while (parent != null) {
+            if (parent instanceof IfStmt check && current == check.getThenStmt()
+                    && Nodes.unwrap(check.getCondition()).toString().equals(condition)) {
+                return true;
+            }
+            if (parent instanceof ConditionalExpr choice && current == choice.getThenExpr()
+                    && Nodes.unwrap(choice.getCondition()).toString().equals(condition)) {
+                return true;
+            }
+            if (parent instanceof BinaryExpr both && both.getOperator() == BinaryExpr.Operator.AND
+                    && current == both.getRight() && Nodes.unwrap(both.getLeft()).toString().equals(condition)) {
+                return true;
+            }
+            current = parent;
+            parent = parent.getParentNode().orElse(null);
+        }
+        return false;
     }
 
     // Обращение стоит внутри if с этой переменной в условии либо после if с ней, который завершает метод

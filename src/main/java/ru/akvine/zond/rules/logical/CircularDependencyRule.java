@@ -1,9 +1,11 @@
 package ru.akvine.zond.rules.logical;
 
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.TypeDeclaration;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
+import ru.akvine.zond.loaders.ProjectDeclarations;
 import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
@@ -18,11 +20,14 @@ import java.util.ArrayList;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 @Component
 public class CircularDependencyRule extends AbstractRule implements ProjectRule, ContextRule {
@@ -36,6 +41,8 @@ public class CircularDependencyRule extends AbstractRule implements ProjectRule,
      */
     private record Bean(ClassOrInterfaceDeclaration type, SourceFile sourceFile) {
     }
+
+    private static final String KEY_SEPARATOR = "\u0000";
 
     @Override
     public String code() {
@@ -67,33 +74,37 @@ public class CircularDependencyRule extends AbstractRule implements ProjectRule,
     }
 
     private List<Violation> find(List<SourceFile> sourceFiles, boolean allowed) {
-        // Сортировка по имени делает обход и отчет предсказуемыми
+        // Сортировка по имени делает обход и отчет предсказуемыми. Два класса OrderService из разных пакетов -
+        // два разных бина, поэтому к имени в ключе добавлено полное имя класса
         Map<String, Bean> beans = new TreeMap<>();
-        Map<String, Set<String>> implementations = new HashMap<>();
+        Map<TypeDeclaration<?>, Set<String>> implementations = new IdentityHashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
             for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (!SpringBeans.isBean(type)) {
                     continue;
                 }
-                beans.put(type.getNameAsString(), new Bean(type, sourceFile));
-                type.getImplementedTypes().forEach(parent -> implementations
-                        .computeIfAbsent(parent.getNameAsString(), key -> new TreeSet<>())
-                        .add(type.getNameAsString()));
+                String key = keyOf(type);
+                beans.put(key, new Bean(type, sourceFile));
+                ProjectDeclarations.of(type).ancestors(type).forEach(parent -> implementations
+                        .computeIfAbsent(parent, found -> new TreeSet<>())
+                        .add(key));
             }
         }
 
         Map<String, Set<String>> dependencies = new HashMap<>();
-        beans.forEach((name, bean) -> dependencies.put(name, findBeanDependencies(bean, beans, implementations)));
+        beans.forEach((key, bean) -> dependencies.put(key, findBeanDependencies(bean, beans, implementations)));
 
         List<Violation> violations = new ArrayList<>();
-        for (String start : beans.keySet()) {
+        for (Map.Entry<String, Bean> entry : beans.entrySet()) {
+            String start = entry.getKey();
             List<String> cycle = findCycle(start, dependencies);
             if (cycle.isEmpty()) {
                 continue;
             }
 
-            Bean bean = beans.get(start);
-            String path = String.join(ARROW, cycle) + ARROW + start;
+            Bean bean = entry.getValue();
+            String path = cycle.stream().map(key -> beans.get(key).type().getNameAsString())
+                    .collect(Collectors.joining(ARROW)) + ARROW + bean.type().getNameAsString();
             violations.add(allowed
                     ? violation(bean.sourceFile(), bean.type(), "Циклическая зависимость бинов: " + path
                             + ": приложение стартует только благодаря " + ALLOW_CIRCULAR_REFERENCES + "=true, а бин"
@@ -106,6 +117,11 @@ public class CircularDependencyRule extends AbstractRule implements ProjectRule,
         return violations;
     }
 
+    // Простое имя идет первым: порядок обхода и бин, к которому привязана находка, зависят от него, как и раньше
+    private String keyOf(ClassOrInterfaceDeclaration type) {
+        return type.getNameAsString() + KEY_SEPARATOR + type.getFullyQualifiedName().orElse("");
+    }
+
     @Override
     public ErrorLevel errorLevel() {
         return ErrorLevel.CRITICAL;
@@ -116,25 +132,53 @@ public class CircularDependencyRule extends AbstractRule implements ProjectRule,
         return ErrorType.LOGICAL;
     }
 
-    // Зависимости с @Lazy и ObjectProvider не считаем: они получают бин позже и цикл при создании не образуют
+    /**
+     * Зависимости с @Lazy и ObjectProvider не считаем: они получают бин позже и цикл при создании не образуют.
+     * Тип зависимости ищется так, как его видит сам бин, - по импортам и пакету: MetadataService из пакета service
+     * и одноименный класс из пакета grpc - разные типы, и совпадение простых имен их не связывает
+     */
     private Set<String> findBeanDependencies(
-            Bean bean, Map<String, Bean> beans, Map<String, Set<String>> implementations) {
+            Bean bean, Map<String, Bean> beans, Map<TypeDeclaration<?>, Set<String>> implementations) {
         Set<String> result = new TreeSet<>();
+        ProjectDeclarations declarations = ProjectDeclarations.of(bean.type());
         for (SpringBeans.Dependency dependency : SpringBeans.findDependencies(bean.type())) {
             if (dependency.deferred()) {
                 continue;
             }
-            if (beans.containsKey(dependency.type())) {
-                result.add(dependency.type());
+            Optional<TypeDeclaration<?>> declared = declarations.find(dependency.type(), bean.type());
+            if (declared.isEmpty()) {
+                // Тип в проекте не объявлен (интерфейс библиотеки) либо по импортам не найден: связываем по
+                // простому имени, только если подходящий бин один
+                List<String> sameName = beans.entrySet().stream()
+                        .filter(entry -> isNamedOrImplements(entry.getValue().type(), dependency.type()))
+                        .map(Map.Entry::getKey)
+                        .toList();
+                if (sameName.size() == 1) {
+                    result.add(sameName.get(0));
+                }
+                continue;
+            }
+            Optional<String> itself = beans.entrySet().stream()
+                    .filter(entry -> entry.getValue().type() == declared.get())
+                    .map(Map.Entry::getKey)
+                    .findFirst();
+            if (itself.isPresent()) {
+                result.add(itself.get());
                 continue;
             }
             // Зависимость объявлена через интерфейс: берем реализацию, если она в проекте одна
-            Set<String> candidates = implementations.getOrDefault(dependency.type(), Set.of());
+            Set<String> candidates = implementations.getOrDefault(declared.get(), Set.of());
             if (candidates.size() == 1) {
                 result.addAll(candidates);
             }
         }
         return result;
+    }
+
+    private boolean isNamedOrImplements(ClassOrInterfaceDeclaration bean, String typeName) {
+        return bean.getNameAsString().equals(typeName)
+                || bean.getImplementedTypes().stream().anyMatch(parent -> parent.getNameAsString().equals(typeName))
+                || bean.getExtendedTypes().stream().anyMatch(parent -> parent.getNameAsString().equals(typeName));
     }
 
     /**

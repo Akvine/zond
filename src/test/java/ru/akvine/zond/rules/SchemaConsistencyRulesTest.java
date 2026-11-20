@@ -99,6 +99,31 @@ class SchemaConsistencyRulesTest {
     }
 
     @Test
+    void quotedColumnWithoutSpaceAndSchemaForTests() throws IOException {
+        // `id`BIGINT пишут и без пробела после кавычки
+        write("src/main/resources/schema.sql", """
+                CREATE TABLE `invoices` (
+                    `id`BIGINT NOT NULL,
+                    `title` VARCHAR(50)
+                );
+                """);
+        // Схема, которую поднимают тесты, урезана: когда есть настоящая, по ней не сверяют
+        write("src/test/resources/import.sql", "create table invoices (id bigint);\n");
+        source("Invoice.java", """
+                @Entity
+                @Table(name = "invoices")
+                class Invoice {
+                    @Id
+                    private Long id;
+                    private String title;
+                    private String comment;
+                }
+                """);
+
+        assertThat(lines(new EntityFieldWithoutColumnRule())).containsExactly("Invoice.java:7");
+    }
+
+    @Test
     void entityFieldsAreComparedWithColumns() throws IOException {
         write("db/migration/V1__init.sql", """
                 create table orders (

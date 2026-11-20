@@ -17,12 +17,12 @@ import com.github.javaparser.ast.expr.EnclosedExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.models.SourceFile;
+import ru.akvine.zond.rules.support.PerSources;
 import ru.akvine.zond.rules.support.CallGraph;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
 import ru.akvine.zond.rules.support.Types;
 
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -54,8 +54,7 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
             "ofNullable", "requireNonNull", "requireNonNullElse", "isNull", "nonNull", "defaultIfNull",
             "firstNonNull", "checkNotNull", "notNull");
 
-    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
-    private static FlowAnalysis cached;
+    private static final PerSources<FlowAnalysis> CACHE = new PerSources<>();
 
     public enum Kind {
         NULL_DEREFERENCE,
@@ -102,12 +101,8 @@ public final class FlowAnalysis implements FlowInterpreter.Host {
     // Метод -> результат почти нигде не проверяют на null
     private final Map<MethodDeclaration, Boolean> usuallyUnchecked = new IdentityHashMap<>();
 
-    public static synchronized FlowAnalysis of(List<SourceFile> sources) {
-        if (cachedSources.get() != sources) {
-            cached = new FlowAnalysis(sources);
-            cachedSources = new WeakReference<>(sources);
-        }
-        return cached;
+    public static FlowAnalysis of(List<SourceFile> sources) {
+        return CACHE.get(sources, FlowAnalysis::new);
     }
 
     private FlowAnalysis(List<SourceFile> sources) {

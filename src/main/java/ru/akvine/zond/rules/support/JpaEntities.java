@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules.support;
 
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.type.Type;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
@@ -9,6 +10,7 @@ import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import lombok.experimental.UtilityClass;
 import ru.akvine.zond.models.SourceFile;
 
+import java.util.Optional;
 import java.util.List;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -35,6 +37,21 @@ public class JpaEntities {
     /**
      * @return поля-связи с другими сущностями: @OneToMany, @ManyToOne и т.п.
      */
+    /**
+     * Сущность, на которую ссылается тип в коде: сама либо в обертке - {@code List<Order>},
+     * {@code ResponseEntity<Page<Order>>}. Класс ищется с учетом пакета и импортов файла: одноименный класс
+     * другого пакета (DTO Product рядом с сущностью Product) сущностью не считается
+     */
+    public Optional<ClassOrInterfaceDeclaration> entityIn(Type type, ProjectClasses classes) {
+        for (ClassOrInterfaceType usage : type.findAll(ClassOrInterfaceType.class)) {
+            Optional<ClassOrInterfaceDeclaration> declared = classes.resolve(usage);
+            if (declared.isPresent() && !declared.get().isInterface() && Annotations.has(declared.get(), ENTITY)) {
+                return declared;
+            }
+        }
+        return Optional.empty();
+    }
+
     public List<FieldDeclaration> relationFields(ClassOrInterfaceDeclaration entity) {
         return entity.getFields().stream()
                 .filter(field -> Annotations.hasAny(field, RELATION_ANNOTATIONS))

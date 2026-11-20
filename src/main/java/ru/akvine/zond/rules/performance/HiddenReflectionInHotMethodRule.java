@@ -2,6 +2,7 @@ package ru.akvine.zond.rules.performance;
 
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.SimpleName;
 import org.springframework.stereotype.Component;
@@ -17,7 +18,9 @@ import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.HotMethods;
 import ru.akvine.zond.rules.support.LocalTypes;
+import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.TestClasses;
+import ru.akvine.zond.rules.support.Types;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -38,7 +41,15 @@ public class HiddenReflectionInHotMethodRule extends AbstractRule implements Pro
     private static final Set<String> CLASS_SCANS = Set.of(
             "getDeclaredFields", "getDeclaredMethods", "getMethods", "getFields", "getDeclaredConstructors",
             "getRecordComponents");
+    // Есть не только у Class: getMethods() у узла дерева разбора, getFields() у формы или документа
+    private static final Set<String> AMBIGUOUS_SCANS = Set.of("getMethods", "getFields");
     private static final String GET_BEAN_INFO = "getBeanInfo";
+    private static final String CLASS = "Class";
+    private static final Set<String> CLASS_TYPES = Set.of(CLASS);
+    // row.getClass(), type.getSuperclass(), Class.forName(name), ClassUtils.getUserClass(bean),
+    // field.getDeclaringClass()
+    private static final Pattern RETURNS_CLASS = Pattern.compile(
+            "getClass|getSuperclass|forName|loadClass|get\\w*Class|\\w*[cC]lassOf|classFor\\w*");
     // Метод сам хранит результат: поле-кеш либо computeIfAbsent
     private static final Pattern CACHE_TYPE = Pattern.compile(".*(Map|Cache|ClassValue)$");
     private static final String COMPUTE_IF_ABSENT = "computeIfAbsent";
@@ -109,7 +120,28 @@ public class HiddenReflectionInHotMethodRule extends AbstractRule implements Pro
         if (GET_BEAN_INFO.equals(name)) {
             return call.getScope().filter(scope -> scope.toString().endsWith("Introspector")).isPresent();
         }
-        return CLASS_SCANS.contains(name) && call.getArguments().isEmpty() && call.getScope().isPresent();
+        return CLASS_SCANS.contains(name) && call.getArguments().isEmpty()
+                && call.getScope().filter(scope -> isClassObject(scope, name)).isPresent();
+    }
+
+    // Order.class, value.getClass(), type.getSuperclass(), переменная типа Class. Одноименные методы есть и у других
+    // объектов: type.getMethods() у узла дерева разбора, form.getFields() у описания формы - это не рефлексия
+    private boolean isClassObject(Expression scope, String scan) {
+        Expression value = Nodes.unwrap(scope);
+        if (value.isClassExpr()) {
+            return true;
+        }
+        Optional<String> type = LocalTypes.typeOf(value);
+        if (type.isPresent()) {
+            return CLASS.equals(type.get());
+        }
+        Optional<Boolean> isClass = Types.isKindOf(value, CLASS_TYPES);
+        if (isClass.isPresent()) {
+            return isClass.get();
+        }
+        // Тип неизвестен. По тому, как объект получен, либо по имени метода, которого у других объектов нет
+        return value.isMethodCallExpr() && RETURNS_CLASS.matcher(value.asMethodCallExpr().getNameAsString()).matches()
+                || !AMBIGUOUS_SCANS.contains(scan);
     }
 
     // Метод обращается к полю-кешу своего класса либо сам вызывается как загрузчик computeIfAbsent

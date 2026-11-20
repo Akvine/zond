@@ -6,6 +6,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -56,6 +57,39 @@ public class Secrets {
             "change", "changed", "forgot", "forget", "validate", "verify", "check", "generate", "create", "delete",
             "remove", "show", "hide", "enter", "confirm", "send", "need", "require", "required");
 
+    // ACTION_SET_CREDENTIALS, PARAM_PASSWORD, HEADER_TOKEN, CLAIM_SECRET: первое слово говорит, что константа
+    // хранит название - действия, параметра, заголовка, - а не сам секрет
+    private final static Set<String> NAMING_PREFIXES = Set.of(
+            "action", "view", "param", "parameter", "header", "field", "attr", "attribute", "property", "prop",
+            "column", "claim", "env", "arg", "argument", "option", "cookie", "label", "msg", "message", "error", "err",
+            "title", "text", "event", "topic", "queue", "path", "url", "uri", "endpoint", "route", "scope", "grant",
+            "role", "permission", "authority", "type", "kind", "mode", "format", "pattern", "prefix", "suffix");
+
+    // DEFAULT_PASSWORD = "false": значение настройки по умолчанию, а не пароль
+    private final static Set<String> NOT_VALUES = Set.of(
+            "true", "false", "null", "none", "nil", "yes", "no", "on", "off", "default", "empty", "unknown",
+            "undefined");
+    // {noop}secret, {bcrypt}$2a$10$...: имя кодировщика паролей Spring Security перед значением
+    private final static Pattern ENCODED_VALUE = Pattern.compile("^\\{([\\w-]+)}(.*)$");
+    private final static String PLAIN_ENCODER = "noop";
+    // %TOKEN%, {token}, <token>, $token, :token, %s: место для значения в шаблоне, а не значение
+    private final static Pattern TEMPLATE_VALUE = Pattern.compile("^(%\\w+%?|\\{\\w*}|<\\w+>|\\$\\w+|:\\w+)$");
+    // ApolloUserToken, X-Auth-Token, setSessionTokenValue: слова без цифр и знаков, одно из них - о секрете
+    private final static Pattern WORDS_ONLY = Pattern.compile("^[A-Za-z]+([-_.][A-Za-z]+)*$");
+    private final static Set<String> SECRET_NAME_WORDS = Set.of(
+            "password", "passwd", "pwd", "secret", "token", "credential", "key", "apikey", "auth", "authorization",
+            "authentication");
+    // Значения, с которыми идут готовые образы баз и брокеров и которые пишут в примерах: настоящий секрет
+    // так не выглядит, а для рабочей среды такое значение почти наверняка переопределяют
+    private final static Set<String> WELL_KNOWN_DEFAULTS = Set.of(
+            "password", "pass", "passwd", "pwd", "guest", "admin", "administrator", "root", "test", "testing", "secret",
+            "postgres", "postgresql", "mysql", "mariadb", "oracle", "sa", "user", "username", "demo", "changeit",
+            "123", "1234", "12345", "123456", "1234567", "12345678", "123456789", "1234567890", "qwerty", "qwerty123",
+            "abc123", "password1", "password123", "p@ssw0rd", "letmein", "welcome", "minioadmin", "elastic", "redis",
+            "rabbitmq", "kafka", "mongo", "mongodb", "local", "localhost", "dev", "development", "foo", "bar", "foobar",
+            "token", "key", "apikey", "api-key", "mysecret", "my-secret", "secretkey", "secret-key", "s3cr3t",
+            "default_token", "default-token", "defaulttoken", "access_token", "test-token", "testtoken");
+
     // "Bearer eyJhbGciOi...": пробел есть, но это значение, а не фраза
     private final static Pattern AUTHORIZATION_VALUE = Pattern.compile("^(Bearer|Basic|Token)\\s+\\S+$");
 
@@ -90,7 +124,8 @@ public class Secrets {
      */
     public boolean isSecretName(String name) {
         List<String> words = meaningfulWords(name);
-        if (words.isEmpty() || ABOUT_PREFIXES.contains(words.get(0)) || isProtectedName(name)) {
+        if (words.isEmpty() || ABOUT_PREFIXES.contains(words.get(0)) || isProtectedName(name)
+                || words.size() > 1 && NAMING_PREFIXES.contains(words.get(0))) {
             return false;
         }
 
@@ -115,6 +150,14 @@ public class Secrets {
         if (text.chars().noneMatch(Character::isLetterOrDigit)) {
             return false;
         }
+        if (NOT_VALUES.contains(text.toLowerCase(Locale.ROOT)) || TEMPLATE_VALUE.matcher(text).matches()) {
+            return false;
+        }
+        // {noop} без пароля - пароля нет; {bcrypt}$2a$... - уже хеш, а не сам пароль
+        Matcher encoded = ENCODED_VALUE.matcher(text);
+        if (encoded.matches() && (encoded.group(2).isBlank() || !PLAIN_ENCODER.equals(encoded.group(1)))) {
+            return false;
+        }
         if (AUTHORIZATION_VALUE.matcher(text).matches()) {
             return true;
         }
@@ -128,6 +171,35 @@ public class Secrets {
         }
         return !KEY_LIKE_VALUE.matcher(text).matches() && !PATH_LIKE_VALUE.matcher(text).matches()
                 && !CACHE_KEY_PREFIX.matcher(text).matches();
+    }
+
+    /**
+     * @return true, если значение похоже на название: оно состоит из одних слов, и одно из них - о секрете
+     * (ApolloUserToken, X-Auth-Token). Так называют заголовок, куки или атрибут сессии; секрет таким бывает редко
+     */
+    public boolean isNameLike(String text) {
+        if (!WORDS_ONLY.matcher(text).matches()) {
+            return false;
+        }
+        String[] words = WORD_BOUNDARY.split(text);
+        if (words.length < 2) {
+            return false;
+        }
+        for (String word : words) {
+            if (SECRET_NAME_WORDS.contains(singular(word.toLowerCase(Locale.ROOT)))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * @return true для общеизвестного значения по умолчанию: password, guest, postgres, 123456, changeit
+     */
+    public boolean isWellKnownDefault(String text) {
+        String value = text.trim().toLowerCase(Locale.ROOT);
+        Matcher encoded = ENCODED_VALUE.matcher(value);
+        return WELL_KNOWN_DEFAULTS.contains(encoded.matches() ? encoded.group(2) : value);
     }
 
     /**

@@ -148,13 +148,13 @@ class CodeContextRulesTest {
                         try {
                             return client.call(url);
                         } catch (Exception e) {
-                            log.error("Call failed", e);
+                            log.error("Call failed: {}", e.getMessage());
                             return null;
                         }
                     }
                 }
                 """))
-                // На границе задачи, но исключение пропало (остался только текст) - находка; обычный метод - находка
+                // Находка там, где исключение пропало (остался только текст): и на границе задачи, и в обычном методе
                 .containsExactly(14, 53);
     }
 

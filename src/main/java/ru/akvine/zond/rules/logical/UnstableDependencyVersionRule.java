@@ -35,10 +35,11 @@ public class UnstableDependencyVersionRule extends AbstractContextRule {
     @Override
     public List<Violation> checkContext(ScanContext context) {
         List<Violation> violations = new ArrayList<>();
-        // Соседний модуль того же проекта (${project.version}-SNAPSHOT) собирается вместе с ним
-        Set<String> modules = BuildFiles.ownModules(context.textFiles());
+        // Соседний модуль того же проекта (${project.version}-SNAPSHOT) собирается вместе с ним. Модули берутся
+        // по всей папке: общий pom.xml с dependencyManagement виден и той части проекта, где самого модуля нет
+        Set<String> modules = BuildFiles.ownModules(context.folderFiles());
         for (TextFile file : context.textFiles()) {
-            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file, context.textFiles())) {
+            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file, context.folderFiles())) {
                 if (modules.contains(dependency.coordinates())) {
                     continue;
                 }

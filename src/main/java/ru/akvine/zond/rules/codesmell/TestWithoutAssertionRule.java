@@ -5,9 +5,11 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import com.github.javaparser.ast.stmt.IfStmt;
 import com.github.javaparser.ast.stmt.ThrowStmt;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -95,12 +97,24 @@ public class TestWithoutAssertionRule extends AbstractRule implements ProjectRul
                             + "': они пройдут при любом поведении кода, кроме исключения, и создают видимость"
                             + " покрытия; если файл создан генератором, поправьте шаблон"));
         }
-        return tests.stream()
-                .map(method -> violation(sourceFile, method,
-                        "Тест '" + method.getNameAsString() + "' ничего не проверяет: он пройдет при любом"
-                                + " поведении кода, кроме исключения, и создает видимость покрытия;"
-                                + " добавьте проверку результата"))
-                .toList();
+        List<Violation> violations = new ArrayList<>();
+        for (MethodDeclaration method : tests) {
+            boolean empty = method.getBody().filter(body -> body.getStatements().isEmpty()).isPresent();
+            if (empty) {
+                violations.add(violation(sourceFile, method,
+                        "Тест '" + method.getNameAsString() + "' пуст: он ничего не запускает и не проверяет,"
+                                + " но числится пройденным; напишите проверку либо удалите тест"));
+                continue;
+            }
+            // Тест вызывает код и ничего не сравнивает - он проверяет лишь то, что код не падает. Это слабая, но
+            // настоящая проверка (validate() на верных данных, запуск сценария): уверенность здесь ниже
+            violations.add(violation(sourceFile, method,
+                    "Тест '" + method.getNameAsString() + "' не проверяет результат: он пройдет при любом"
+                            + " поведении кода, кроме исключения; добавьте проверку результата либо, если нужно"
+                            + " именно отсутствие исключения, скажите об этом явно - assertDoesNotThrow(...)")
+                    .withConfidence(Confidence.PROBABLE));
+        }
+        return violations;
     }
 
     @Override
@@ -121,7 +135,11 @@ public class TestWithoutAssertionRule extends AbstractRule implements ProjectRul
             return true;
         }
         List<MethodCallExpr> calls = method.findAll(MethodCallExpr.class);
-        if (calls.stream().map(MethodCallExpr::getNameAsString)
+        // handler.analyze(position, Assertions::assertNull): проверка передана ссылкой на метод
+        boolean assertsByReference = method.findAll(MethodReferenceExpr.class).stream()
+                .map(MethodReferenceExpr::getIdentifier)
+                .anyMatch(name -> ASSERTION_PREFIXES.stream().anyMatch(name::startsWith));
+        if (assertsByReference || calls.stream().map(MethodCallExpr::getNameAsString)
                 .anyMatch(name -> ASSERTION_PREFIXES.stream().anyMatch(name::startsWith))
                 || calls.stream().anyMatch(call -> isOpaqueTestingHelper(method, call, classes))
                 || failsOnCondition(method)) {

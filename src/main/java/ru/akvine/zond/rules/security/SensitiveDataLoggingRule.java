@@ -5,6 +5,7 @@ import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.NameExpr;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -12,6 +13,7 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Loggers;
 import ru.akvine.zond.rules.support.ProtectedProperties;
 import ru.akvine.zond.rules.support.SecretExposure;
@@ -20,6 +22,7 @@ import ru.akvine.zond.rules.support.Secrets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -27,6 +30,10 @@ import java.util.regex.Pattern;
 public class SensitiveDataLoggingRule extends AbstractRule implements ProjectRule {
     // getPassword() -> password
     private static final Pattern GETTER = Pattern.compile("^get([A-Z].*)$");
+    private static final Pattern SECURITY_OBJECT = Pattern.compile(".*(AuthenticationToken|Authentication)$");
+    // Типы, значение которых попадает в лог как есть
+    private static final Set<String> TEXT_TYPES = Set.of(
+            "String", "CharSequence", "StringBuilder", "StringBuffer", "char[]", "byte[]", "Object", "Serializable");
     private static final Pattern CONSTANT_NAME = Pattern.compile("^[A-Z][A-Z0-9_]*$");
 
     @Override
@@ -51,14 +58,25 @@ public class SensitiveDataLoggingRule extends AbstractRule implements ProjectRul
             if (!Loggers.isLogCall(call)) {
                 continue;
             }
-            call.getArguments().stream()
-                    .map(argument -> findSecret(argument, properties))
-                    .flatMap(Optional::stream)
-                    .findFirst()
-                    .ifPresent(secret -> violations.add(violation(sourceFile, call,
-                            "В лог пишется секретное значение '" + secret + "': логи читает больше людей и систем,"
-                                    + " чем имеет право знать пароль или токен; уберите его из сообщения"
-                                    + " либо замаскируйте")));
+            Optional<Expression> secret = Optional.empty();
+            for (Expression argument : call.getArguments()) {
+                if (secret.isEmpty()) {
+                    secret = findSecret(argument, properties);
+                }
+            }
+            if (secret.isEmpty()) {
+                continue;
+            }
+            String text = secret.get().isNameExpr()
+                    ? secret.get().asNameExpr().getNameAsString()
+                    : secret.get().toString();
+            Violation violation = violation(sourceFile, call,
+                    "В лог пишется секретное значение '" + text + "': логи читает больше людей и систем,"
+                            + " чем имеет право знать пароль или токен; уберите его из сообщения"
+                            + " либо замаскируйте");
+            // В лог пишут не строку, а объект: что из него попадет в запись, решает его toString()
+            boolean object = LocalTypes.typeOf(secret.get()).filter(type -> !TEXT_TYPES.contains(type)).isPresent();
+            violations.add(object ? violation.withConfidence(Confidence.SUSPICION) : violation);
         }
         return violations;
     }
@@ -76,15 +94,17 @@ public class SensitiveDataLoggingRule extends AbstractRule implements ProjectRul
     // Переменная, поле или геттер с "секретным" именем, значение которых попадает в сообщение как есть.
     // Не считаются: зашифрованное или захешированное значение, длина и признак наличия (password != null),
     // значение, прошедшее через метод-обработку (mask(token)), и свойство, в которое кладут только хеш
-    private Optional<String> findSecret(Expression argument, ProtectedProperties properties) {
+    private Optional<Expression> findSecret(Expression argument, ProtectedProperties properties) {
         for (NameExpr name : argument.findAll(NameExpr.class)) {
-            if (isSecretVariable(name.getNameAsString()) && isRevealed(name, argument, properties)) {
-                return Optional.of(name.getNameAsString());
+            if (isSecretVariable(name.getNameAsString()) && !isSecurityObject(name)
+                    && isRevealed(name, argument, properties)) {
+                return Optional.of(name);
             }
         }
         for (FieldAccessExpr access : argument.findAll(FieldAccessExpr.class)) {
-            if (isSecretVariable(access.getNameAsString()) && isRevealed(access, argument, properties)) {
-                return Optional.of(access.toString());
+            if (isSecretVariable(access.getNameAsString()) && !isSecurityObject(access)
+                    && isRevealed(access, argument, properties)) {
+                return Optional.of(access);
             }
         }
         for (MethodCallExpr getter : argument.findAll(MethodCallExpr.class)) {
@@ -92,10 +112,16 @@ public class SensitiveDataLoggingRule extends AbstractRule implements ProjectRul
             boolean isSecretGetter = getter.getArguments().isEmpty() && matcher.matches()
                     && Secrets.isSecretName(matcher.group(1));
             if (isSecretGetter && isRevealed(getter, argument, properties)) {
-                return Optional.of(getter.toString());
+                return Optional.of(getter);
             }
         }
         return Optional.empty();
+    }
+
+    // UsernamePasswordAuthenticationToken usernamePasswordAuthenticationToken: объект Spring Security, его
+    // toString() учетные данные не раскрывает ("credentials=[PROTECTED]")
+    private boolean isSecurityObject(Expression value) {
+        return LocalTypes.typeOf(value).filter(type -> SECURITY_OBJECT.matcher(type).matches()).isPresent();
     }
 
     // DeviceCredentialsType.ACCESS_TOKEN, TOKEN_HEADER: константа - имя или вид секрета, а не его значение

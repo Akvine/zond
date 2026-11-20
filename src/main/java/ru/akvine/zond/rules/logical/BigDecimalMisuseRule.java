@@ -15,12 +15,16 @@ import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class BigDecimalMisuseRule extends AbstractRule {
+    // 0.5d, 12.0F
+    private static final Pattern TYPE_SUFFIX = Pattern.compile("[dDfF]$");
     private static final String BIG_DECIMAL = "BigDecimal";
     private static final String EQUALS = "equals";
     private static final Set<String> FLOATING_TYPES = Set.of("double", "float", "Double", "Float");
@@ -42,7 +46,7 @@ public class BigDecimalMisuseRule extends AbstractRule {
         for (ObjectCreationExpr creation : sourceFile.findAll(ObjectCreationExpr.class)) {
             if (BIG_DECIMAL.equals(creation.getType().getNameAsString())
                     && creation.getArguments().size() == 1
-                    && isFloating(creation.getArgument(0))) {
+                    && isFloating(creation.getArgument(0)) && !isExactLiteral(creation.getArgument(0))) {
                 violations.add(violation(sourceFile, creation,
                         "'" + creation + "': конструктор от double сохраняет двоичную погрешность"
                                 + " (0.1 превращается в 0.1000000000000000055...); используйте"
@@ -64,6 +68,25 @@ public class BigDecimalMisuseRule extends AbstractRule {
             }
         }
         return violations;
+    }
+
+    // new BigDecimal(0.00), new BigDecimal(1299.0), new BigDecimal(0.5): такое число двоичная дробь хранит точно,
+    // и погрешности в нем нет
+    private boolean isExactLiteral(Expression argument) {
+        Expression value = Nodes.unwrap(argument);
+        if (!value.isDoubleLiteralExpr()) {
+            return false;
+        }
+        String text = TYPE_SUFFIX.matcher(value.asDoubleLiteralExpr().getValue().replace("_", "")).replaceAll("");
+        try {
+            // Конструктор от double здесь нужен намеренно: он дает точное двоичное значение, с которым и
+            // сравнивается десятичная запись
+            // zond:ignore jr:26
+            return new BigDecimal(Double.parseDouble(text)).compareTo(new BigDecimal(text)) == 0;
+        } catch (NumberFormatException exception) {
+            // Шестнадцатеричная запись дробного числа: проверять нечем, оставляем находку
+            return false;
+        }
     }
 
     @Override

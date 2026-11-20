@@ -9,7 +9,6 @@ import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import lombok.experimental.UtilityClass;
 
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @UtilityClass
 public class TestClasses {
@@ -59,8 +58,6 @@ public class TestClasses {
 
     // Сравниваем по простому имени, чтобы поймать и короткую, и полную запись аннотации
     public Set<String> annotationNames(NodeWithAnnotations<?> node) {
-        return node.getAnnotations().stream()
-                .map(annotation -> annotation.getName().getIdentifier())
-                .collect(Collectors.toSet());
+        return Annotations.names(node);
     }
 }

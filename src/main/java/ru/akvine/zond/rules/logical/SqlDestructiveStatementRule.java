@@ -28,8 +28,10 @@ public class SqlDestructiveStatementRule extends AbstractContextRule {
             Pattern.CASE_INSENSITIVE);
     private static final int SNIPPET_LENGTH = 60;
     // DROP TABLE IF EXISTS cards; CREATE TABLE cards (...): скрипт пересоздает схему (schema.sql), а не мигрирует данные
-    private static final Pattern DROP_IF_EXISTS =
-            Pattern.compile("^drop\\s+table\\s+if\\s+exists\\s+([\\w.\"`]+).*", Pattern.CASE_INSENSITIVE);
+    // У HSQLDB и H2 условие пишут и после имени: DROP TABLE vets IF EXISTS
+    private static final Pattern DROP_IF_EXISTS = Pattern.compile(
+            "^drop\\s+table\\s+(?:if\\s+exists\\s+([\\w.\"`]+)|([\\w.\"`]+)\\s+if\\s+exists\\b).*",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern CREATE_TABLE =
             Pattern.compile("^create\\s+table\\s+(?:if\\s+not\\s+exists\\s+)?([\\w.\"`]+).*", Pattern.CASE_INSENSITIVE);
 
@@ -91,7 +93,7 @@ public class SqlDestructiveStatementRule extends AbstractContextRule {
 
     private boolean isRecreated(String statement, Set<String> created) {
         Matcher drop = DROP_IF_EXISTS.matcher(statement);
-        return drop.matches() && created.contains(normalize(drop.group(1)));
+        return drop.matches() && created.contains(normalize(drop.group(1) != null ? drop.group(1) : drop.group(2)));
     }
 
     private String normalize(String table) {

@@ -18,7 +18,14 @@ import java.util.Set;
 public class Handlers {
     // Интерфейс, по которому HTTP-клиента создает библиотека: его методы запросы отправляют, а не принимают
     private static final Set<String> CLIENT_ANNOTATIONS = Set.of(
-            "FeignClient", "HttpExchange", "RegisterRestClient", "RetrofitClient");
+            "FeignClient", "ReactiveFeignClient", "HttpExchange", "RegisterRestClient", "RetrofitClient");
+    // Spring HTTP Interface и Feign: по таким методам библиотека строит исходящий запрос
+    private static final Set<String> CLIENT_METHOD_ANNOTATIONS = Set.of(
+            "HttpExchange", "GetExchange", "PostExchange", "PutExchange", "PatchExchange", "DeleteExchange",
+            "RequestLine");
+    private static final Set<String> RETROFIT_METHOD_ANNOTATIONS =
+            Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "HTTP");
+    private static final String RETROFIT_PACKAGE = "retrofit2.";
 
     /**
      * @param method      метод с кодом обработчика
@@ -85,6 +92,20 @@ public class Handlers {
      * @return true для интерфейса, по которому библиотека создает HTTP-клиента (Feign, HTTP Interface)
      */
     public boolean isClient(ClassOrInterfaceDeclaration type) {
-        return type.isInterface() && Annotations.hasAny(type, CLIENT_ANNOTATIONS);
+        if (!type.isInterface()) {
+            return false;
+        }
+        // @PostExchange на методах без @HttpExchange на самом интерфейсе - тоже описание клиента
+        boolean describesRequests = type.getMethods().stream()
+                .anyMatch(method -> Annotations.hasAny(method, CLIENT_METHOD_ANNOTATIONS));
+        if (Annotations.hasAny(type, CLIENT_ANNOTATIONS) || describesRequests) {
+            return true;
+        }
+        // @GET и @POST есть и у Retrofit (клиент), и у JAX-RS (сервер): различаются импортом
+        boolean importsRetrofit = type.findCompilationUnit().stream()
+                .flatMap(unit -> unit.getImports().stream())
+                .anyMatch(declaration -> declaration.getNameAsString().startsWith(RETROFIT_PACKAGE));
+        return importsRetrofit && type.getMethods().stream()
+                .anyMatch(method -> Annotations.hasAny(method, RETROFIT_METHOD_ANNOTATIONS));
     }
 }

@@ -2,12 +2,15 @@ package ru.akvine.zond.rules.support;
 
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.EnumDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.RecordDeclaration;
+import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import ru.akvine.zond.models.SourceFile;
 
-import java.lang.ref.WeakReference;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -46,10 +49,17 @@ public final class ProjectClasses {
     }
 
     // Классы последнего проекта: список файлов у всех правил одного сканирования один и тот же
-    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
-    private static ProjectClasses cached;
+    private static final PerSources<ProjectClasses> CACHE = new PerSources<>();
 
     private final Map<String, List<ClassOrInterfaceDeclaration>> bySimpleName = new HashMap<>();
+    // Простые имена записей (record), перечислений и аннотаций: класс с таким же именем уже не единственный
+    private final Set<String> otherTypeNames = new HashSet<>();
+    // Все типы проекта по полному имени вместе с файлом: в проекте из нескольких модулей одно и то же полное
+    // имя может встретиться не раз, и запись Person одного модуля нельзя подменить классом Person другого
+    private final Map<String, List<Declared>> byQualifiedName = new HashMap<>();
+
+    private record Declared(TypeDeclaration<?> type, Path file) {
+    }
     private final Map<ClassOrInterfaceDeclaration, SourceFile> files = new HashMap<>();
 
     // Прямые наследники по классу-предку: составляются при первом вопросе о наследниках. Ключи сравниваются
@@ -63,12 +73,8 @@ public final class ProjectClasses {
      * Классы проекта нужны десяткам правил, а чтобы их собрать, приходится обойти все файлы. Поэтому для одного
      * и того же списка файлов они собираются один раз
      */
-    public static synchronized ProjectClasses of(List<SourceFile> sourceFiles) {
-        if (cachedSources.get() != sourceFiles) {
-            cached = collect(sourceFiles);
-            cachedSources = new WeakReference<>(sourceFiles);
-        }
-        return cached;
+    public static ProjectClasses of(List<SourceFile> sourceFiles) {
+        return CACHE.get(sourceFiles, ProjectClasses::collect);
     }
 
     private static ProjectClasses collect(List<SourceFile> sourceFiles) {
@@ -77,14 +83,32 @@ public final class ProjectClasses {
             for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 classes.bySimpleName.computeIfAbsent(type.getNameAsString(), name -> new ArrayList<>()).add(type);
                 classes.files.put(type, sourceFile);
+                classes.register(type, sourceFile);
+            }
+            for (RecordDeclaration type : sourceFile.findAll(RecordDeclaration.class)) {
+                classes.otherTypeNames.add(type.getNameAsString());
+                classes.register(type, sourceFile);
+            }
+            for (EnumDeclaration type : sourceFile.findAll(EnumDeclaration.class)) {
+                classes.otherTypeNames.add(type.getNameAsString());
+                classes.register(type, sourceFile);
             }
         }
         return classes;
     }
 
+    private void register(TypeDeclaration<?> type, SourceFile sourceFile) {
+        String name = type.getFullyQualifiedName().orElse(type.getNameAsString());
+        byQualifiedName.computeIfAbsent(name, key -> new ArrayList<>()).add(new Declared(type, sourceFile.path()));
+    }
+
+    /**
+     * @return класс с таким простым именем, если он в проекте один; когда имя носит еще и запись (record) либо
+     * перечисление, неясно, о ком речь, и ответа нет
+     */
     public Optional<ClassOrInterfaceDeclaration> find(String simpleName) {
         List<ClassOrInterfaceDeclaration> found = bySimpleName.getOrDefault(simpleName, List.of());
-        return found.size() == 1 ? Optional.of(found.get(0)) : Optional.empty();
+        return found.size() == 1 && !otherTypeNames.contains(simpleName) ? Optional.of(found.get(0)) : Optional.empty();
     }
 
     /**
@@ -118,16 +142,13 @@ public final class ProjectClasses {
                 .filter(name -> name.equals(simpleName) || name.endsWith("." + simpleName))
                 .findFirst();
         if (imported.isPresent()) {
-            return only(candidates.stream().filter(candidate -> qualifiedName(candidate).equals(imported.get())).toList());
+            return declared(imported.get(), unit.get());
         }
 
         // Класс того же пакета
         String ownPackage = unit.get().getPackageDeclaration().map(declaration -> declaration.getNameAsString() + ".").orElse("");
-        Optional<ClassOrInterfaceDeclaration> neighbour = only(candidates.stream()
-                .filter(candidate -> qualifiedName(candidate).equals(ownPackage + simpleName))
-                .toList());
-        if (neighbour.isPresent()) {
-            return neighbour;
+        if (byQualifiedName.containsKey(ownPackage + simpleName)) {
+            return declared(ownPackage + simpleName, unit.get());
         }
         // Вложенный класс из того же файла
         Optional<ClassOrInterfaceDeclaration> nested = only(candidates.stream()
@@ -137,11 +158,56 @@ public final class ProjectClasses {
             return nested;
         }
         // import ru.shop.dto.*
-        Set<String> packages = new HashSet<>();
-        unit.get().getImports().stream()
+        List<String> wildcards = unit.get().getImports().stream()
                 .filter(declaration -> declaration.isAsterisk() && !declaration.isStatic())
-                .forEach(declaration -> packages.add(declaration.getNameAsString() + "." + simpleName));
-        return only(candidates.stream().filter(candidate -> packages.contains(qualifiedName(candidate))).toList());
+                .map(declaration -> declaration.getNameAsString() + "." + simpleName)
+                .filter(byQualifiedName::containsKey)
+                .toList();
+        return wildcards.size() == 1 ? declared(wildcards.get(0), unit.get()) : Optional.empty();
+    }
+
+    /**
+     * Тип с таким полным именем, если это класс. Когда имя объявлено в проекте несколько раз (независимые модули
+     * с одинаковыми пакетами), берется объявление, которое лежит ближе всего к месту использования; запись
+     * (record) и перечисление классом не считаются
+     */
+    private Optional<ClassOrInterfaceDeclaration> declared(String qualifiedName, CompilationUnit usage) {
+        List<Declared> found = byQualifiedName.getOrDefault(qualifiedName, List.of());
+        Declared chosen = found.size() == 1 ? found.get(0) : nearest(found, usage);
+        return chosen != null && chosen.type() instanceof ClassOrInterfaceDeclaration type
+                ? Optional.of(type)
+                : Optional.empty();
+    }
+
+    // Ближе тот, у кого с файлом использования длиннее общее начало пути; при равенстве ответа нет
+    private Declared nearest(List<Declared> found, CompilationUnit usage) {
+        Optional<Path> file = usage.getStorage().map(CompilationUnit.Storage::getPath);
+        if (file.isEmpty()) {
+            return null;
+        }
+        Declared best = null;
+        int bestLength = -1;
+        boolean tie = false;
+        for (Declared candidate : found) {
+            int length = commonPrefix(file.get(), candidate.file());
+            if (length > bestLength) {
+                best = candidate;
+                bestLength = length;
+                tie = false;
+            } else if (length == bestLength) {
+                tie = true;
+            }
+        }
+        return tie ? null : best;
+    }
+
+    private int commonPrefix(Path first, Path second) {
+        int limit = Math.min(first.getNameCount(), second.getNameCount());
+        int length = 0;
+        while (length < limit && first.getName(length).equals(second.getName(length))) {
+            length++;
+        }
+        return length;
     }
 
     private Optional<ClassOrInterfaceDeclaration> only(List<ClassOrInterfaceDeclaration> found) {

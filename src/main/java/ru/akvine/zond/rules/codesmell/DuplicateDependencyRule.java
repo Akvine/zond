@@ -35,7 +35,7 @@ public class DuplicateDependencyRule extends AbstractContextRule {
             // Что и где объявлено в этом файле. В Gradle одна библиотека в разных конфигурациях
             // (implementation и annotationProcessor) - обычное дело, поэтому конфигурация входит в ключ
             Map<String, BuildFiles.Dependency> declared = new HashMap<>();
-            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file, context.textFiles())) {
+            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file, context.folderFiles())) {
                 if (dependency.managed()) {
                     continue;
                 }

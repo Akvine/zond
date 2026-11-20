@@ -108,6 +108,25 @@ public class CodeContexts {
     private static final Set<String> BOUNDARY_ANNOTATIONS = Set.of(
             "Scheduled", "Schedules", "Async", "EventListener", "TransactionalEventListener", "KafkaListener",
             "RabbitListener", "JmsListener", "SqsListener", "StreamListener", "ExceptionHandler", "PreDestroy");
+    // Аннотации методов, которые вызывает библиотека: веб, сообщения, расписание, аспекты, жизненный цикл
+    private static final Set<String> FRAMEWORK_CALLED = Set.of(
+            "ExceptionHandler", "InitBinder", "ModelAttribute", "MessageMapping", "SubscribeMapping",
+            "MessageExceptionHandler", "QueryMapping", "MutationMapping", "SubscriptionMapping", "SchemaMapping",
+            "BatchMapping", "GraphQlExceptionHandler", "GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS",
+            "Scheduled", "Schedules", "Async", "XxlJob", "Recurring", "EventListener", "TransactionalEventListener",
+            "ApplicationModuleListener", "KafkaListener", "KafkaHandler", "RabbitListener", "RabbitHandler",
+            "JmsListener", "SqsListener", "StreamListener", "PulsarListener", "ServiceActivator", "Around", "Before",
+            "After", "AfterReturning", "AfterThrowing", "PostConstruct", "PreDestroy", "Bean", "Recover",
+            "ShellMethod", "ReadOperation", "WriteOperation", "DeleteOperation", "ManagedOperation", "BeforeStep",
+            "AfterStep", "BeforeJob", "AfterJob", "OnOpen", "OnMessage", "OnClose", "OnError", "Tool");
+    // Чем проверяют, полна ли пачка и есть ли следующая
+    private static final Set<String> BATCH_MEASURES = Set.of(
+            "size", "isEmpty", "isNotEmpty", "hasNext", "isLast", "hasContent", "getNumberOfElements", "length",
+            "getTotalHits", "getTotalElements", "getTotalPages", "getTotal", "getTotalCount", "totalHits");
+    // Курсор следующей пачки, который отдает ответ: response.nextToken(), page.getNextPageToken(),
+    // result.nextShardIterator(), listing.getNextMarker(), response.getScrollId(), result.lastEvaluatedKey()
+    private static final Pattern BATCH_CURSOR = Pattern.compile(
+            "(get)?[nN]ext\\w+|\\w*(Token|Cursor|Marker|ScrollId|[lL]astEvaluatedKey)");
     private static final Set<String> BOUNDARY_METHODS =
             Set.of("main", "doFilter", "doFilterInternal", "onMessage", "executeInternal");
     // run() и call() - вход в задачу, только когда метод реализует Runnable, Callable и подобные
@@ -371,6 +390,9 @@ public class CodeContexts {
     // while (true) { batch = dao.query(code, 100); if (CollectionUtils.isEmpty(batch)) break; ... }: выборка
     // пачками, пока данные не кончатся. Запрос и запись в лог - на каждую пачку, а не на каждый элемент
     private boolean isBatchLoop(Node iteration) {
+        if (isFlaggedBatchLoop(iteration)) {
+            return true;
+        }
         Statement body;
         if (iteration instanceof WhileStmt loop && isTrue(loop.getCondition())) {
             body = loop.getBody();
@@ -392,6 +414,81 @@ public class CodeContexts {
             }
         }
         return false;
+    }
+
+    /**
+     * Цикл идет, пока очередная пачка полна или не пуста: условие продолжения - размер того, что выбрано в теле.
+     * <pre>
+     * do { cards = client.load(cursor); size = cards.size(); ... } while (size >= LIMIT);
+     * while (hasMore) { batch = repository.findNext(lastId); ...; hasMore = batch.size() == 500; }
+     * do { page = repository.findAll(pageable); ... } while (page.hasNext());
+     * while (token != null) { response = client.list(token); ...; token = response.nextToken(); }
+     * </pre>
+     * Цикл, который берет по одному элементу ({@code while ((line = reader.readLine()) != null)},
+     * {@code while (!queue.isEmpty()) queue.poll()}), сюда не попадает: в нем размер выборки не проверяют
+     */
+    private boolean isFlaggedBatchLoop(Node iteration) {
+        Expression condition;
+        Statement body;
+        if (iteration instanceof WhileStmt loop) {
+            condition = loop.getCondition();
+            body = loop.getBody();
+        } else if (iteration instanceof DoStmt loop) {
+            condition = loop.getCondition();
+            body = loop.getBody();
+        } else {
+            return false;
+        }
+        // Все, что в теле цикла получено вызовом: сама пачка, ответ клиента, страница
+        Set<String> fetched = new HashSet<>();
+        Map<String, List<Expression>> assigned = new HashMap<>();
+        for (VariableDeclarator variable : body.findAll(VariableDeclarator.class)) {
+            variable.getInitializer().ifPresent(value -> assigned
+                    .computeIfAbsent(variable.getNameAsString(), name -> new ArrayList<>())
+                    .add(value));
+        }
+        for (AssignExpr assignment : body.findAll(AssignExpr.class)) {
+            assigned.computeIfAbsent(assignment.getTarget().toString(), name -> new ArrayList<>())
+                    .add(assignment.getValue());
+        }
+        assigned.forEach((name, values) -> {
+            if (values.stream().anyMatch(value -> !value.findAll(MethodCallExpr.class).isEmpty())) {
+                fetched.add(name);
+            }
+        });
+        if (fetched.isEmpty()) {
+            return false;
+        }
+        // int scanned = batch.size(); boolean last = page.isLast()
+        Set<String> measures = new HashSet<>();
+        assigned.forEach((name, values) -> {
+            if (values.stream().anyMatch(value -> measuresBatch(value, fetched))) {
+                measures.add(name);
+            }
+        });
+        if (measuresBatch(condition, fetched) || mentionsAny(condition, measures)) {
+            return true;
+        }
+        // hasMore = scanned == 500
+        return condition.findAll(NameExpr.class).stream()
+                .flatMap(flag -> assigned.getOrDefault(flag.getNameAsString(), List.of()).stream())
+                .anyMatch(value -> measuresBatch(value, fetched) || mentionsAny(value, measures));
+    }
+
+    // batch.size(), page.hasNext(), response.getBody().isEmpty(): размер или исчерпанность выбранного.
+    // response.nextToken(): курсор следующей пачки - его берут у ответа, полученного в этом же проходе
+    private boolean measuresBatch(Expression expression, Set<String> fetched) {
+        return expression.findAll(MethodCallExpr.class).stream().anyMatch(call -> {
+            boolean ofFetched = call.getScope().filter(scope -> mentionsAny(scope, fetched)).isPresent();
+            if (BATCH_MEASURES.contains(call.getNameAsString())) {
+                return ofFetched || call.getArguments().stream().anyMatch(argument -> mentionsAny(argument, fetched));
+            }
+            return ofFetched && BATCH_CURSOR.matcher(call.getNameAsString()).matches();
+        });
+    }
+
+    private boolean mentionsAny(Expression expression, Set<String> names) {
+        return expression.findAll(NameExpr.class).stream().anyMatch(name -> names.contains(name.getNameAsString()));
     }
 
     private boolean isTrue(Expression condition) {
@@ -722,6 +819,15 @@ public class CodeContexts {
                 .filter(parent -> parent instanceof MethodCallExpr call && EXECUTOR_METHODS.contains(call.getNameAsString())
                         || parent instanceof ObjectCreationExpr creation && THREAD.equals(creation.getType().getNameAsString()))
                 .isPresent();
+    }
+
+    /**
+     * @return true, если метод вызывает не код проекта, а Spring или другая библиотека: обработчик запроса,
+     * слушатель, задача по расписанию, совет аспекта, метод жизненного цикла. Ловить его исключения некому,
+     * кроме самой библиотеки, и вызовов в проекте у него нет
+     */
+    public boolean isCalledByFramework(MethodDeclaration method) {
+        return Mappings.find(method).isPresent() || Annotations.hasAny(method, FRAMEWORK_CALLED) || isTaskEntry(method);
     }
 
     private boolean isTaskEntry(MethodDeclaration method) {

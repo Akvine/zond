@@ -29,6 +29,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public class OptionalMisuseRule extends AbstractRule {
@@ -39,6 +40,8 @@ public class OptionalMisuseRule extends AbstractRule {
     private static final String IS_EMPTY = "isEmpty";
     private static final Set<String> PRESENCE_CHECKS = Set.of(IS_PRESENT, IS_EMPTY);
     private static final String FILTER = "filter";
+    private static final String ANY_MATCH = "anyMatch";
+    private static final Set<String> FIND_METHODS = Set.of("findFirst", "findAny");
 
     // Методы, которые возвращают Optional: вызов get() сразу после них ничем не защищен
     private static final Set<String> OPTIONAL_SOURCES = Set.of("findFirst", "findAny", "findById", "ofNullable");
@@ -102,7 +105,7 @@ public class OptionalMisuseRule extends AbstractRule {
             Expression scope = Nodes.unwrap(call.getScope().get());
             // get() внутри try, который ловит NoSuchElementException, - отсутствие значения уже обработано
             if ((isUncheckedSource(scope) || isUncheckedVariable(scope, call)) && !isCaught(call)
-                    && !isOverNonEmptyCollection(scope, call)) {
+                    && !isOverNonEmptyCollection(scope, call) && !isMatchedBefore(scope, call)) {
                 violations.add(violation(sourceFile, call,
                         "Optional.get() без проверки в '" + call + "': на пустом Optional будет"
                                 + " NoSuchElementException; используйте orElseThrow(), orElse() или ifPresent()"));
@@ -168,6 +171,38 @@ public class OptionalMisuseRule extends AbstractRule {
         }
         String collection = Nodes.unwrap(stream.getScope().get()).toString();
         return Guards.isGuarded(call, check -> isEmptinessCheck(check, collection)) || isFilledBefore(call, collection);
+    }
+
+    /**
+     * boolean exists = items.stream().anyMatch(условие);
+     * if (exists) { items.stream().filter(условие).findFirst().get() }: тем же условием уже проверено, что
+     * подходящий элемент есть
+     */
+    private boolean isMatchedBefore(Expression scope, MethodCallExpr call) {
+        if (!scope.isMethodCallExpr() || !FIND_METHODS.contains(scope.asMethodCallExpr().getNameAsString())) {
+            return false;
+        }
+        Optional<String> condition = scope.asMethodCallExpr().getScope()
+                .map(Nodes::unwrap)
+                .filter(Expression::isMethodCallExpr)
+                .map(Expression::asMethodCallExpr)
+                .filter(step -> FILTER.equals(step.getNameAsString()) && step.getArguments().size() == 1)
+                .map(step -> normalized(step.getArgument(0)));
+        return condition.isPresent() && Guards.isGuarded(call, check -> check.isMethodCallExpr()
+                && ANY_MATCH.equals(check.asMethodCallExpr().getNameAsString())
+                && check.asMethodCallExpr().getArguments().size() == 1
+                && normalized(check.asMethodCallExpr().getArgument(0)).equals(condition.get()));
+    }
+
+    // Условие без пробелов и с единым именем параметра: item -> item.isActive() и it -> it.isActive() - одно и то же
+    private String normalized(Expression condition) {
+        String text = condition.toString();
+        if (condition.isLambdaExpr() && condition.asLambdaExpr().getParameters().size() == 1) {
+            String parameter = condition.asLambdaExpr().getParameter(0).getNameAsString();
+            text = condition.asLambdaExpr().getBody().toString()
+                    .replaceAll("\\b" + Pattern.quote(parameter) + "\\b", "_");
+        }
+        return text.replaceAll("\\s+", "");
     }
 
     // list.isEmpty(), list.size(), CollectionUtils.isNotEmpty(list)

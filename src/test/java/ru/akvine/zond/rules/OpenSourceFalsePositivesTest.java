@@ -365,10 +365,10 @@ class OpenSourceFalsePositivesTest {
                 }
                 """;
 
-        // Обе находки остаются, но там, где стек ушел в лог, это только подозрение
+        // Там, где исключение целиком ушло в лог, оно не потеряно - находки нет; остается та, где записан только текст
         assertThat(RuleTests.check(new BroadCatchRule(), code))
                 .extracting(violation -> violation.line() + " " + violation.confidenceOrDefault())
-                .containsExactly("5 " + Confidence.SUSPICION, "13 " + Confidence.PROBABLE);
+                .containsExactly("13 " + Confidence.PROBABLE);
     }
 
     @Test

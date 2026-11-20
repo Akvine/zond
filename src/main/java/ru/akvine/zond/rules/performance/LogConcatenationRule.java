@@ -12,16 +12,19 @@ import ru.akvine.zond.models.SourceFile;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.Loggers;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.StringLiterals;
 
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 @Component
 public class LogConcatenationRule extends AbstractRule {
+    private static final Set<String> ALWAYS_ENABLED = Set.of("warn", "error", "fatal", "severe", "warning");
     private static final Pattern LEVEL_CHECK = Pattern.compile("is(Trace|Debug|Info|Warn|Error|Fatal)Enabled|isLoggable");
 
     private static final String STRING = "String";
@@ -43,6 +46,7 @@ public class LogConcatenationRule extends AbstractRule {
                 .filter(Loggers::isLogCall)
                 .filter(call -> call.getArguments().stream().anyMatch(this::isBuiltEagerly))
                 .filter(call -> !isUnderLevelCheck(call))
+                .filter(this::isWorthLazyMessage)
                 .map(call -> violation(sourceFile, call,
                         "Сообщение для " + call.getScope().get() + "." + call.getNameAsString() + "(...) собирается"
                                 + " до вызова: строка формируется, даже когда этот уровень логирования выключен;"
@@ -58,6 +62,18 @@ public class LogConcatenationRule extends AbstractRule {
     @Override
     public ErrorType errorType() {
         return ErrorType.PERFORMANCE;
+    }
+
+    /**
+     * Подстановка экономит работу, только когда сообщение могут не записать. Уровни warn и error включены
+     * всегда, и запись на них - редкое событие: строка нужна в любом случае. Сообщение при запуске приложения
+     * собирается один раз. Исключение - цикл: там цена умножается на число проходов
+     */
+    private boolean isWorthLazyMessage(MethodCallExpr call) {
+        if (Nodes.enclosingLoop(call).isPresent()) {
+            return true;
+        }
+        return !ALWAYS_ENABLED.contains(call.getNameAsString()) && !CodeContexts.isStartup(call);
     }
 
     // "id=" + id либо String.format("id=%s", id); конкатенация одних литералов склеивается компилятором

@@ -14,6 +14,7 @@ import ru.akvine.zond.rules.support.ProjectUsages;
 
 import java.util.List;
 import java.util.Set;
+import java.util.TreeSet;
 
 @Component
 public class UnusedMethodRule extends AbstractUnusedDeclarationRule {
@@ -50,7 +51,9 @@ public class UnusedMethodRule extends AbstractUnusedDeclarationRule {
             // Метод, который вызывается только из мертвого кода, сам мертв: удалять их нужно вместе
             String reason = callers.isEmpty()
                     ? "нигде в проекте не вызывается"
-                    : "вызывается только из неиспользуемого кода (" + String.join(", ", callers) + ")";
+                    // Имена идут по алфавиту: порядок в множестве от запуска к запуску разный, а текст находки
+                    // должен оставаться тем же
+                    : "вызывается только из неиспользуемого кода (" + String.join(", ", new TreeSet<>(callers)) + ")";
             violations.add(violation(sourceFile, method,
                     "Метод '" + type.getNameAsString() + "." + method.getNameAsString() + "' " + reason
                             + ": мертвый код приходится читать и сопровождать впустую;"

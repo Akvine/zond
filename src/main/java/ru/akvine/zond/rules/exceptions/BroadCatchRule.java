@@ -8,7 +8,6 @@ import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.stmt.TryStmt;
 import com.github.javaparser.ast.type.Type;
 import org.springframework.stereotype.Component;
-import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -46,7 +45,7 @@ public class BroadCatchRule extends AbstractRule {
 
     @Override
     public String description() {
-        return "Сканирует код и ищет catch (Throwable) и catch (Exception) без повторного выброса исключения";
+        return "Сканирует код и ищет catch (Throwable) и catch (Exception), в которых пойманное исключение теряется";
     }
 
     @Override
@@ -58,21 +57,16 @@ public class BroadCatchRule extends AbstractRule {
                 continue;
             }
 
-            // На границе задачи ловить все и положено: выше исключение обработать некому. Нужно лишь, чтобы оно
-            // не пропало - ушло в лог или обработчику вместе со стеком
-            boolean barrier = CodeContexts.isTaskBoundary(clause) && CodeContexts.passesExceptionOn(clause);
+            // Находка - только когда пойманное исключение теряется: его не выбросили дальше и никому не передали.
+            // Если само исключение ушло в лог (со стеком), обработчику, в Mono.error(ex) или в объект результата,
+            // ошибка программирования не пропадет бесследно, а широкий catch остается вопросом стиля
             Optional<String> broadType = findBroadType(clause.getParameter().getType());
-            if (broadType.isPresent() && !rethrows(clause) && !barrier && !isRelease(clause)
-                    && !passesToFailureHandler(clause)) {
-                String text = "catch (" + broadType.get() + ") без повторного выброса: вместе с ожидаемыми ошибками"
-                        + " перехватываются и ошибки программирования (NullPointerException и т.п.);"
-                        + " ловите конкретные исключения или пробрасывайте дальше";
-                // Исключение записано в лог вместе со стеком: ошибка программирования не пропадет бесследно,
-                // ее увидят в логе. Широкий catch здесь - вопрос стиля, а не потерянная ошибка
-                violations.add(CodeContexts.logsException(clause)
-                        ? violation(sourceFile, clause, text + ". Здесь исключение уходит в лог вместе со стеком,"
-                                + " поэтому это подозрение").withConfidence(Confidence.SUSPICION)
-                        : violation(sourceFile, clause, text));
+            if (broadType.isPresent() && !rethrows(clause) && !CodeContexts.passesExceptionOn(clause)
+                    && !isRelease(clause) && !passesToFailureHandler(clause)) {
+                violations.add(violation(sourceFile, clause, "catch (" + broadType.get() + "), в котором исключение"
+                        + " теряется: оно не выброшено дальше и никому не передано, поэтому вместе с ожидаемыми"
+                        + " ошибками бесследно пропадут и ошибки программирования (NullPointerException и т.п.);"
+                        + " ловите конкретные исключения либо пишите пойманное в лог целиком, со стеком"));
             }
         }
         return violations;

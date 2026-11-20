@@ -96,6 +96,11 @@ class ProjectStructureRulesTest {
                         order.getItems().size();
                     }
                 }
+                @Entity
+                class Order {
+                    @OneToMany
+                    private List<Item> items;
+                }
                 """)).containsExactly(4);
     }
 

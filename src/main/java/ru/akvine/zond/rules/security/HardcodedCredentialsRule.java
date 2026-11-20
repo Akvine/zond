@@ -6,6 +6,7 @@ import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.SourceFile;
@@ -82,9 +83,26 @@ public class HardcodedCredentialsRule extends AbstractRule {
         if (TestClasses.isInside(node)) {
             return Optional.empty();
         }
-        return Optional.of(violation(sourceFile, node,
+        Violation violation = violation(sourceFile, node,
                 "Секрет '" + name + "' записан в коде строкой: он попадет в репозиторий и сборку;"
-                        + " вынесите его в настройки окружения или хранилище секретов"));
+                        + " вынесите его в настройки окружения или хранилище секретов");
+        // USER_TOKEN = "ApolloUserToken": значение из одних слов и само называет токен - похоже на название
+        // куки или заголовка, а не на секрет. В вызове password("...") значение - именно пароль, как бы оно ни
+        // выглядело
+        boolean nameLike = !(node instanceof MethodCallExpr) && literalOf(node).filter(Secrets::isNameLike).isPresent();
+        return Optional.of(nameLike ? violation.withConfidence(Confidence.SUSPICION) : violation);
+    }
+
+    private Optional<String> literalOf(Node node) {
+        Optional<Expression> value = Optional.empty();
+        if (node instanceof VariableDeclarator variable) {
+            value = variable.getInitializer();
+        } else if (node instanceof AssignExpr assign) {
+            value = Optional.of(assign.getValue());
+        }
+        return value.map(Nodes::unwrap)
+                .filter(Expression::isStringLiteralExpr)
+                .map(literal -> literal.asStringLiteralExpr().asString());
     }
 
     private boolean isSecret(String name, Expression value) {

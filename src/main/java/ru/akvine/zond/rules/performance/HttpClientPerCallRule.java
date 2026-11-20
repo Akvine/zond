@@ -57,6 +57,8 @@ public class HttpClientPerCallRule extends AbstractRule {
     // Первое имя выражения: RestClient в RestClient.create(url), OkHttpClient в new OkHttpClient.Builder()
     private static final Pattern LEADING_TYPE = Pattern.compile("^(?:new )?([A-Za-z_$][\\w$]*)");
     private static final String BUILD = "build";
+    private static final Pattern CLIENT_RESULT = Pattern.compile(
+            ".*(RestTemplate|RestOperations|HttpClient|WebClient|RestClient|RequestFactory|Retrofit|Client|Api)$");
     private static final String MAIN = "main";
 
     @Override
@@ -156,7 +158,13 @@ public class HttpClientPerCallRule extends AbstractRule {
         boolean once = MAIN.equals(method.getNameAsString()) && method.isStatic()
                 || CodeContexts.isStartup(creation);
         return !once && Nodes.enclosingLoop(creation).isEmpty() && !TestClasses.isInside(creation)
-                && !isStoredOrReturned(creation, method);
+                && !isStoredOrReturned(creation, method) && !isClientFactory(method);
+    }
+
+    // RestTemplate createNotifierRestTemplate(...), PaymentClient paymentClient(...): метод собирает клиента и
+    // отдает его, а все созданное внутри становится его частью. Сколько проживет клиент, решает вызывающий
+    private boolean isClientFactory(MethodDeclaration method) {
+        return CLIENT_RESULT.matcher(LocalTypes.typeName(method.getType())).matches();
     }
 
     // this.client = new RestTemplate() (ленивое создание), return new RestTemplate() (фабрика): клиент живет дольше

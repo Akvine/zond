@@ -124,7 +124,7 @@ public class VulnerableDependencyRule extends AbstractContextRule {
     public List<Violation> checkContext(ScanContext context) {
         List<Violation> violations = new ArrayList<>();
         for (TextFile file : context.textFiles()) {
-            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file, context.textFiles())) {
+            for (BuildFiles.Dependency dependency : BuildFiles.dependencies(file, context.folderFiles())) {
                 // Библиотека только для тестов в работающее приложение не попадает
                 if (dependency.isTestOnly()) {
                     continue;

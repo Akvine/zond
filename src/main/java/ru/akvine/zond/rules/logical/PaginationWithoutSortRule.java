@@ -21,6 +21,7 @@ import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.ProjectClasses;
 import ru.akvine.zond.rules.support.Queries;
+import ru.akvine.zond.rules.support.Repositories;
 import ru.akvine.zond.rules.support.StreamChains;
 import ru.akvine.zond.rules.support.StringLiterals;
 import ru.akvine.zond.rules.support.TestClasses;
@@ -42,6 +43,7 @@ public class PaginationWithoutSortRule extends AbstractRule implements ProjectRu
     private static final String PAGE_REQUEST = "PageRequest";
     private static final String OF = "of";
     private static final String WITH_PAGE = "withPage";
+    private static final String WITH_SORT = "withSort";
     private static final String OF_SIZE = "ofSize";
     private static final String FIRST_PAGE = "0";
     private static final int PAGE_AND_SIZE = 2;
@@ -81,10 +83,17 @@ public class PaginationWithoutSortRule extends AbstractRule implements ProjectRu
         List<Violation> violations = new ArrayList<>();
         for (SourceFile sourceFile : sourceFiles) {
             for (MethodCallExpr call : sourceFile.findAll(MethodCallExpr.class)) {
-                if (isUnsortedPage(call) && !TestClasses.isInside(call) && !isSortedByQuery(call, classes)) {
-                    violations.add(violation(sourceFile, call,
+                if (isUnsortedPage(call) && !TestClasses.isInside(call) && !isSortedLater(call)
+                        && !isSortedByQuery(call, classes)) {
+                    Violation violation = violation(sourceFile, call,
                             "'" + Nodes.text(call) + "' - страница без сортировки" + CONSEQUENCE
-                                    + "задайте порядок по уникальному полю: PageRequest.of(page, size, Sort.by(\"id\"))"));
+                                    + "задайте порядок по уникальному полю:"
+                                    + " PageRequest.of(page, size, Sort.by(\"id\"))");
+                    // Страница ушла не в репозиторий, а в свой метод или в ответ: какой запрос ее получит и есть
+                    // ли в нем ORDER BY, отсюда не видно
+                    violations.add(isPassedToRepository(call)
+                            ? violation
+                            : violation.withConfidence(Confidence.SUSPICION));
                 }
             }
             for (StringLiterals.LiteralText literal : StringLiterals.findComplete(sourceFile.unit())) {
@@ -137,6 +146,15 @@ public class PaginationWithoutSortRule extends AbstractRule implements ProjectRu
         return call.getArguments().size() == PAGE_AND_SIZE || call.getArgument(PAGE_AND_SIZE).toString().contains(UNSORTED);
     }
 
+    // PageRequest.of(page, size).withSort(Sort.by("id")): порядок добавлен следующим вызовом
+    private boolean isSortedLater(MethodCallExpr page) {
+        return StreamChains.callsAfter(page).stream().anyMatch(step -> WITH_SORT.equals(step.getNameAsString()));
+    }
+
+    private boolean isPassedToRepository(MethodCallExpr page) {
+        return consumersOf(page).stream().anyMatch(Repositories::isRepositoryCall);
+    }
+
     private boolean isFirstPage(Expression page) {
         return FIRST_PAGE.equals(Nodes.unwrap(page).toString());
     }
@@ -145,6 +163,12 @@ public class PaginationWithoutSortRule extends AbstractRule implements ProjectRu
      * Порядок задан самим запросом: страницу передают только методам с OrderBy в имени либо с ORDER BY в @Query
      */
     private boolean isSortedByQuery(MethodCallExpr page, ProjectClasses classes) {
+        List<MethodCallExpr> consumers = consumersOf(page);
+        return !consumers.isEmpty() && consumers.stream().allMatch(consumer -> isSorted(consumer, classes));
+    }
+
+    // Вызовы, которым страница передана аргументом: сразу либо через переменную
+    private List<MethodCallExpr> consumersOf(MethodCallExpr page) {
         List<MethodCallExpr> consumers = new ArrayList<>();
         Optional<Node> parent = page.getParentNode();
         if (parent.filter(found -> found instanceof MethodCallExpr).isPresent()) {
@@ -155,7 +179,7 @@ public class PaginationWithoutSortRule extends AbstractRule implements ProjectRu
                     .filter(call -> call.getArguments().stream().anyMatch(argument -> argument.toString().equals(variable)))
                     .forEach(consumers::add));
         }
-        return !consumers.isEmpty() && consumers.stream().allMatch(consumer -> isSorted(consumer, classes));
+        return consumers;
     }
 
     private boolean isSorted(MethodCallExpr query, ProjectClasses classes) {

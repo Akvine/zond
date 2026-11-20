@@ -3,6 +3,7 @@ package ru.akvine.zond.rules.support;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.DataKey;
 import com.github.javaparser.ast.ImportDeclaration;
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -63,6 +64,50 @@ public class Repositories {
                     + "|save|saveAll|saveAndFlush|findById|findAll|findAllById|getById|getReferenceById|existsById"
                     + "|deleteById|deleteAll|insert|persist|merge|upsert");
 
+    /**
+     * Хранилище, с которым работает репозиторий: от него зависит, есть ли у записи транзакция
+     */
+    public enum Store {
+        // JPA, JDBC, R2DBC, Neo4j и все, о чем ничего не известно
+        TRANSACTIONAL,
+        // Транзакции есть только на наборе реплик и только с объявленным MongoTransactionManager
+        MONGO,
+        // Cassandra, Elasticsearch, Redis, DynamoDB: @Transactional на них не действует
+        NON_TRANSACTIONAL
+    }
+
+    private final static Pattern NON_TRANSACTIONAL_IMPORT = Pattern.compile(
+            "org\\.springframework\\.data\\.(cassandra|elasticsearch|redis|keyvalue|solr|aerospike)\\..*"
+                    + "|com\\.datastax\\..*|co\\.elastic\\..*|org\\.elasticsearch\\..*|org\\.opensearch\\..*"
+                    + "|redis\\.clients\\..*|io\\.lettuce\\..*|org\\.redisson\\..*"
+                    + "|software\\.amazon\\.awssdk\\.(services|enhanced)\\.dynamodb.*"
+                    + "|com\\.amazonaws\\.services\\.dynamodbv2\\..*"
+                    + "|org\\.socialsignin\\.spring\\.data\\.dynamodb\\..*");
+    private final static Pattern MONGO_IMPORT = Pattern.compile(
+            "org\\.springframework\\.data\\.mongodb\\..*|com\\.mongodb\\..*|org\\.bson\\..*");
+
+    /**
+     * @param declarations интерфейс репозитория и его сущность
+     * @return хранилище, судя по импортам файлов, где они объявлены: {@code CrudRepository<Person, String>} сам о
+     * хранилище не говорит, а {@code @RedisHash} у Person - говорит
+     */
+    public Store storeOf(List<? extends Node> declarations) {
+        Store store = Store.TRANSACTIONAL;
+        for (Node declaration : declarations) {
+            List<String> imports = declaration.findCompilationUnit().stream()
+                    .flatMap(unit -> unit.getImports().stream())
+                    .map(ImportDeclaration::getNameAsString)
+                    .toList();
+            if (imports.stream().anyMatch(name -> NON_TRANSACTIONAL_IMPORT.matcher(name).matches())) {
+                return Store.NON_TRANSACTIONAL;
+            }
+            if (imports.stream().anyMatch(name -> MONGO_IMPORT.matcher(name).matches())) {
+                store = Store.MONGO;
+            }
+        }
+        return store;
+    }
+
     public boolean isRepository(String receiver) {
         return REPOSITORY.matcher(receiver).matches() && !CONSTANT_NAME.matcher(receiver).matches();
     }
@@ -72,6 +117,18 @@ public class Repositories {
      */
     public boolean isRepositoryCall(MethodCallExpr call) {
         return call.getScope().filter(Repositories::isRepositoryObject).isPresent();
+    }
+
+    /**
+     * @return true, если репозиторий опознан по типу - своему, предка или по аннотации @Repository, - а не по
+     * имени объекта. Имя - слабая улика: {@code repository} бывает и узлом дерева, и хранилищем кода
+     */
+    public boolean isRepositoryByType(MethodCallExpr call) {
+        return call.getScope()
+                .filter(scope -> Types.annotations(scope).contains(REPOSITORY_ANNOTATION)
+                        || Types.matches(scope, type -> REPOSITORY.matcher(type).matches()).orElse(false)
+                        || LocalTypes.typeOf(scope).filter(type -> REPOSITORY.matcher(type).matches()).isPresent())
+                .isPresent();
     }
 
     /**

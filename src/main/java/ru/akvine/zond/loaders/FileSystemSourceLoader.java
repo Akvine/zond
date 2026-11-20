@@ -63,8 +63,13 @@ public class FileSystemSourceLoader implements SourceLoader {
                     () -> failedFiles.add(file));
         }
 
-        ProjectSubtypes subtypes = ProjectSubtypes.of(sources.stream().map(SourceFile::unit).toList());
-        sources.forEach(source -> source.unit().setData(ProjectSubtypes.KEY, subtypes));
+        List<CompilationUnit> parsed = sources.stream().map(SourceFile::unit).toList();
+        ProjectSubtypes subtypes = ProjectSubtypes.of(parsed);
+        ProjectDeclarations declarations = ProjectDeclarations.of(parsed);
+        sources.forEach(source -> {
+            source.unit().setData(ProjectSubtypes.KEY, subtypes);
+            source.unit().setData(ProjectDeclarations.KEY, declarations);
+        });
 
         // Файлы, которые решатель разбирает сам, тоже должны уметь разрешать свои типы
         typeSolver.addSources(sources, configuration()

@@ -47,8 +47,9 @@ public class SqlTableWithoutPrimaryKeyRule extends AbstractContextRule {
         // Смотрим на итог всех миграций: ключ могли добавить отдельной командой позже
         for (DbSchema.Table table : DbSchema.of(context).tables()) {
             // У таблицы-связки многие-ко-многим строку определяет пара внешних ключей: отдельный ключ ей не обязателен
-            if (table.hasPrimaryKey() || table.isOpaque() || table.isLinkTable() || table.columns().isEmpty()
-                    || hasOwnKeyModel(files.get(table.file()), table.line())) {
+            // Уникальный индекс на обязательной колонке определяет строку так же, как первичный ключ
+            if (table.hasPrimaryKey() || table.hasUniqueKey() || table.isOpaque() || table.isLinkTable()
+                    || table.columns().isEmpty() || hasOwnKeyModel(files.get(table.file()), table.line())) {
                 continue;
             }
             violations.add(violation(table.file(), table.line(),

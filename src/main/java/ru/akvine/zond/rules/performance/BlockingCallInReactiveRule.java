@@ -83,6 +83,9 @@ public class BlockingCallInReactiveRule extends AbstractRule {
             "mergeWith", "when", "and", "or", "from", "fromDirect", "firstWithSignal", "firstWithValue",
             "takeUntilOther");
 
+    private static final Set<String> RESPONSE_BODY_METHODS = Set.of("build", "body");
+    private static final Set<String> RESPONSE_BUILDERS = Set.of("ServerResponse", "EntityResponse");
+
     // Реактивные репозитории возвращают Mono / Flux и не блокируют
     private static final Set<String> REACTIVE_REPOSITORIES = Set.of(
             "ReactiveCrudRepository", "ReactiveSortingRepository", "R2dbcRepository", "ReactiveMongoRepository",
@@ -199,8 +202,26 @@ public class BlockingCallInReactiveRule extends AbstractRule {
         if (parent instanceof AssignExpr assignment && assignment.getValue() == outermost) {
             return LocalTypes.typeOf(assignment.getTarget()).filter(PUBLISHERS::contains).isPresent();
         }
-        return parent instanceof MethodCallExpr consumer && PUBLISHER_ARGUMENTS.contains(consumer.getNameAsString())
-                && consumer.getArguments().stream().anyMatch(argument -> Nodes.unwrap(argument) == outermost);
+        if (!(parent instanceof MethodCallExpr consumer)
+                || consumer.getArguments().stream().noneMatch(argument -> Nodes.unwrap(argument) == outermost)) {
+            return false;
+        }
+        // ServerResponse.noContent().build(posts.deleteById(id)), ServerResponse.ok().body(posts.findAll(), Post.class)
+        // - ответ WebFlux собирают из готового Publisher
+        boolean responseBody = RESPONSE_BODY_METHODS.contains(consumer.getNameAsString())
+                && consumer.getScope()
+                .filter(scope -> RESPONSE_BUILDERS.contains(rootName(chainRoot(scope))))
+                .isPresent();
+        return responseBody || PUBLISHER_ARGUMENTS.contains(consumer.getNameAsString());
+    }
+
+    // ServerResponse.ok().contentType(JSON) -> ServerResponse
+    private Expression chainRoot(Expression scope) {
+        Expression current = Nodes.unwrap(scope);
+        while (current.isMethodCallExpr() && current.asMethodCallExpr().getScope().isPresent()) {
+            current = Nodes.unwrap(current.asMethodCallExpr().getScope().get());
+        }
+        return current;
     }
 
     /**

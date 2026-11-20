@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules.security;
 
 import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import org.springframework.stereotype.Component;
@@ -14,6 +15,7 @@ import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.MethodCalls;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.Taint;
+import ru.akvine.zond.rules.support.Types;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +30,19 @@ public class PathTraversalRule extends AbstractTaintRule {
     private static final Set<String> PATH_FACTORIES = Set.of("Paths", "Path");
     private static final Set<String> PATH_FACTORY_METHODS = Set.of("get", "of");
     private static final String RESOLVE = "resolve";
+    private static final Set<String> PATH_TYPES = Set.of("Path");
+    // Готовый объект файла или потока: пути в нем уже нет либо он задан раньше
+    private static final Set<String> PATH_OBJECT_TYPES = Set.of(
+            "File", "Path", "InputStream", "FileInputStream", "MultipartFile", "Resource", "FileDescriptor");
+    private static final Set<String> PATH_RETURNING_METHODS = Set.of(
+            "get", "of", "toPath", "getParent", "resolve", "resolveSibling", "normalize", "toAbsolutePath",
+            "toRealPath", "getRoot", "relativize");
+    // uploadDir.resolve(name), getStorageRoot().resolve(name): тип неизвестен, но имя говорит о каталоге
+    private static final Pattern PATH_NAME = Pattern.compile(
+            "(?i).*(path|dir|directory|folder|root|base|location|home|target|dest|destination|storage|upload|"
+                    + "workspace|temp|tmp|parent|file).*");
+    // Насколько глубоко искать проверку во вспомогательных методах
+    private static final int HELPER_DEPTH = 2;
     private static final Set<String> NAME_ONLY_METHODS = Set.of("getName", "getFileName");
 
     // Проверки, после которых путь не может выйти за пределы каталога
@@ -62,14 +77,22 @@ public class PathTraversalRule extends AbstractTaintRule {
             if (arguments.isEmpty() || isSanitized(expression) || isNameOnly(expression)) {
                 continue;
             }
-            arguments.stream()
-                    .map(taint::findSource)
-                    .flatMap(Optional::stream)
-                    .findFirst()
-                    .ifPresent(input -> violations.add(violation(sourceFile, expression,
-                            "Путь к файлу строится из данных запроса '" + input + "' без проверки: значение вида"
-                                    + " ../../etc/passwd выведет за пределы каталога; приведите путь через"
-                                    + " normalize() и проверьте, что он начинается с разрешенного каталога")));
+            Optional<Taint.Source> input = Optional.empty();
+            for (Expression argument : arguments) {
+                // new FileInputStream(file): готовый File или Path - не строка от клиента; путь задали там,
+                // где этот объект создали, и если он собран из запроса, находка будет на том месте
+                if (input.isEmpty() && !isPathObject(argument)) {
+                    input = taint.findSource(argument);
+                }
+            }
+            // Значение проверено в том методе, куда оно пришло: контроллер вызвал checkAllowDownload(name),
+            // а файл открывает уже сервис
+            if (input.isPresent() && !isSanitizedAt(input.get().callable())) {
+                violations.add(violation(sourceFile, expression,
+                        "Путь к файлу строится из данных запроса '" + input.get() + "' без проверки: значение"
+                                + " вида ../../etc/passwd выведет за пределы каталога; приведите путь через"
+                                + " normalize() и проверьте, что он начинается с разрешенного каталога"));
+            }
         }
         return violations;
     }
@@ -103,10 +126,32 @@ public class PathTraversalRule extends AbstractTaintRule {
         MethodCallExpr call = expression.asMethodCallExpr();
         boolean isFactory = PATH_FACTORY_METHODS.contains(call.getNameAsString())
                 && call.getScope().map(MethodCalls::receiverName).filter(PATH_FACTORIES::contains).isPresent();
-        // base.resolve(name) у пути; SchemaType.resolve(type, name) у класса и свой resolve(name) - другие методы
+        // base.resolve(name) у пути; SchemaType.resolve(type, name) у класса, свой resolve(name) и
+        // dependencyResolver.resolve(descriptors) у объекта другого типа - другие методы
         boolean isResolve = RESOLVE.equals(call.getNameAsString())
-                && call.getScope().filter(scope -> !isClassReference(scope)).isPresent();
+                && call.getScope().filter(scope -> !isClassReference(scope) && isPath(scope)).isPresent();
         return isFactory || isResolve ? call.getArguments() : List.of();
+    }
+
+    // Получатель resolve(...) - путь: по типу, а когда тип неизвестен - по тому, как он получен или назван
+    private boolean isPath(Expression scope) {
+        Expression value = Nodes.unwrap(scope);
+        Optional<String> type = LocalTypes.typeOf(value);
+        if (type.isPresent()) {
+            return PATH_TYPES.contains(type.get());
+        }
+        if (value.isMethodCallExpr()) {
+            MethodCallExpr source = value.asMethodCallExpr();
+            return PATH_RETURNING_METHODS.contains(source.getNameAsString())
+                    || PATH_NAME.matcher(source.getNameAsString()).matches();
+        }
+        String name = value.isNameExpr() ? value.asNameExpr().getNameAsString()
+                : value.isFieldAccessExpr() ? value.asFieldAccessExpr().getNameAsString() : "";
+        return PATH_NAME.matcher(name).matches();
+    }
+
+    private boolean isPathObject(Expression argument) {
+        return LocalTypes.typeOf(Nodes.unwrap(argument)).filter(PATH_OBJECT_TYPES::contains).isPresent();
     }
 
     private boolean isClassReference(Expression scope) {
@@ -125,12 +170,31 @@ public class PathTraversalRule extends AbstractTaintRule {
 
     // Где-либо в методе путь нормализуют или сверяют с базовым каталогом
     private boolean isSanitized(Node node) {
-        return Nodes.enclosingCallable(node)
-                .filter(callable -> callable.findAll(MethodCallExpr.class).stream()
-                        .anyMatch(call -> SANITIZERS.contains(call.getNameAsString()) || takesNameOnly(call)
-                                || rejectsParentDirectory(call)
-                                || OWN_CHECKS.matcher(call.getNameAsString()).matches() && !call.getArguments().isEmpty()))
-                .isPresent();
+        return Nodes.enclosingCallable(node).filter(this::isSanitizedAt).isPresent();
+    }
+
+    private boolean isSanitizedAt(Node callable) {
+        return callable != null && sanitizes(callable, HELPER_DEPTH);
+    }
+
+    /**
+     * Проверка стоит в самом методе либо в методе проекта, который он вызывает: fileUploadCheck(file) ->
+     * isIllegalFileName(name). Чужие методы не разбираются: о них говорит только имя
+     */
+    private boolean sanitizes(Node callable, int depth) {
+        for (MethodCallExpr call : callable.findAll(MethodCallExpr.class)) {
+            if (SANITIZERS.contains(call.getNameAsString()) || takesNameOnly(call) || rejectsParentDirectory(call)
+                    || OWN_CHECKS.matcher(call.getNameAsString()).matches() && !call.getArguments().isEmpty()) {
+                return true;
+            }
+            if (depth > 0 && !call.getArguments().isEmpty()) {
+                Optional<MethodDeclaration> helper = Types.declaration(call);
+                if (helper.isPresent() && helper.get() != callable && sanitizes(helper.get(), depth - 1)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private boolean takesNameOnly(MethodCallExpr call) {

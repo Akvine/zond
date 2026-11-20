@@ -26,6 +26,7 @@ import java.util.regex.Pattern;
 public class CastWithoutInstanceofRule extends AbstractRule {
     private static final String OBJECT = "Object";
     private static final String EQUALS = "equals";
+    private static final Set<String> CLASS_COMPARISONS = Set.of("equals", "isAssignableFrom", "isInstance");
     private static final String OVERRIDE = "Override";
     private static final Set<String> CLASS_CHECKS = Set.of("getClass", "isInstance", "getUserClass");
     private static final String CLASS = "Class";
@@ -78,10 +79,21 @@ public class CastWithoutInstanceofRule extends AbstractRule {
         if (check.isInstanceOfExpr()) {
             return check.asInstanceOfExpr().getExpression().toString().equals(variable);
         }
+        // if (returnType.equals(long.class)) { setLong(index, (Long) value); }, type == String.class: тип значения
+        // описан отдельным объектом Class, и ветку выбирают по нему
+        if (check.isBinaryExpr()) {
+            return check.asBinaryExpr().getLeft().isClassExpr() || check.asBinaryExpr().getRight().isClassExpr();
+        }
         if (!check.isMethodCallExpr()) {
             return false;
         }
         MethodCallExpr call = check.asMethodCallExpr();
+        boolean comparesWithClass = CLASS_COMPARISONS.contains(call.getNameAsString())
+                && (call.getScope().filter(Expression::isClassExpr).isPresent()
+                || call.getArguments().stream().anyMatch(Expression::isClassExpr));
+        if (comparesWithClass) {
+            return true;
+        }
         // if (!super.equals(o)) return false;: родительский equals уже сравнил классы
         boolean superEquals = EQUALS.equals(call.getNameAsString())
                 && call.getScope().filter(Expression::isSuperExpr).isPresent()

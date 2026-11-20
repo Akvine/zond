@@ -6,7 +6,6 @@ import com.github.javaparser.ast.expr.StringLiteralExpr;
 import lombok.experimental.UtilityClass;
 import ru.akvine.zond.models.SourceFile;
 
-import java.lang.ref.WeakReference;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -18,16 +17,16 @@ import java.util.Set;
 @UtilityClass
 public class ProjectWords {
     // Слова нужны нескольким правилам подряд на одном и том же списке файлов - собираем их один раз на сканирование
-    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
-    private static Set<String> cachedWords;
+    private static final PerSources<Set<String>> CACHE = new PerSources<>();
 
     /**
      * @return все имена (переменных, методов, типов, аннотаций) и строковые литералы проекта
      */
-    public synchronized Set<String> of(List<SourceFile> sources) {
-        if (cachedSources.get() == sources && cachedWords != null) {
-            return cachedWords;
-        }
+    public Set<String> of(List<SourceFile> sources) {
+        return CACHE.get(sources, ProjectWords::collect);
+    }
+
+    private Set<String> collect(List<SourceFile> sources) {
         Set<String> words = new HashSet<>();
         for (SourceFile source : sources) {
             source.findAll(SimpleName.class).forEach(name -> words.add(name.getIdentifier()));
@@ -35,9 +34,7 @@ public class ProjectWords {
             source.findAll(Name.class).forEach(name -> words.add(name.getIdentifier()));
             source.findAll(StringLiteralExpr.class).forEach(literal -> words.add(literal.getValue()));
         }
-        cachedSources = new WeakReference<>(sources);
-        cachedWords = Set.copyOf(words);
-        return cachedWords;
+        return Set.copyOf(words);
     }
 
     /**

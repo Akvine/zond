@@ -14,6 +14,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -38,6 +39,10 @@ public class FileSystemConfigLoader implements ConfigLoader {
     // Отступ, ключ и значение одной строки YAML
     private static final Pattern YAML_LINE = Pattern.compile("^(\\s*)([^\\s:#\\-][^:]*):(?:\\s+(.*))?$");
     private static final String YAML_DOCUMENT_SEPARATOR = "---";
+    private static final Set<String> PROPERTIES_DOCUMENT_SEPARATORS = Set.of("#---", "!---");
+    // on-profile бывает и списком: spring.config.activate.on-profile[0]
+    private static final Pattern PROFILE_CONDITION =
+            Pattern.compile("^spring\\.(config\\.activate\\.on-profile|profiles)(\\[\\d+])?$");
     private static final Set<String> YAML_BLOCK_MARKERS = Set.of("|", ">", "|-", ">-");
 
     /**
@@ -59,7 +64,11 @@ public class FileSystemConfigLoader implements ConfigLoader {
                     .sorted().toList()) {
                 List<String> lines = Files.readAllLines(path, StandardCharsets.UTF_8);
                 boolean isProperties = path.getFileName().toString().endsWith(PROPERTIES_EXTENSION);
-                files.add(new ConfigFile(path, isProperties ? parseProperties(lines) : parseYaml(lines)));
+                Set<Integer> profileLines = new HashSet<>();
+                List<ConfigProperty> properties = isProperties
+                        ? parseProperties(lines, profileLines)
+                        : parseYaml(lines, profileLines);
+                files.add(new ConfigFile(path, properties, Set.copyOf(profileLines)));
             }
         } catch (IOException exception) {
             // Нечитаемый файл настроек не должен ронять проверку кода
@@ -88,10 +97,16 @@ public class FileSystemConfigLoader implements ConfigLoader {
         return name -> patterns.stream().anyMatch(pattern -> pattern.matcher(name).matches());
     }
 
-    private List<ConfigProperty> parseProperties(List<String> lines) {
+    private List<ConfigProperty> parseProperties(List<String> lines, Set<Integer> profileLines) {
         List<ConfigProperty> properties = new ArrayList<>();
+        // Начало текущего документа в списке свойств: #--- делит application.properties на документы профилей
+        int documentStart = 0;
         for (int index = 0; index < lines.size(); index++) {
             String line = lines.get(index).trim();
+            if (PROPERTIES_DOCUMENT_SEPARATORS.contains(line)) {
+                markProfileDocument(properties.subList(documentStart, properties.size()), profileLines);
+                documentStart = properties.size();
+            }
             if (line.isEmpty() || line.startsWith("#") || line.startsWith("!")) {
                 continue;
             }
@@ -109,7 +124,21 @@ public class FileSystemConfigLoader implements ConfigLoader {
                 properties.add(new ConfigProperty(matcher.group(1), matcher.group(2).trim(), firstLine + 1));
             }
         }
+        markProfileDocument(properties.subList(documentStart, properties.size()), profileLines);
         return properties;
+    }
+
+    /**
+     * Документ с условием spring.config.activate.on-profile (до Spring Boot 2.4 - spring.profiles) действует
+     * только в названных профилях. Если это профили разработки и тестов, его свойства в рабочую среду не попадают
+     */
+    private void markProfileDocument(List<ConfigProperty> document, Set<Integer> profileLines) {
+        boolean nonProduction = document.stream()
+                .filter(property -> PROFILE_CONDITION.matcher(property.key()).matches())
+                .anyMatch(property -> ConfigFile.isNonProductionProfile(property.value()));
+        if (nonProduction) {
+            document.forEach(property -> profileLines.add(property.line()));
+        }
     }
 
     // Нечетное число \ в конце строки - перенос; четное - экранированные обратные черты самого значения
@@ -123,14 +152,18 @@ public class FileSystemConfigLoader implements ConfigLoader {
 
     // Ключи вложенных словарей соединяются точкой, элементы списков получают индекс - так же свойства
     // называет Spring: app.servers[0].host
-    private List<ConfigProperty> parseYaml(List<String> lines) {
+    private List<ConfigProperty> parseYaml(List<String> lines, Set<Integer> profileLines) {
         Optional<List<YamlNode>> documents = YamlParser.parse(lines);
         if (documents.isEmpty()) {
             // Файл с подстановками сборки (@project.version@) - не корректный YAML, но ключи в нем прочитать можно
-            return parseYamlByLines(lines);
+            return parseYamlByLines(lines, profileLines);
         }
         List<ConfigProperty> properties = new ArrayList<>();
-        documents.get().forEach(document -> flatten("", document, properties));
+        for (YamlNode document : documents.get()) {
+            int documentStart = properties.size();
+            flatten("", document, properties);
+            markProfileDocument(properties.subList(documentStart, properties.size()), profileLines);
+        }
         return properties;
     }
 
@@ -149,14 +182,17 @@ public class FileSystemConfigLoader implements ConfigLoader {
     }
 
     // Запасной разбор по строкам: вложенные ключи со скалярными значениями, без списков и многострочных блоков
-    private List<ConfigProperty> parseYamlByLines(List<String> lines) {
+    private List<ConfigProperty> parseYamlByLines(List<String> lines, Set<Integer> profileLines) {
         List<ConfigProperty> properties = new ArrayList<>();
         Deque<YamlKey> path = new ArrayDeque<>();
+        int documentStart = 0;
 
         for (int index = 0; index < lines.size(); index++) {
             String line = stripComment(lines.get(index));
             if (line.trim().equals(YAML_DOCUMENT_SEPARATOR)) {
                 path.clear();
+                markProfileDocument(properties.subList(documentStart, properties.size()), profileLines);
+                documentStart = properties.size();
                 continue;
             }
 
@@ -178,6 +214,7 @@ public class FileSystemConfigLoader implements ConfigLoader {
                 properties.add(new ConfigProperty(fullKey(path, name), value, index + 1));
             }
         }
+        markProfileDocument(properties.subList(documentStart, properties.size()), profileLines);
         return properties;
     }
 

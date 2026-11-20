@@ -181,6 +181,26 @@ class JpaRulesTest {
                         OrderDto dto = mapper.toDto(loaded);
                         return loaded.getName() + dto.getItems().size();
                     }
+                    public int eager(Long id) {
+                        Order order = orderRepository.findById(id).orElseThrow();
+                        return order.getTags().size();
+                    }
+                    public int page(Pageable pageable) {
+                        Page<Order> orders = orderRepository.findAll(pageable);
+                        return orders.getContent().size();
+                    }
+                    public int batch(Long id) {
+                        JobExecution execution = jobRepository.findById(id);
+                        return execution.getStepExecutions().size();
+                    }
+                }
+                @Entity
+                class Order {
+                    @OneToMany(mappedBy = "order")
+                    private List<Item> items;
+                    @ElementCollection(fetch = FetchType.EAGER)
+                    private Set<String> tags;
+                    private String name;
                 }
                 """)).containsExactly(5, 8);
     }

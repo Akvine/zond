@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules.security;
 
 import org.springframework.stereotype.Component;
+import ru.akvine.zond.enums.Confidence;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
 import ru.akvine.zond.models.ConfigFile;
@@ -10,7 +11,9 @@ import ru.akvine.zond.rules.AbstractConfigRule;
 import ru.akvine.zond.rules.RuleCodes;
 import ru.akvine.zond.rules.support.Secrets;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -27,6 +30,7 @@ public class SecretInConfigRule extends AbstractConfigRule {
     private static final Pattern AMOUNT = Pattern.compile("(?i)^-?\\d+(\\.\\d+)?(ms|ns|us|s|m|h|d|kb|mb|gb)?$|^P(T)?[\\d.HMSD]+$");
     private static final Pattern PASSWORD_LIKE = Pattern.compile("(?i).*(pass|pwd|pin|secret|credential).*");
 
+    private static final List<String> USER_KEYS = List.of("username", "user", "login", "user-name");
     private static final Set<String> NOT_SECRET_VALUES = Set.of("true", "false", "null", "none", "changeme", "");
 
     @Override
@@ -41,17 +45,24 @@ public class SecretInConfigRule extends AbstractConfigRule {
 
     @Override
     public List<Violation> checkConfig(ConfigFile configFile) {
-        // В профилях разработки и тестов учетные данные обычно ненастоящие
-        if (configFile.isNonProduction()) {
-            return List.of();
+        // В профилях разработки и тестов учетные данные обычно ненастоящие: это и отдельные файлы
+        // (application-dev.yml), и документы одного файла с условием on-profile
+        List<Violation> violations = new ArrayList<>();
+        for (ConfigProperty property : configFile.productionProperties()) {
+            if (!isPlainSecret(property)) {
+                continue;
+            }
+            Violation violation = violation(configFile, property.line(),
+                    "Секрет '" + property.key() + "' записан в файле настроек открытым текстом: файл попадает"
+                            + " в репозиторий и в сборку, значение увидит каждый, у кого есть к ним доступ;"
+                            + " подставляйте его из окружения: ${ИМЯ_ПЕРЕМЕННОЙ}");
+            // password, guest, postgres либо то же, что и имя пользователя рядом: с такими значениями идут готовые
+            // образы баз и брокеров, и для рабочей среды их почти наверняка переопределяют
+            violations.add(isDefaultValue(configFile, property)
+                    ? violation.withConfidence(Confidence.SUSPICION)
+                    : violation);
         }
-        return configFile.properties().stream()
-                .filter(this::isPlainSecret)
-                .map(property -> violation(configFile, property.line(),
-                        "Секрет '" + property.key() + "' записан в файле настроек открытым текстом: файл попадает"
-                                + " в репозиторий и в сборку, значение увидит каждый, у кого есть к ним доступ;"
-                                + " подставляйте его из окружения: ${ИМЯ_ПЕРЕМЕННОЙ}"))
-                .toList();
+        return violations;
     }
 
     @Override
@@ -74,6 +85,20 @@ public class SecretInConfigRule extends AbstractConfigRule {
                 && !(AMOUNT.matcher(value).matches() && !PASSWORD_LIKE.matcher(lastSegment(property.key())).matches())
                 && !PLACEHOLDER.matcher(value).matches()
                 && !ENCRYPTED.matcher(value).matches();
+    }
+
+    private boolean isDefaultValue(ConfigFile configFile, ConfigProperty property) {
+        String value = property.value().trim();
+        if (Secrets.isWellKnownDefault(value)) {
+            return true;
+        }
+        // spring.rabbitmq.username=shop и spring.rabbitmq.password=shop
+        int separator = property.key().lastIndexOf('.');
+        String prefix = separator < 0 ? "" : property.key().substring(0, separator + 1);
+        return USER_KEYS.stream()
+                .map(key -> configFile.find(prefix + key))
+                .flatMap(Optional::stream)
+                .anyMatch(user -> user.value().trim().equalsIgnoreCase(value));
     }
 
     // spring.datasource.password -> password: о секрете говорит последняя часть ключа

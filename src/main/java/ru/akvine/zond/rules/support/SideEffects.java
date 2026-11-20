@@ -21,7 +21,6 @@ import com.github.javaparser.ast.stmt.ThrowStmt;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import ru.akvine.zond.models.SourceFile;
 
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -69,8 +68,7 @@ public final class SideEffects {
             "LinkedHashMap", "TreeMap", "HashSet", "LinkedHashSet", "TreeSet", "ArrayDeque", "EnumMap", "BigDecimal",
             "BigInteger", "Integer", "Long", "Double", "Boolean");
 
-    private static WeakReference<List<SourceFile>> cachedSources = new WeakReference<>(null);
-    private static SideEffects cached;
+    private static final PerSources<SideEffects> CACHE = new PerSources<>();
 
     private final CallGraph graph;
     // Классы проекта по простому имени: по конструктору видно, меняет ли что-то new Order(...)
@@ -98,12 +96,8 @@ public final class SideEffects {
         }
     }
 
-    public static synchronized SideEffects of(List<SourceFile> sources) {
-        if (cachedSources.get() != sources) {
-            cached = new SideEffects(sources);
-            cachedSources = new WeakReference<>(sources);
-        }
-        return cached;
+    public static SideEffects of(List<SourceFile> sources) {
+        return CACHE.get(sources, SideEffects::new);
     }
 
     /**
