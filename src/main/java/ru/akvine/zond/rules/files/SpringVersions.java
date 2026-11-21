@@ -45,11 +45,27 @@ public class SpringVersions {
     }
 
     /**
+     * Место в файле сборки, где названа версия Spring Boot
+     *
+     * @param line     номер строки с версией, с единицы
+     * @param inferred версия в файле не названа, а выведена из другой: Jmix 1.x собран на Spring Boot 2.7
+     */
+    public record Declared(Version version, TextFile file, int line, boolean inferred) {
+    }
+
+    /**
      * @return все версии Spring Boot, найденные в pom.xml и build.gradle; у многомодульного проекта их может
      * быть несколько. Пусто, если версия задана не в файлах сборки
      */
     public List<Version> boot(List<TextFile> files) {
-        List<Version> versions = new ArrayList<>();
+        return declarations(files).stream().map(Declared::version).toList();
+    }
+
+    /**
+     * @return то же, что {@link #boot(List)}, но вместе с файлом и строкой, где версия записана
+     */
+    public List<Declared> declarations(List<TextFile> files) {
+        List<Declared> versions = new ArrayList<>();
         for (TextFile file : files) {
             if (!TextFiles.isPom(file) && !TextFiles.isGradle(file)) {
                 continue;
@@ -60,20 +76,20 @@ public class SpringVersions {
                 for (Pattern pattern : INLINE) {
                     Matcher matcher = pattern.matcher(line);
                     if (matcher.find()) {
-                        versions.add(version(matcher));
+                        versions.add(new Declared(version(matcher), file, index + 1, false));
                     }
                 }
                 if (MAVEN_ARTIFACT.matcher(line).find()) {
                     for (int next = index; next < Math.min(lines.size(), index + MAVEN_LOOKAHEAD + 1); next++) {
                         Matcher matcher = MAVEN_VERSION.matcher(lines.get(next));
                         if (matcher.find()) {
-                            versions.add(version(matcher));
+                            versions.add(new Declared(version(matcher), file, next + 1, false));
                             break;
                         }
                     }
                 }
                 if (JMIX_ONE.matcher(line).find()) {
-                    versions.add(JMIX_ONE_BOOT);
+                    versions.add(new Declared(JMIX_ONE_BOOT, file, index + 1, true));
                 }
             }
         }

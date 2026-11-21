@@ -8,6 +8,7 @@ import ru.akvine.zond.models.ScanContext;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractContextRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.files.GitIgnore;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -28,18 +29,11 @@ import java.util.stream.Stream;
  */
 @Component
 public class DumpFileInProjectRule extends AbstractContextRule {
-    private static final Pattern OUTER_SLASHES = Pattern.compile("^/+|/+$");
-    private static final String GIT_IGNORE = ".gitignore";
-    private static final String GIT_DIRECTORY = ".git";
     // Каталоги сборки и служебные: их содержимое в репозиторий не попадает
     private static final Set<String> SKIPPED_DIRECTORIES = Set.of(
             "build", "target", "out", "node_modules", ".git", ".gradle", ".idea", ".mvn", ".settings");
     private static final int MAX_DEPTH = 6;
     private static final int MAX_FILES = 50_000;
-    // .gitignore может лежать выше проверяемой папки: модуль внутри репозитория
-    private static final int MAX_PARENTS = 4;
-    // Выражение, которому не подходит ни один путь
-    private static final String NOTHING = "(?!)";
 
     private enum Kind {
         HEAP_DUMP(Pattern.compile(".*\\.hprof(\\.gz)?"), ErrorLevel.MAJOR,
@@ -88,17 +82,15 @@ public class DumpFileInProjectRule extends AbstractContextRule {
         if (!Files.isDirectory(root)) {
             return List.of();
         }
-        List<String> ignoreRules = new ArrayList<>();
-        boolean repository = readIgnoreRules(root, ignoreRules);
-        // Все шаблоны .gitignore - одним выражением: файл проверяется за один проход
-        Pattern ignored = Pattern.compile(ignoreRules.isEmpty() ? NOTHING : String.join("|", ignoreRules));
+        GitIgnore ignore = GitIgnore.of(root);
+        boolean repository = ignore.isRepository();
         List<Path> files = new ArrayList<>();
         findFiles(root, files);
         List<Violation> violations = new ArrayList<>();
         for (Path file : files) {
             Optional<Kind> kind = Kind.of(file);
             String relative = root.relativize(file).toString().replace('\\', '/');
-            if (kind.isEmpty() || ignored.matcher(relative).matches()) {
+            if (kind.isEmpty() || ignore.isIgnored(file)) {
                 continue;
             }
             // Без .git и .gitignore неизвестно, хранится ли папка в репозитории вообще
@@ -146,57 +138,5 @@ public class DumpFileInProjectRule extends AbstractContextRule {
             }
         }
         return false;
-    }
-
-    /**
-     * @return true, если папка хранится в git: рядом или выше нашлись .git либо .gitignore
-     */
-    private boolean readIgnoreRules(Path root, List<String> ignored) {
-        boolean repository = false;
-        Path directory = root;
-        for (int level = 0; level <= MAX_PARENTS && directory != null; level++) {
-            Path ignoreFile = directory.resolve(GIT_IGNORE);
-            repository = repository || Files.exists(directory.resolve(GIT_DIRECTORY)) || Files.isRegularFile(ignoreFile);
-            if (Files.isRegularFile(ignoreFile)) {
-                readIgnoreFile(ignoreFile, ignored);
-            }
-            directory = directory.getParent();
-        }
-        return repository;
-    }
-
-    private void readIgnoreFile(Path ignoreFile, List<String> ignored) {
-        try (Stream<String> lines = Files.lines(ignoreFile)) {
-            lines.map(String::trim)
-                    // Пустые строки, комментарии и исключения из правил (!keep.log) шаблона не задают
-                    .filter(line -> !line.isEmpty() && !line.startsWith("#") && !line.startsWith("!"))
-                    .forEach(line -> ignored.add(toRegex(line)));
-        } catch (IOException | UncheckedIOException exception) {
-            // Не прочитался - считаем, что правил в нем нет
-        }
-    }
-
-    /**
-     * Упрощенный разбор шаблона .gitignore: *.log, logs/, /dump.hprof, **&#47;*.db. Шаблон без ведущей косой
-     * черты действует на любом уровне вложенности; каталог закрывает все, что в нем лежит
-     */
-    private String toRegex(String line) {
-        boolean anchored = line.startsWith("/");
-        String glob = OUTER_SLASHES.matcher(line).replaceAll("");
-        StringBuilder regex = new StringBuilder(anchored ? "" : "(.*/)?");
-        for (int index = 0; index < glob.length(); index++) {
-            char symbol = glob.charAt(index);
-            if (symbol == '*' && glob.startsWith("**/", index)) {
-                regex.append("(.*/)?");
-                index += 2;
-            } else if (symbol == '*') {
-                regex.append(glob.startsWith("**", index) ? ".*" : "[^/]*");
-            } else if (symbol == '?') {
-                regex.append("[^/]");
-            } else {
-                regex.append(Pattern.quote(String.valueOf(symbol)));
-            }
-        }
-        return regex + "(/.*)?";
     }
 }

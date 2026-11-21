@@ -546,4 +546,16 @@ public class RuleCodes {
     public final static String UNBOUNDED_ALLOCATION_SIZE_RULE_CODE = "jr:538";
     public final static String REGEX_FROM_ARGUMENT_RULE_CODE = "jr:539";
     public final static String JVM_WITHOUT_EXIT_ON_OUT_OF_MEMORY_RULE_CODE = "jr:540";
+    public final static String QUALIFIER_WITHOUT_BEAN_RULE_CODE = "jr:541";
+    public final static String BEAN_DECLARED_WIDER_THAN_INJECTED_RULE_CODE = "jr:542";
+    public final static String IMPOSSIBLE_CAST_RULE_CODE = "jr:543";
+    public final static String PROPERTY_VALUE_WITHOUT_CONDITION_RULE_CODE = "jr:544";
+    public final static String CONFIG_REFERS_TO_UNTRACKED_FILE_RULE_CODE = "jr:545";
+    public final static String DOCKER_JAVA_OLDER_THAN_BUILD_RULE_CODE = "jr:546";
+    public final static String STOPWATCH_STOPPED_TWICE_RULE_CODE = "jr:547";
+    public final static String BATCH_WITHOUT_ERROR_ISOLATION_RULE_CODE = "jr:548";
+    public final static String ANONYMOUS_ENDPOINT_BEHIND_LOGIN_RULE_CODE = "jr:549";
+    public final static String ONLY_FIRST_ELEMENT_PROCESSED_RULE_CODE = "jr:550";
+    public final static String LIBRARY_FOR_ANOTHER_BOOT_GENERATION_RULE_CODE = "jr:551";
+    public final static String UNSUPPORTED_SPRING_BOOT_RULE_CODE = "jr:552";
 }

@@ -17,6 +17,7 @@ import ru.akvine.zond.printers.FilePrinter;
 import ru.akvine.zond.printers.ReportFormatter;
 import ru.akvine.zond.rules.Rule;
 import ru.akvine.zond.rules.codesmell.FieldInjectionRule;
+import ru.akvine.zond.rules.codesmell.UnusedClassRule;
 import ru.akvine.zond.rules.logical.AutowiredOnStaticFieldRule;
 import ru.akvine.zond.rules.logical.CircularDependencyRule;
 import ru.akvine.zond.rules.logical.DdlAutoRule;
@@ -110,6 +111,38 @@ class ScannerTest {
                 .contains("[jr:1]")
                 .contains("Bad.java:2")
                 .contains("Broken.java");
+    }
+
+    @Test
+    void findingsSurviveDeadCodeCheckWhenNothingIsUnused(@TempDir Path dir) throws IOException {
+        Files.writeString(dir.resolve("Application.java"), """
+                @SpringBootApplication
+                class Application {
+                    private final OrderService orders;
+                    public static void main(String[] args) {
+                        SpringApplication.run(Application.class, args);
+                    }
+                }
+                """);
+        Files.writeString(dir.resolve("OrderService.java"), """
+                @Service
+                class OrderService {
+                    @Transactional
+                    private void save() {}
+                }
+                """);
+        // jr:206 включено, а неиспользуемых классов в проекте нет: находки остальных правил остаются на месте
+        Scanner withDeadCodeCheck = new Scanner(
+                new FileSystemSourceLoader(),
+                new FileSystemConfigLoader(),
+                new FileSystemTextFileLoader(),
+                List.of(new TransactionOnPrivateMethodRule(), new UnusedClassRule()),
+                (number, total, rule) -> {},
+                RuleSettings.empty());
+
+        ScanResult result = withDeadCodeCheck.scan(dir);
+
+        assertThat(result.violations()).extracting(Violation::ruleCode).containsExactly("jr:1");
     }
 
     @Test

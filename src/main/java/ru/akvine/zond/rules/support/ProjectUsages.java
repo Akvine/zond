@@ -3,6 +3,8 @@ package ru.akvine.zond.rules.support;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.AnnotationDeclaration;
+import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
+import com.github.javaparser.ast.body.InitializerDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -76,6 +78,7 @@ public final class ProjectUsages {
     private static final Pattern STAPLER_WEB_METHOD = Pattern.compile("^do[A-Z]\\w*");
     private static final String STAPLER_PACKAGE = "org.kohsuke.stapler";
     private static final String SPRING_BOOT_APPLICATION = "SpringBootApplication";
+    private static final String GET_BEAN = "getBean";
 
     // Аннотации, которые не означают, что кодом пользуется фреймворк
     private static final Set<String> NEUTRAL_ANNOTATIONS = Set.of(
@@ -84,6 +87,17 @@ public final class ProjectUsages {
             "Data", "Getter", "Setter", "Value", "Builder", "ToString", "EqualsAndHashCode", "With",
             "AllArgsConstructor", "NoArgsConstructor", "RequiredArgsConstructor", "UtilityClass", "Accessors",
             "FieldDefaults", "Slf4j", "Log4j2", "Log", "CommonsLog");
+
+    // Бин, который контейнер только создает: сам по себе @Component ничего не вызывает
+    private static final Set<String> PLAIN_STEREOTYPES = Set.of("Component", "Service");
+    // Аннотации класса и его членов, по которым Spring не вызывает код сам: внедрение, обертки над вызовом,
+    // условия создания. Все остальные (@Scheduled, @EventListener, @PostConstruct, @Bean, слушатели очередей)
+    // означают, что у бина есть работа и без ссылок на него
+    private static final Set<String> PASSIVE_ANNOTATIONS = Set.of(
+            "Override", "Autowired", "Inject", "Resource", "Qualifier", "Lazy", "Primary", "Order", "Scope",
+            "Profile", "Transactional", "Validated", "Valid", "SneakyThrows", "Synchronized", "Cacheable",
+            "CacheEvict", "CachePut", "Async", "Retryable", "Recover", "Timed", "PreAuthorize", "PostAuthorize",
+            "Secured");
 
     // getName(), setName(...), isActive(): их вызывают по имени свойства Jackson, JPA, шаблоны и Spring
     private static final Pattern ACCESSOR = Pattern.compile("^(get|set|is)[A-Z].*");
@@ -105,6 +119,10 @@ public final class ProjectUsages {
 
     // Слова из строк: Class.forName("demo.Report"), @PreAuthorize("@access.check(#id)")
     private final Set<String> stringWords = new HashSet<>();
+    // Слово из строки -> классы приложения, в коде которых стоит эта строка; у слова из шаблона или файла настроек
+    // владелец пустой. Упоминание класса в его собственном сообщении ("OrderMapper: unknown mode") и в строке
+    // теста - не использование в приложении
+    private final Map<String, Set<String>> stringWordOwners = new HashMap<>();
     private final Set<CompilationUnit> testUnits = identitySet();
     // Модуль файла - путь до каталога src: activiti-core/activiti-engine, bitcoinj/core
     private final Map<CompilationUnit, String> moduleOf = new IdentityHashMap<>();
@@ -114,6 +132,12 @@ public final class ProjectUsages {
     private final Set<String> serviceClasses = new HashSet<>();
     // В проекте нет ни main, ни @SpringBootApplication: это библиотека
     private final boolean library;
+    // Модули, в которых лежит свой @SpringBootApplication: в таком приложении все собирает контейнер, и до нужного
+    // класса обязательно доходит ссылка из кода. У программы с обычным main классы могут подключаться и по имени -
+    // расширения, протоколы, команды
+    private final Set<String> springBootModules = new HashSet<>();
+    // Бины где-то берут по имени или классу, которых в коде нет: getBean(name), getBean(job.getBeanName())
+    private final boolean dynamicBeanLookup;
 
     // Что вызывает каждый метод. Ключ null - код вне методов: конструкторы, инициализаторы, значения полей
     private final Map<MethodDeclaration, Calls> callsByMethod = new IdentityHashMap<>();
@@ -122,6 +146,11 @@ public final class ProjectUsages {
 
     private final Set<TypeDeclaration<?>> liveTypes = identitySet();
     private final Set<MethodDeclaration> liveMethods = identitySet();
+    // То же, что liveTypes, но без тестов: до этих классов доходит сам код приложения
+    private final Set<TypeDeclaration<?>> productionTypes = identitySet();
+    // Класс, нужный только тестам, -> другие такие же классы, которые нужны только ему. Ключи - вершины: классы,
+    // на которые из кода приложения не ссылается никто
+    private final Map<TypeDeclaration<?>, Set<String>> testOnlyClusters = new IdentityHashMap<>();
 
     // Имена, по которым из используемого кода вызывают неизвестно какой метод, и имена всех вызовов оттуда
     private final Set<String> livePossibleNames = new HashSet<>();
@@ -185,8 +214,19 @@ public final class ProjectUsages {
         library = types.stream()
                 .filter(type -> !isInTests(type) && !isInSamples(type))
                 .noneMatch(this::isApplication);
+        types.stream()
+                .filter(type -> !isInTests(type) && !isInSamples(type))
+                .filter(type -> Annotations.has(type, SPRING_BOOT_APPLICATION))
+                .forEach(type -> type.findCompilationUnit().map(moduleOf::get).ifPresent(springBootModules::add));
+        dynamicBeanLookup = sources.stream()
+                .flatMap(source -> source.findAll(MethodCallExpr.class).stream())
+                .anyMatch(call -> GET_BEAN.equals(call.getNameAsString()) && !call.getArguments().isEmpty()
+                        && !call.getArgument(0).isClassExpr() && !call.getArgument(0).isStringLiteralExpr()
+                        && !isInTests(call));
         markLiveTypes();
         markLiveMethods();
+        markProductionTypes();
+        groupTestOnlyTypes();
     }
 
     /**
@@ -223,6 +263,75 @@ public final class ProjectUsages {
             innermostType(reference).ifPresent(user -> users.add(user.getNameAsString()));
         }
         return users;
+    }
+
+    /**
+     * @return true, если класс приложения жив только за счет тестов: из кода самого приложения до него не дойти.
+     * В библиотеке открытый класс - точка входа, и к нему это не относится
+     */
+    public boolean isUsedOnlyByTests(TypeDeclaration<?> type) {
+        return liveTypes.contains(type) && !productionTypes.contains(type) && !isInTests(type)
+                && !isInSamples(type)
+                && type.findCompilationUnit().map(moduleOf::get).filter(springBootModules::contains).isPresent();
+    }
+
+    /**
+     * Классы, нужные только тестам, обычно идут группой: фабрика, которую вызывает тест, и все, что она за собой
+     * тянет. Сообщать стоит о вершине группы - классе, на который код приложения не ссылается вовсе
+     *
+     * @return остальные классы группы; пусто, если класс не вершина либо используется приложением
+     */
+    public Optional<Set<String>> testOnlyCluster(TypeDeclaration<?> type) {
+        return Optional.ofNullable(testOnlyClusters.get(type));
+    }
+
+    /**
+     * @return тестовые классы, которые ссылаются на класс
+     */
+    public Set<String> testUsersOf(TypeDeclaration<?> type) {
+        Set<String> users = new LinkedHashSet<>();
+        for (Node reference : referencesTo(type)) {
+            if (isInTests(reference)) {
+                innermostType(reference).ifPresent(user -> users.add(user.getNameAsString()));
+            }
+        }
+        return users;
+    }
+
+    /**
+     * Бин, который контейнер создает впустую: обычный {@code @Component} или {@code @Service} без предков, на
+     * который в проекте нет ни одной ссылки и у которого нет ничего, что Spring вызвал бы сам. По типу его никто
+     * не внедряет, по имени не получает, а свою работу он не начинает
+     */
+    public boolean isIdleBean(TypeDeclaration<?> type) {
+        if (library || dynamicBeanLookup || !(type instanceof ClassOrInterfaceDeclaration bean)
+                || bean.isInterface() || bean.isAbstract()
+                || isInTests(type) || isInSamples(type) || !referencesTo(type).isEmpty()) {
+            return false;
+        }
+        Set<String> annotations = Annotations.names(bean);
+        boolean plain = annotations.stream().anyMatch(PLAIN_STEREOTYPES::contains)
+                && annotations.stream().allMatch(name -> PLAIN_STEREOTYPES.contains(name) || isPassive(name))
+                // @Service("orders"): бин с именем получают по имени, а имя могло прийти из настроек
+                && bean.getAnnotations().stream().noneMatch(annotation -> !annotation.isMarkerAnnotationExpr()
+                && PLAIN_STEREOTYPES.contains(annotation.getName().getIdentifier()));
+        if (!plain || !bean.getExtendedTypes().isEmpty() || !bean.getImplementedTypes().isEmpty()) {
+            return false;
+        }
+        String beanName = Character.toLowerCase(bean.getNameAsString().charAt(0)) + bean.getNameAsString().substring(1);
+        boolean passiveMembers = bean.getMembers().stream()
+                .allMatch(member -> member.getAnnotations().stream()
+                        .allMatch(annotation -> isPassive(annotation.getName().getIdentifier())));
+        // Конструктор с вызовами мог сам куда-то записать бин: registry.register(this)
+        boolean quietCreation = bean.getConstructors().stream()
+                .allMatch(constructor -> constructor.findAll(MethodCallExpr.class).isEmpty())
+                && bean.getMembers().stream().noneMatch(member -> member instanceof InitializerDeclaration);
+        return passiveMembers && quietCreation && !stringWords.contains(beanName)
+                && bean.getMethods().stream().anyMatch(method -> !method.isPrivate());
+    }
+
+    private boolean isPassive(String annotation) {
+        return NEUTRAL_ANNOTATIONS.contains(annotation) || PASSIVE_ANNOTATIONS.contains(annotation);
     }
 
     /**
@@ -266,17 +375,52 @@ public final class ProjectUsages {
         } else if (node instanceof Name name) {
             identifiers.computeIfAbsent(name.getIdentifier(), key -> new ArrayList<>()).add(name);
         } else if (node instanceof StringLiteralExpr literal) {
-            collectWords(literal.getValue());
+            collectWords(literal.getValue(), literal);
         } else if (node instanceof TextBlockLiteralExpr literal) {
-            collectWords(literal.getValue());
+            collectWords(literal.getValue(), literal);
         }
     }
 
-    private void collectWords(String text) {
+    private void collectWords(String text, Node literal) {
         Matcher matcher = IDENTIFIER.matcher(text);
+        String owner = null;
         while (matcher.find()) {
-            stringWords.add(matcher.group());
+            String word = matcher.group();
+            stringWords.add(word);
+            // Имя класса начинается с заглавной буквы: остальные слова владельца не запоминают
+            if (Character.isUpperCase(word.charAt(0))) {
+                Set<String> owners = stringWordOwners.computeIfAbsent(word, key -> new HashSet<>());
+                // Строка из теста коду приложения ничего не доказывает: ее владелец не запоминается
+                if (!isInTests(literal)) {
+                    if (owner == null) {
+                        owner = outermostTypeName(literal);
+                    }
+                    owners.add(owner);
+                }
+            }
         }
+    }
+
+    private String outermostTypeName(Node node) {
+        String name = "";
+        Node current = node.getParentNode().orElse(null);
+        while (current != null) {
+            if (current instanceof TypeDeclaration<?> type) {
+                name = type.getNameAsString();
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return name;
+    }
+
+    // Имя класса встретилось в строке не только в его собственном коде: рефлексия, SpEL, файл настроек
+    private boolean isNamedElsewhere(TypeDeclaration<?> type) {
+        String name = type.getNameAsString();
+        if (!stringWords.contains(name)) {
+            return false;
+        }
+        String self = outermostTypeName(type.getName());
+        return stringWordOwners.getOrDefault(name, Set.of()).stream().anyMatch(owner -> !owner.equals(self));
     }
 
     private void collectCalls(Node node, CallGraph graph) {
@@ -339,6 +483,94 @@ public final class ProjectUsages {
                 }
             }
         }
+    }
+
+    // Тот же обход, что в markLiveTypes, но тесты точками входа не считаются и ссылки из них не засчитываются
+    private void markProductionTypes() {
+        for (TypeDeclaration<?> type : types) {
+            if (!isInTests(type) && (isEntryType(type) || isNamedElsewhere(type))) {
+                productionTypes.add(type);
+            }
+        }
+
+        boolean changed = true;
+        while (changed) {
+            changed = false;
+            for (TypeDeclaration<?> type : types) {
+                if (!productionTypes.contains(type) && !isInTests(type)
+                        && referencesTo(type).stream().anyMatch(this::isInProductionCode)) {
+                    productionTypes.add(type);
+                    changed = true;
+                }
+            }
+        }
+    }
+
+    // Вершины групп и то, что нужно только им. Группа, замкнутая сама на себя (A использует B, B использует A),
+    // вершины не имеет: ею становится первый ее класс
+    private void groupTestOnlyTypes() {
+        List<TypeDeclaration<?>> testOnly = types.stream()
+                .filter(this::isUsedOnlyByTests)
+                .filter(type -> type.findAncestor(TypeDeclaration.class).filter(this::isUsedOnlyByTests).isEmpty())
+                .toList();
+        // Кто из таких классов на кого ссылается
+        Map<TypeDeclaration<?>, Set<TypeDeclaration<?>>> uses = new IdentityHashMap<>();
+        Set<TypeDeclaration<?>> used = identitySet();
+        for (TypeDeclaration<?> type : testOnly) {
+            for (Node reference : referencesTo(type)) {
+                Optional<TypeDeclaration<?>> user = isInTests(reference) ? Optional.empty() : outermostType(reference);
+                if (user.isPresent() && user.get() != type && testOnly.contains(user.get())) {
+                    uses.computeIfAbsent(user.get(), key -> identitySet()).add(type);
+                    used.add(type);
+                }
+            }
+        }
+        Set<TypeDeclaration<?>> covered = identitySet();
+        List<TypeDeclaration<?>> roots = new ArrayList<>();
+        testOnly.stream().filter(type -> !used.contains(type)).forEach(roots::add);
+        roots.addAll(testOnly);
+        for (TypeDeclaration<?> root : roots) {
+            if (covered.contains(root)) {
+                continue;
+            }
+            Set<String> pulled = new LinkedHashSet<>();
+            Deque<TypeDeclaration<?>> queue = new ArrayDeque<>(List.of(root));
+            covered.add(root);
+            while (!queue.isEmpty()) {
+                for (TypeDeclaration<?> next : uses.getOrDefault(queue.poll(), Set.of())) {
+                    if (covered.add(next)) {
+                        pulled.add(next.getNameAsString());
+                        queue.add(next);
+                    }
+                }
+            }
+            testOnlyClusters.put(root, pulled);
+        }
+    }
+
+    private Optional<TypeDeclaration<?>> outermostType(Node node) {
+        TypeDeclaration<?> outermost = null;
+        Node current = node.getParentNode().orElse(null);
+        while (current != null) {
+            if (current instanceof TypeDeclaration<?> type) {
+                outermost = type;
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return Optional.ofNullable(outermost);
+    }
+
+    private boolean isInProductionCode(Node node) {
+        if (isInTests(node)) {
+            return false;
+        }
+        Optional<TypeDeclaration<?>> type = innermostType(node);
+        if (type.isPresent()) {
+            return productionTypes.contains(type.get());
+        }
+        return node.findCompilationUnit()
+                .filter(unit -> unit.getTypes().stream().anyMatch(productionTypes::contains))
+                .isPresent();
     }
 
     private void markLiveMethods() {
@@ -547,7 +779,12 @@ public final class ProjectUsages {
         try {
             Matcher matcher = IDENTIFIER.matcher(Files.readString(file, StandardCharsets.ISO_8859_1));
             while (matcher.find()) {
-                stringWords.add(matcher.group());
+                String word = matcher.group();
+                stringWords.add(word);
+                // Слово из шаблона или файла настроек: классу оно заведомо не принадлежит
+                if (Character.isUpperCase(word.charAt(0))) {
+                    stringWordOwners.computeIfAbsent(word, key -> new HashSet<>()).add("");
+                }
             }
         } catch (IOException exception) {
             // Один шаблон не прочитался - остальные все равно пригодятся

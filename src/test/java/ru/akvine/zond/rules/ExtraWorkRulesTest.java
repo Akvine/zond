@@ -157,8 +157,21 @@ class ExtraWorkRulesTest {
 
         // Сущности Jmix загружают по планам выборки: правило о них не судит
         assertThat(jmix.check(new LazyRelationInMappingRule())).isEmpty();
-        // Каким запросом загружен список, по месту преобразования не видно - остается подозрение
-        assertThat(withGraph.check(new LazyRelationInMappingRule()))
+        // Список загружен методом, на котором связь выбирают заранее: запроса на каждый элемент нет
+        assertThat(withGraph.check(new LazyRelationInMappingRule())).isEmpty();
+        // Связь выбирает другой метод репозитория, а список загружен обычным: каким запросом он пришел в это
+        // место на самом деле, не видно - остается подозрение
+        ProjectFixture otherMethod = new ProjectFixture(dir.resolve("other"))
+                .source("OrderEntity.java", ORDER_ENTITY)
+                .source("OrderModel.java", ORDER_MODEL)
+                .source("OrderService.java", service)
+                .source("OrderRepository.java", """
+                        interface OrderRepository extends JpaRepository<OrderEntity, Long> {
+                            @EntityGraph(attributePaths = "client")
+                            List<OrderEntity> findByShopId(Long shopId);
+                        }
+                        """);
+        assertThat(otherMethod.check(new LazyRelationInMappingRule()))
                 .extracting(Violation::confidenceOrDefault).containsExactly(Confidence.SUSPICION);
         assertThat(withBatches.check(new LazyRelationInMappingRule())).isEmpty();
     }

@@ -42,6 +42,11 @@ public class BusinessErrorAsBadRequestRule extends AbstractRule implements Proje
     private static final String BAD_REQUEST = "BAD_REQUEST";
     private static final String BAD_REQUEST_METHOD = "badRequest";
     private static final String BAD_REQUEST_CODE = "400";
+    // Обработчик "на все остальное": в него попадают и сбои самого сервера
+    private static final Set<String> GENERAL_EXCEPTIONS = Set.of("Exception", "Throwable", "RuntimeException");
+    // Обработчик сам различает случаи и на сбой отвечает кодом сервера
+    private static final Pattern SERVER_STATUS = Pattern.compile(
+            "INTERNAL_SERVER_ERROR|internalServerError|SERVICE_UNAVAILABLE|BAD_GATEWAY|GATEWAY_TIMEOUT|\\b5\\d\\d\\b");
     // ResponseEntity.status(400), HttpStatusCode.valueOf(400), ProblemDetail.forStatus(400)
     private static final Set<String> STATUS_METHODS = Set.of("status", "valueOf", "forStatus", "setStatus", "sendError");
     // По имени видно, что это не отказ предметной области: неверные данные запроса (для них 400 и нужен),
@@ -58,7 +63,8 @@ public class BusinessErrorAsBadRequestRule extends AbstractRule implements Proje
 
     @Override
     public String description() {
-        return "Сканирует проект и ищет бизнес-исключения, которые отдаются клиенту с кодом 400 вместо 422";
+        return "Сканирует проект и ищет бизнес-исключения, которые отдаются клиенту с кодом 400 вместо 422, и"
+                + " обработчик общего исключения, который выдает сбой сервера за ошибку запроса";
     }
 
     @Override
@@ -70,6 +76,14 @@ public class BusinessErrorAsBadRequestRule extends AbstractRule implements Proje
                 List<String> handled = Annotations.find(handler, EXCEPTION_HANDLER)
                         .map(annotation -> handledBy(annotation, handler))
                         .orElse(List.of());
+                if (!handled.isEmpty() && GENERAL_EXCEPTIONS.containsAll(handled)) {
+                    badRequestIn(handler)
+                            .filter(status -> !SERVER_STATUS.matcher(handler.toString()).find())
+                            .ifPresent(status -> violations.add(
+                                    violation(sourceFile, status, generalMessage(handled.get(0)))
+                                            .withLevel(ErrorLevel.MAJOR)));
+                    continue;
+                }
                 // Обработчик, который отвечает сразу и за бизнес-отказ, и за неверные данные, судить нельзя
                 if (handled.isEmpty() || !handled.stream().allMatch(name -> isBusiness(name, classes))) {
                     continue;
@@ -108,6 +122,14 @@ public class BusinessErrorAsBadRequestRule extends AbstractRule implements Proje
                 + " запрос составлен неверно - не разобран или не прошел проверку полей, - а здесь запрос корректен,"
                 + " но выполнить его не дают правила предметной области; для таких отказов возвращайте"
                 + " 422 Unprocessable Entity (HttpStatus.UNPROCESSABLE_ENTITY), а 400 оставьте ошибкам валидации";
+    }
+
+    private String generalMessage(String exception) {
+        return "Обработчик общего исключения '" + exception + "' отвечает кодом 400: в него попадают и сбои самого"
+                + " сервера - NullPointerException, отказ базы, недоступность внешней системы, - а клиент и"
+                + " мониторинг видят ошибку запроса: в счетчиках 5xx сбоев нет, оповещения молчат, клиент запрос"
+                + " не повторит; отвечайте 500 (HttpStatus.INTERNAL_SERVER_ERROR), а 400 оставьте ошибкам в"
+                + " данных запроса";
     }
 
     // @ExceptionHandler(PaymentException.class) либо @ExceptionHandler на методе с таким параметром

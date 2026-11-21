@@ -4,9 +4,11 @@ import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.CallableDeclaration;
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration;
 import com.github.javaparser.ast.body.FieldDeclaration;
+import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.LambdaExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import com.github.javaparser.ast.expr.ObjectCreationExpr;
@@ -69,6 +71,11 @@ public class LazyRelationInMappingRule extends AbstractContextRule {
     private static final Pattern JOIN_FETCH = Pattern.compile("(?i)join\\s+fetch\\s+\\w+\\.(\\w+)");
     private static final Pattern QUOTED_NAME = Pattern.compile("\"(\\w+)(\\.\\w+)*\"");
     private static final int PASSES = 2;
+    // Переменная -> ее значение -> переменная в нем: дальше пары шагов источник списка не ищем
+    private static final int MAX_HOPS = 3;
+    // Вызовы, которые список не загружают, а только показывают: orders.stream(), page.getContent()
+    private static final Set<String> VIEW_METHODS = Set.of(
+            "stream", "parallelStream", "iterator", "getContent", "toList", "values", "forEach");
 
     // Связь сущности, которая загружается при первом обращении
     private record Relation(String entity, String field) {
@@ -108,7 +115,7 @@ public class LazyRelationInMappingRule extends AbstractContextRule {
             Set<Integer> reportedLines = new HashSet<>();
             for (Node site : sourceFile.findAll(Node.class)) {
                 Optional<Relation> relation = perElementRead(site, readers, project);
-                if (relation.isEmpty() || TestClasses.isInside(site)
+                if (relation.isEmpty() || TestClasses.isInside(site) || isFetchedWithList(site, relation.get(), classes)
                         || !reportedLines.add(site.getBegin().map(position -> position.line).orElse(0))) {
                     continue;
                 }
@@ -309,6 +316,86 @@ public class LazyRelationInMappingRule extends AbstractContextRule {
                 .filter(lazy::containsKey)
                 .flatMap(entity -> Optional.ofNullable(lazy.get(entity).get(getter.getNameAsString()))
                         .map(field -> new Relation(entity, field)));
+    }
+
+    /**
+     * Список загружен запросом, который сам выбирает эту связь: {@code join fetch} либо {@code @EntityGraph} стоят
+     * на том методе репозитория, результат которого перебирают. Запроса на каждый элемент тогда нет
+     */
+    private boolean isFetchedWithList(Node site, Relation relation, ProjectClasses classes) {
+        Optional<Node> iteration = Loops.enclosingIteration(site);
+        Optional<Expression> collection = iteration
+                .filter(loop -> loop instanceof ForEachStmt)
+                .map(loop -> ((ForEachStmt) loop).getIterable());
+        if (collection.isEmpty()) {
+            // orders.stream().map(mapper::toDto), orders.forEach(order -> ...): список - начало цепочки вызовов
+            Node operation = iteration.filter(loop -> loop instanceof LambdaExpr).orElse(site);
+            collection = operation.getParentNode()
+                    .filter(parent -> parent instanceof MethodCallExpr)
+                    .flatMap(parent -> ((MethodCallExpr) parent).getScope());
+        }
+        return collection.flatMap(this::loadingCall)
+                .flatMap(call -> queryMethod(call, classes))
+                .filter(method -> fetches(method, relation.field()))
+                .isPresent();
+    }
+
+    // Вызов, которым получен список: repository.findByStatus(status) у переменной, цикла или начала стрима
+    private Optional<MethodCallExpr> loadingCall(Expression collection) {
+        Expression current = Nodes.unwrap(collection);
+        for (int hop = 0; hop < MAX_HOPS; hop++) {
+            while (current.isMethodCallExpr() && current.asMethodCallExpr().getScope()
+                    .map(Nodes::unwrap)
+                    .filter(Expression::isMethodCallExpr)
+                    .isPresent()) {
+                current = Nodes.unwrap(current.asMethodCallExpr().getScope().get());
+            }
+            // orders.stream(), page.getContent(): список - сама переменная
+            if (current.isMethodCallExpr() && VIEW_METHODS.contains(current.asMethodCallExpr().getNameAsString())
+                    && current.asMethodCallExpr().getScope().isPresent()) {
+                current = Nodes.unwrap(current.asMethodCallExpr().getScope().get());
+            }
+            if (!current.isNameExpr()) {
+                break;
+            }
+            Optional<Expression> initializer = LocalTypes.findInitializer(current);
+            if (initializer.isEmpty()) {
+                return Optional.empty();
+            }
+            current = Nodes.unwrap(initializer.get());
+        }
+        return current.isMethodCallExpr() ? Optional.of(current.asMethodCallExpr()) : Optional.empty();
+    }
+
+    // Объявление метода репозитория: по типу переменной, у которой его вызвали
+    private Optional<MethodDeclaration> queryMethod(MethodCallExpr call, ProjectClasses classes) {
+        return call.getScope()
+                .flatMap(LocalTypes::typeOf)
+                .flatMap(classes::find)
+                .stream()
+                .flatMap(type -> type.getMethodsByName(call.getNameAsString()).stream())
+                .filter(method -> method.getParameters().size() == call.getArguments().size())
+                .findFirst();
+    }
+
+    // @Query("... join fetch a.card c join fetch c.ownerClient"), @EntityGraph(attributePaths = {"card.ownerClient"})
+    private boolean fetches(MethodDeclaration method, String field) {
+        for (AnnotationExpr annotation : method.getAnnotations()) {
+            String text = annotation.toString();
+            Matcher join = JOIN_FETCH.matcher(text);
+            while (join.find()) {
+                if (join.group(1).equals(field)) {
+                    return true;
+                }
+            }
+            Matcher path = QUOTED_NAME.matcher(text);
+            while (FETCH_ANNOTATIONS.contains(annotation.getName().getIdentifier()) && path.find()) {
+                if (List.of(path.group().replace("\"", "").split("\\.")).contains(field)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     // Связи, которые хоть один запрос проекта загружает заранее: join fetch o.items, attributePaths = "items"

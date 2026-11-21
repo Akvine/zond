@@ -22,6 +22,7 @@ import ru.akvine.zond.rules.ConfigRule;
 import ru.akvine.zond.rules.ContextRule;
 import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.Rule;
+import ru.akvine.zond.rules.RuleCodes;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -99,6 +100,13 @@ public class Scanner {
             List<Violation> distinct = violations.stream().distinct().toList();
             violations.clear();
             violations.addAll(distinct);
+        }
+
+        // Ошибка поведения в классе, который не используется, проявиться не может: о классе скажет jr:206
+        if (activeRules.stream().anyMatch(rule -> RuleCodes.UNUSED_CLASS_RULE_CODE.equals(rule.code()))) {
+            List<Violation> judged = DeadCode.demote(violations, parts);
+            violations.clear();
+            violations.addAll(judged);
         }
 
         long checkNanos = System.nanoTime() - checkStartedAt;
