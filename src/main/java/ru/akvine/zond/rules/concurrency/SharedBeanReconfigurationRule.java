@@ -10,6 +10,7 @@ import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.AssignExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.MethodCallExpr;
+import com.github.javaparser.ast.nodeTypes.NodeWithAnnotations;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
 import ru.akvine.zond.enums.ErrorType;
@@ -18,12 +19,14 @@ import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractRule;
 import ru.akvine.zond.rules.ProjectRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.support.AnnotationValues;
 import ru.akvine.zond.rules.support.Annotations;
 import ru.akvine.zond.rules.support.BeanScopes;
 import ru.akvine.zond.rules.support.CodeContexts;
 import ru.akvine.zond.rules.support.LocalTypes;
 import ru.akvine.zond.rules.support.Nodes;
 import ru.akvine.zond.rules.support.SpringBeans;
+import ru.akvine.zond.rules.support.StringLiterals;
 import ru.akvine.zond.rules.support.TestClasses;
 
 import java.util.ArrayList;
@@ -96,6 +99,8 @@ public class SharedBeanReconfigurationRule extends AbstractRule implements Proje
 
     private static final String BEAN = "Bean";
     private static final String QUALIFIER = "Qualifier";
+    private static final String VALUE = "value";
+    private static final Set<String> BEAN_NAME_MEMBERS = Set.of(VALUE, "name");
     private static final int SHOWN_CONSUMERS = 3;
     private static final String NOT_VIA_CONTEXT = "а не через ApplicationContext.getBean()";
 
@@ -104,8 +109,25 @@ public class SharedBeanReconfigurationRule extends AbstractRule implements Proje
      *
      * @param consumers  тип бина -> классы, в которые он внедрен
      * @param prototypes типы, все объявления которых имеют область prototype: у каждого потребителя свой экземпляр
+     * @param names      тип бина -> имена бинов-одиночек этого типа, объявленных @Bean-методами
+     * @param injections тип бина -> класс -> имена, под которыми класс получает бины этого типа
      */
-    private record Beans(Map<String, Set<String>> consumers, Set<String> prototypes) {
+    private record Beans(Map<String, Set<String>> consumers, Set<String> prototypes, Map<String, Set<String>> names,
+                         Map<String, Map<String, Set<String>>> injections) {
+
+        // Бинов этого типа несколько: Spring различает их по имени точки внедрения, и общий бин только у тех
+        // классов, которые просят то же имя; имя, не совпавшее ни с одним бином, получает основной (@Primary)
+        private List<String> sharing(String typeName, String consumer, String injectionName) {
+            Set<String> declared = names.getOrDefault(typeName, Set.of());
+            Map<String, Set<String>> byClass = injections.getOrDefault(typeName, Map.of());
+            return consumers.getOrDefault(typeName, Set.of()).stream()
+                    .filter(other -> !other.equals(consumer))
+                    .filter(other -> declared.size() < 2 || byClass.getOrDefault(other, Set.of()).stream()
+                            .anyMatch(name -> declared.contains(injectionName)
+                                    ? name.equals(injectionName)
+                                    : !declared.contains(name)))
+                    .toList();
+        }
     }
 
     @Override
@@ -171,23 +193,75 @@ public class SharedBeanReconfigurationRule extends AbstractRule implements Proje
         Map<String, Set<String>> consumers = new HashMap<>();
         Set<String> prototypes = new HashSet<>();
         Set<String> singletons = new HashSet<>();
+        Map<String, Set<String>> names = new HashMap<>();
+        Map<String, Map<String, Set<String>>> injections = new HashMap<>();
         for (SourceFile sourceFile : sourceFiles) {
             for (ClassOrInterfaceDeclaration type : sourceFile.findAll(ClassOrInterfaceDeclaration.class)) {
                 if (SpringBeans.isBean(type) && !TestClasses.isInside(type)) {
                     SpringBeans.findDependencies(type).stream()
                             .filter(dependency -> SHARED_TYPES.containsKey(dependency.type()))
-                            .forEach(dependency -> consumers.computeIfAbsent(dependency.type(), name -> new LinkedHashSet<>())
-                                    .add(type.getNameAsString()));
+                            .forEach(dependency -> {
+                                consumers.computeIfAbsent(dependency.type(), name -> new LinkedHashSet<>())
+                                        .add(type.getNameAsString());
+                                injections.computeIfAbsent(dependency.type(), name -> new HashMap<>())
+                                        .put(type.getNameAsString(), injectionNames(type, dependency.type()));
+                            });
                 }
                 for (MethodDeclaration method : type.getMethods()) {
-                    if (Annotations.has(method, BEAN)) {
-                        (BeanScopes.isShortLived(method) ? prototypes : singletons).add(LocalTypes.typeName(method.getType()));
+                    if (!Annotations.has(method, BEAN)) {
+                        continue;
+                    }
+                    String typeName = LocalTypes.typeName(method.getType());
+                    (BeanScopes.isShortLived(method) ? prototypes : singletons).add(typeName);
+                    if (!BeanScopes.isShortLived(method) && !TestClasses.isInside(type)) {
+                        names.computeIfAbsent(typeName, name -> new HashSet<>()).addAll(beanNames(method));
                     }
                 }
             }
         }
         prototypes.removeAll(singletons);
-        return new Beans(consumers, prototypes);
+        return new Beans(consumers, prototypes, names, injections);
+    }
+
+    // @Bean("fast"), @Bean(name = {"fast", "quick"}); без имени бин называется по методу
+    private Set<String> beanNames(MethodDeclaration method) {
+        Set<String> names = new HashSet<>();
+        Annotations.find(method, BEAN).ifPresent(bean -> AnnotationValues.expressions(bean, BEAN_NAME_MEMBERS).stream()
+                .map(StringLiterals::textOf)
+                .flatMap(Optional::stream)
+                .forEach(names::add));
+        if (names.isEmpty()) {
+            names.add(method.getNameAsString());
+        }
+        return names;
+    }
+
+    // Имена, под которыми класс получает бины этого типа: параметры конструктора, а без него - внедряемые поля
+    // (Lombok называет параметры так же, как поля). @Qualifier важнее имени
+    private Set<String> injectionNames(ClassOrInterfaceDeclaration type, String typeName) {
+        Set<String> names = new LinkedHashSet<>();
+        type.getConstructors().stream()
+                .flatMap(constructor -> constructor.getParameters().stream())
+                .filter(parameter -> typeName.equals(LocalTypes.typeName(parameter.getType())))
+                .forEach(parameter -> names.add(qualifier(parameter).orElse(parameter.getNameAsString())));
+        if (!names.isEmpty()) {
+            return names;
+        }
+        for (FieldDeclaration field : type.getFields()) {
+            boolean injected = typeName.equals(LocalTypes.typeName(field.getElementType()))
+                    && SpringBeans.isInjectedField(field, type);
+            if (injected) {
+                field.getVariables()
+                        .forEach(variable -> names.add(qualifier(field).orElse(variable.getNameAsString())));
+            }
+        }
+        return names;
+    }
+
+    private Optional<String> qualifier(NodeWithAnnotations<?> node) {
+        return Annotations.find(node, QUALIFIER)
+                .flatMap(found -> AnnotationValues.expressions(found, Set.of(VALUE)).stream().findFirst())
+                .flatMap(StringLiterals::textOf);
     }
 
     private boolean isConfiguration(ClassOrInterfaceDeclaration type) {
@@ -270,9 +344,7 @@ public class SharedBeanReconfigurationRule extends AbstractRule implements Proje
         // Свой объект, именованный бин и бин с областью prototype ни с кем не делятся
         boolean dedicated = !SpringBeans.isInjectedField(field, type) || hasQualifier(field, type)
                 || beans.prototypes().contains(typeName);
-        List<String> others = beans.consumers().getOrDefault(typeName, Set.of()).stream()
-                .filter(consumer -> !consumer.equals(type.getNameAsString()))
-                .toList();
+        List<String> others = beans.sharing(typeName, type.getNameAsString(), injectionName(change.field(), type));
         if (dedicated || others.isEmpty()) {
             return Optional.empty();
         }
@@ -290,6 +362,18 @@ public class SharedBeanReconfigurationRule extends AbstractRule implements Proje
         MethodCallExpr call = change.call();
         return "'" + call.getScope().get() + "." + call.getNameAsString() + "(...)' " + where + " перенастраивает общий"
                 + " объект '" + change.field().getNameAsString() + "' (" + typeName + ")";
+    }
+
+    // Имя, под которым поле получает бин: параметр конструктора, из которого оно заполняется, иначе само поле
+    private String injectionName(VariableDeclarator field, ClassOrInterfaceDeclaration type) {
+        String fieldName = field.getNameAsString();
+        return type.getConstructors().stream()
+                .flatMap(constructor -> constructor.findAll(AssignExpr.class).stream())
+                .filter(assignment -> assignment.getValue().isNameExpr() && assignment.getTarget().toString()
+                        .replace("this.", "").equals(fieldName))
+                .map(assignment -> assignment.getValue().asNameExpr().getNameAsString())
+                .findFirst()
+                .orElse(fieldName);
     }
 
     // @Qualifier на поле либо на параметре конструктора того же типа: внедряется отдельный именованный бин

@@ -1257,7 +1257,9 @@ public final class Taint {
                 parameters.add(index);
             }
         }
-        return new ReturnSummary(Optional.empty(), Set.copyOf(parameters));
+        // Порядок параметров сохраняем: источник ищут у первого из них, а порядок обхода Set.copyOf(...) свой у
+        // каждого запуска JVM - находка от запуска к запуску называла бы разный источник и меняла уверенность
+        return new ReturnSummary(Optional.empty(), Collections.unmodifiableSet(parameters));
     }
 
     private Optional<Origin> traceReturns(MethodDeclaration method, List<Expression> returned, int parameter) {

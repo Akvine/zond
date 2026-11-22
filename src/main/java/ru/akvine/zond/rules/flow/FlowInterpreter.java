@@ -2023,8 +2023,25 @@ public final class FlowInterpreter {
         if (scope.isEmpty()) {
             return true;
         }
-        return scope.get() instanceof NameExpr name && !state.has(name.getNameAsString())
-                && Character.isUpperCase(name.getNameAsString().charAt(0));
+        if (scope.get() instanceof NameExpr name) {
+            return !state.has(name.getNameAsString()) && Character.isUpperCase(name.getNameAsString().charAt(0));
+        }
+        // org.springframework.util.Assert.notNull(...): класс назван вместе с пакетом
+        return scope.get() instanceof FieldAccessExpr type && Character.isUpperCase(type.getNameAsString().charAt(0))
+                && isPackageName(type.getScope(), state);
+    }
+
+    // org.springframework.util: цепочка имен со строчной буквы, которая начинается не с переменной
+    private boolean isPackageName(Expression expression, FlowState state) {
+        Expression current = expression;
+        while (current instanceof FieldAccessExpr part) {
+            if (!Character.isLowerCase(part.getNameAsString().charAt(0))) {
+                return false;
+            }
+            current = part.getScope();
+        }
+        return current instanceof NameExpr root && Character.isLowerCase(root.getNameAsString().charAt(0))
+                && !state.has(root.getNameAsString());
     }
 
     private void terminate(String reason) {

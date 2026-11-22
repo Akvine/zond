@@ -6,9 +6,11 @@ import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.VariableDeclarator;
 import com.github.javaparser.ast.expr.CastExpr;
 import com.github.javaparser.ast.expr.Expression;
+import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
 import com.github.javaparser.ast.expr.MethodReferenceExpr;
 import com.github.javaparser.ast.expr.NameExpr;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
 import com.github.javaparser.ast.type.ClassOrInterfaceType;
 import org.springframework.stereotype.Component;
 import ru.akvine.zond.enums.ErrorLevel;
@@ -30,7 +32,10 @@ import java.util.regex.Pattern;
 
 @Component
 public class HttpClientWithoutTimeoutRule extends AbstractRule {
-    private static final Set<String> CLIENT_TYPES = Set.of("RestTemplate", "OkHttpClient");
+    // У new OkHttpClient() сроки есть: соединение, чтение и запись по умолчанию ограничены десятью секундами
+    private static final Set<String> CLIENT_TYPES = Set.of("RestTemplate");
+    // Единственный способ дать сроки клиенту, созданному как new RestTemplate()
+    private static final String SET_REQUEST_FACTORY = "setRequestFactory";
     private static final String HTTP_CLIENT = "HttpClient";
     private static final String NEW_HTTP_CLIENT = "newHttpClient";
 
@@ -69,13 +74,23 @@ public class HttpClientWithoutTimeoutRule extends AbstractRule {
 
     @Override
     public List<Violation> check(SourceFile sourceFile) {
-        // Сроки где-то в этом файле задают: к какому клиенту они относятся, по тексту не понять
-        if (setsTimeouts(sourceFile)) {
-            return List.of();
-        }
+        // Сроки где-то в этом файле задают: к какому клиенту они относятся, по тексту не понять. Исключение -
+        // клиент в собственной переменной, которой только пользуются: чужие сроки к нему не относятся
+        boolean timeoutsNearby = setsTimeouts(sourceFile);
 
         List<Violation> violations = new ArrayList<>();
         for (Expression expression : sourceFile.findAll(Expression.class)) {
+            if (timeoutsNearby) {
+                if (expression.isObjectCreationExpr() && describeClient(expression).isPresent()
+                        && isKeptAsCreated(expression.asObjectCreationExpr(), sourceFile)) {
+                    violations.add(violation(sourceFile, expression,
+                            "'" + describeClient(expression).get() + "' без таймаутов: сроки в этом файле заданы"
+                                    + " другому клиенту, а этот лежит в своей переменной и остается как создан - по"
+                                    + " умолчанию он ждет ответа бесконечно, зависший внешний сервис займет все"
+                                    + " потоки приложения; задайте таймауты соединения и чтения"));
+                }
+                continue;
+            }
             describeClient(expression).ifPresent(client -> violations.add(violation(sourceFile, expression,
                     "'" + client + "' без таймаутов: по умолчанию клиент ждет ответа бесконечно,"
                             + " зависший внешний сервис займет все потоки приложения; задайте"
@@ -101,7 +116,51 @@ public class HttpClientWithoutTimeoutRule extends AbstractRule {
         return ErrorType.RESOURCE;
     }
 
-    // new RestTemplate(), new OkHttpClient(), HttpClient.newHttpClient(), HttpClients.createDefault()
+    /**
+     * {@code private final RestTemplate client = new RestTemplate()}: клиент лежит в своем поле или локальной
+     * переменной, и ее во всем файле только вызывают - не передают дальше, не возвращают и не дают ей другую
+     * фабрику запросов
+     */
+    private boolean isKeptAsCreated(ObjectCreationExpr creation, SourceFile sourceFile) {
+        Optional<Node> holder = creation.getParentNode().filter(parent -> parent instanceof VariableDeclarator);
+        if (holder.isEmpty()) {
+            return false;
+        }
+        // Поле, видимое другим классам, могли настроить и оттуда
+        boolean visibleOutside = holder.get().getParentNode()
+                .filter(parent -> parent instanceof FieldDeclaration field && !field.isPrivate())
+                .isPresent();
+        if (visibleOutside) {
+            return false;
+        }
+        String name = ((VariableDeclarator) holder.get()).getNameAsString();
+        List<Expression> usages = new ArrayList<>();
+        sourceFile.findAll(NameExpr.class).stream()
+                .filter(usage -> usage.getNameAsString().equals(name))
+                .forEach(usages::add);
+        sourceFile.findAll(FieldAccessExpr.class).stream()
+                .filter(usage -> usage.getNameAsString().equals(name) && usage.getScope().isThisExpr())
+                .forEach(usages::add);
+        boolean called = false;
+        for (Expression usage : usages) {
+            if (LocalTypes.findDeclaration(usage).filter(declaration -> declaration == holder.get()).isEmpty()) {
+                continue;
+            }
+            boolean isOnlyCalled = usage.getParentNode()
+                    .filter(parent -> parent instanceof MethodCallExpr call
+                            && call.getScope().filter(scope -> scope == usage).isPresent()
+                            && !SET_REQUEST_FACTORY.equals(call.getNameAsString()))
+                    .isPresent();
+            if (!isOnlyCalled) {
+                return false;
+            }
+            called = true;
+        }
+        // Клиент, которым в этом файле не пользуются вовсе, ни о чем не говорит
+        return called;
+    }
+
+    // new RestTemplate(), HttpClient.newHttpClient(), HttpClients.createDefault()
     private Optional<String> describeClient(Expression expression) {
         if (expression.isObjectCreationExpr()) {
             String type = expression.asObjectCreationExpr().getType().getNameAsString();

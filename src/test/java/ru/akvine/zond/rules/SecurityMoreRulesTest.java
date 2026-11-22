@@ -1,6 +1,7 @@
 package ru.akvine.zond.rules;
 
 import org.junit.jupiter.api.Test;
+import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.security.ExceptionMessageToClientRule;
 import ru.akvine.zond.rules.security.OpenRedirectRule;
 import ru.akvine.zond.rules.security.PathTraversalRule;
@@ -9,6 +10,8 @@ import ru.akvine.zond.rules.security.SensitiveDataLoggingRule;
 import ru.akvine.zond.rules.security.WeakCipherRule;
 import ru.akvine.zond.rules.security.XxeRule;
 import ru.akvine.zond.rules.security.ZipSlipRule;
+
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -77,6 +80,25 @@ class SecurityMoreRulesTest {
                     }
                 }
                 """)).containsExactly(3, 4, 6);
+    }
+
+    // Источник называют по первому из параметров, дошедших до результата, - одинаково при каждом запуске
+    @Test
+    void pathTraversalNamesTheFirstSource() {
+        List<Violation> violations = RuleTests.check(new PathTraversalRule(), """
+                @RestController
+                class ReportController {
+                    @GetMapping("/report")
+                    File report(@RequestParam String folder, MultipartFile upload) {
+                        return new File(path(folder, upload.getOriginalFilename()));
+                    }
+                    private String path(String folder, String name) {
+                        return folder + "/" + name;
+                    }
+                }
+                """);
+        assertThat(violations).extracting(Violation::line).containsExactly(5);
+        assertThat(violations.get(0).message()).contains("'folder'").doesNotContain("getOriginalFilename");
     }
 
     @Test

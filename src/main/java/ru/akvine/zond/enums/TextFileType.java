@@ -3,6 +3,7 @@ package ru.akvine.zond.enums;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
@@ -29,6 +30,8 @@ public enum TextFileType {
     LOGBACK(FileKind.LOGGING),
     LOG4J2(FileKind.LOGGING),
     KUBERNETES(FileKind.KUBERNETES),
+    // values.yaml чарта Helm: из него шаблоны собирают манифесты
+    HELM_VALUES(FileKind.KUBERNETES),
     GITLAB_CI(FileKind.CI),
     GITHUB_WORKFLOW(FileKind.CI);
 
@@ -43,6 +46,9 @@ public enum TextFileType {
     private static final Pattern LOG4J2_NAME = Pattern.compile("log4j2.*\\.xml");
     private static final Pattern COMPOSE_NAME = Pattern.compile("(docker-)?compose.*\\.ya?ml");
     private static final Pattern GITLAB_CI_NAME = Pattern.compile("\\.gitlab-ci.*\\.ya?ml");
+    // values.yaml, values-prod.yaml, values.tst.yml
+    private static final Pattern HELM_VALUES_NAME = Pattern.compile("values([._-].*)?\\.ya?ml");
+    private static final List<String> HELM_CHART_NAMES = List.of("Chart.yaml", "Chart.yml");
 
     // Настройки Spring читает и разбирает ConfigLoader
     private static final Pattern SPRING_CONFIG_NAME = Pattern.compile("(application|bootstrap).*\\.ya?ml");
@@ -129,9 +135,24 @@ public enum TextFileType {
         if (lines.stream().anyMatch(line -> LIQUIBASE_YAML_ROOT.matcher(line).matches())) {
             return Optional.of(LIQUIBASE_YAML);
         }
+        if (HELM_VALUES_NAME.matcher(name).matches() && isInHelmChart(path)) {
+            return Optional.of(HELM_VALUES);
+        }
         boolean isManifest = lines.stream().anyMatch(line -> KUBERNETES_API_VERSION.matcher(line).matches())
                 && lines.stream().anyMatch(line -> KUBERNETES_KIND.matcher(line).matches());
         return isManifest ? Optional.of(KUBERNETES) : Optional.empty();
+    }
+
+    // Рядом с файлом либо каталогом выше лежит Chart.yaml: chart/values.yaml, chart/ci/values-test.yaml
+    private static boolean isInHelmChart(Path path) {
+        Path directory = path.toAbsolutePath().getParent();
+        for (int level = 0; level < 2 && directory != null; level++, directory = directory.getParent()) {
+            Path current = directory;
+            if (HELM_CHART_NAMES.stream().anyMatch(chart -> Files.isRegularFile(current.resolve(chart)))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // .github/workflows/build.yml

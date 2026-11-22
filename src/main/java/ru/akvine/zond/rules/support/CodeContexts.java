@@ -137,6 +137,11 @@ public class CodeContexts {
     private static final Set<String> EXECUTOR_METHODS = Set.of(
             "submit", "execute", "schedule", "scheduleAtFixedRate", "scheduleWithFixedDelay", "runAsync",
             "supplyAsync", "invokeLater", "start");
+    // Вызовы, которые ставят задачу в расписание: тело лямбды выполняется позже и по расписанию, а не по числу
+    // элементов цикла, из которого задачу регистрируют
+    private static final Set<String> SCHEDULING_METHODS = Set.of(
+            "addFixedDelayTask", "addFixedRateTask", "addCronTask", "addTriggerTask", "scheduleAtFixedRate",
+            "scheduleWithFixedDelay");
     private static final String THREAD = "Thread";
     private static final String FUNCTIONAL_INTERFACE = "FunctionalInterface";
     // throws Exception: метод заявляет, что может упасть с чем угодно
@@ -819,6 +824,51 @@ public class CodeContexts {
                 .filter(parent -> parent instanceof MethodCallExpr call && EXECUTOR_METHODS.contains(call.getNameAsString())
                         || parent instanceof ObjectCreationExpr creation && THREAD.equals(creation.getType().getNameAsString()))
                 .isPresent();
+    }
+
+    /**
+     * @return true, если узел стоит в теле задачи, которую метод только ставит в расписание:
+     * {@code registrar.addFixedDelayTask(() -> job.process(bank), delay)} либо то же через локальную переменную.
+     * Такой код выполняется позже и по расписанию, а не по числу элементов цикла, из которого задачу регистрируют
+     */
+    public boolean isInScheduledTask(Node node) {
+        return isInsideLambdaHandedTo(node, SCHEDULING_METHODS);
+    }
+
+    /**
+     * @return true, если узел стоит в теле задачи, отданной пулу потоков или новому потоку:
+     * {@code executor.submit(() -> handle(order))} либо то же через локальную переменную
+     */
+    public boolean isInExecutorTask(Node node) {
+        return isInsideLambdaHandedTo(node, EXECUTOR_METHODS);
+    }
+
+    private boolean isInsideLambdaHandedTo(Node node, Set<String> methods) {
+        Node current = node.getParentNode().orElse(null);
+        while (current != null && !(current instanceof BodyDeclaration<?>)) {
+            if (current instanceof LambdaExpr lambda && isHandedTo(lambda, methods)) {
+                return true;
+            }
+            current = current.getParentNode().orElse(null);
+        }
+        return false;
+    }
+
+    // executor.submit(() -> ...) либо Runnable task = () -> ...; executor.submit(task)
+    private boolean isHandedTo(LambdaExpr lambda, Set<String> methods) {
+        Node parent = lambda.getParentNode().orElse(null);
+        if (parent instanceof MethodCallExpr call) {
+            return methods.contains(call.getNameAsString());
+        }
+        if (!(parent instanceof VariableDeclarator variable)) {
+            return false;
+        }
+        String name = variable.getNameAsString();
+        return Nodes.enclosingCallable(lambda).stream()
+                .flatMap(callable -> callable.findAll(MethodCallExpr.class).stream())
+                .anyMatch(call -> methods.contains(call.getNameAsString()) && call.getArguments().stream()
+                        .anyMatch(argument -> argument.isNameExpr()
+                                && argument.asNameExpr().getNameAsString().equals(name)));
     }
 
     /**

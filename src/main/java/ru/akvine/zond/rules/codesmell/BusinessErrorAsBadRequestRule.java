@@ -50,11 +50,13 @@ public class BusinessErrorAsBadRequestRule extends AbstractRule implements Proje
     // ResponseEntity.status(400), HttpStatusCode.valueOf(400), ProblemDetail.forStatus(400)
     private static final Set<String> STATUS_METHODS = Set.of("status", "valueOf", "forStatus", "setStatus", "sendError");
     // По имени видно, что это не отказ предметной области: неверные данные запроса (для них 400 и нужен),
-    // "не найдено" (404), доступ (401, 403), конфликт (409)
+    // "не найдено" (404), доступ и сессия (401, 403), неподдерживаемый метод или формат (405, 415),
+    // конфликт (409)
     private static final Pattern OTHER_STATUS = Pattern.compile(
-            "(?i).*(Validation|Invalid|BadRequest|Malformed|Parse|Format|Constraint|Bind|Missing|Required"
-                    + "|IllegalArgument|NotReadable|TypeMismatch|Unsupported|NotFound|NoSuch|Unauthorized|Forbidden"
-                    + "|AccessDenied|Authentication|Authorization|Conflict|Duplicate|AlreadyExists).*");
+            "(?i).*(Validation|Invalid|NotValid|BadRequest|Malformed|Parse|Format|Constraint|Bind|Missing|Required"
+                    + "|IllegalArgument|NotReadable|TypeMismatch|TooLong|TooLarge|TooShort|Unsupported|NotSupported"
+                    + "|NotFound|NoSuch|Unauthorized|Forbidden|AccessDenied|Auth|Credentials|Session|Conflict"
+                    + "|Duplicate|Exists|AlreadyFound).*");
 
     @Override
     public String code() {

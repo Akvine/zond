@@ -77,7 +77,9 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
                 // Запрос в catch выполняется, только когда обработка элемента сорвалась, а не для каждого
                 // Загрузка справочников при запуске выполняется один раз, в том числе из start(), который вызывает
                 // @PostConstruct другого бина; вызов, за которым цикл кончается, - тоже
-                if (!CodeContexts.isRepeatedOverData(call) || CodeContexts.isInCatch(call) || Loops.endsIteration(call)) {
+                // Задача, которую в цикле только ставят в расписание, выполняется позже и не по числу элементов
+                if (!CodeContexts.isRepeatedOverData(call) || CodeContexts.isInCatch(call) || Loops.endsIteration(call)
+                        || CodeContexts.isInScheduledTask(call)) {
                     continue;
                 }
                 describe(call, graph)
@@ -86,7 +88,12 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
                         .ifPresent(problem -> violations.add(violation(sourceFile, call, problem.text()
                                 + ": на каждый элемент уходит отдельный запрос к БД (проблема N+1);"
                                 + " загрузите или сохраните данные одним запросом: findAllById, saveAll,"
-                                + " запрос с IN").withConfidence(problem.confidence())));
+                                + " запрос с IN")
+                                // Каждый элемент отдан пулу потоков отдельной задачей: она сама читает свое
+                                // состояние в своей транзакции, и собрать запросы в один может быть нельзя
+                                .withConfidence(CodeContexts.isInExecutorTask(call)
+                                        ? Confidence.SUSPICION
+                                        : problem.confidence())));
             }
         }
         return violations;
@@ -122,8 +129,8 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
 
         // enrich(order) в цикле, а запрос к БД - внутри enrich или еще глубже
         for (MethodDeclaration target : graph.targetsOf(call)) {
-            Optional<CallChains.Found> found = CallChains.find(
-                    graph, target, value(MAX_CALL_DEPTH), method -> false, this::describeRepositoryCall);
+            Optional<CallChains.Found> found = CallChains.find(graph, target, value(MAX_CALL_DEPTH), method -> false,
+                    this::describeRepositoryCall, CodeContexts::isInScheduledTask);
             if (found.isPresent()) {
                 return Optional.of(new Problem(
                         "Вызов '" + call.getNameAsString() + "(...)' в цикле обращается к репозиторию '"
@@ -145,8 +152,8 @@ public class RepositoryCallInLoopRule extends AbstractRule implements ProjectRul
                     Confidence.PROBABLE));
         }
         for (MethodDeclaration target : MethodReferences.targets(reference, classes)) {
-            Optional<CallChains.Found> found = CallChains.find(
-                    graph, target, value(MAX_CALL_DEPTH), method -> false, this::describeRepositoryCall);
+            Optional<CallChains.Found> found = CallChains.find(graph, target, value(MAX_CALL_DEPTH), method -> false,
+                    this::describeRepositoryCall, CodeContexts::isInScheduledTask);
             if (found.isPresent()) {
                 return Optional.of(new Problem(
                         "Ссылка на метод '" + Nodes.text(reference) + "' в операции " + operation + "(...) обращается к"

@@ -9,6 +9,7 @@ import ru.akvine.zond.models.ConfigProperty;
 import ru.akvine.zond.models.Violation;
 import ru.akvine.zond.rules.AbstractConfigRule;
 import ru.akvine.zond.rules.RuleCodes;
+import ru.akvine.zond.rules.files.GitIgnore;
 import ru.akvine.zond.rules.support.Secrets;
 
 import java.util.ArrayList;
@@ -48,8 +49,23 @@ public class SecretInConfigRule extends AbstractConfigRule {
         // В профилях разработки и тестов учетные данные обычно ненастоящие: это и отдельные файлы
         // (application-dev.yml), и документы одного файла с условием on-profile
         List<Violation> violations = new ArrayList<>();
+        Boolean ignored = null;
         for (ConfigProperty property : configFile.productionProperties()) {
             if (!isPlainSecret(property)) {
+                continue;
+            }
+            // Файл закрыт .gitignore: так секреты и держат вне хранилища. Была ли копия файла добавлена в git до
+            // появления этого правила, по папке не видно, поэтому находка остается, но только как подозрение
+            if (ignored == null) {
+                ignored = GitIgnore.around(configFile.path()).isIgnored(configFile.path());
+            }
+            if (ignored) {
+                violations.add(violation(configFile, property.line(),
+                        "Секрет '" + property.key() + "' записан открытым текстом в файле, который закрыт .gitignore:"
+                                + " в хранилище он не попадет, если файл не был добавлен в git раньше (проверьте:"
+                                + " git ls-files). Файл из каталога ресурсов попадет в сборку, сделанную на этой"
+                                + " машине")
+                        .withConfidence(Confidence.SUSPICION).withLevel(ErrorLevel.MINOR));
                 continue;
             }
             Violation violation = violation(configFile, property.line(),

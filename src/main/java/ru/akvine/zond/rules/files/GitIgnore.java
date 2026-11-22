@@ -23,6 +23,8 @@ public final class GitIgnore {
     private static final Pattern OUTER_SLASHES = Pattern.compile("^/+|/+$");
     // .gitignore может лежать выше проверяемой папки: модуль внутри хранилища
     private static final int MAX_PARENTS = 4;
+    // src/main/resources/config/application.yml: корень хранилища - в нескольких каталогах над файлом
+    private static final int MAX_DEPTH = 10;
 
     /**
      * Одна строка .gitignore
@@ -60,6 +62,22 @@ public final class GitIgnore {
      */
     public static GitIgnore of(Path root) {
         return new GitIgnore(root.toAbsolutePath().normalize());
+    }
+
+    /**
+     * @param file файл проекта, корень которого неизвестен
+     * @return правила хранилища, в котором лежит файл: от ближайшего каталога над ним с .git либо .gitignore
+     */
+    public static GitIgnore around(Path file) {
+        Path start = file.toAbsolutePath().normalize().getParent();
+        Path directory = start;
+        for (int level = 0; level < MAX_DEPTH && directory != null; level++) {
+            if (Files.exists(directory.resolve(GIT_DIRECTORY)) || Files.isRegularFile(directory.resolve(GIT_IGNORE))) {
+                return new GitIgnore(directory);
+            }
+            directory = directory.getParent();
+        }
+        return new GitIgnore(start == null ? file.toAbsolutePath().normalize() : start);
     }
 
     /**

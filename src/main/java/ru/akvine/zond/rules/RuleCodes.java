@@ -558,4 +558,18 @@ public class RuleCodes {
     public final static String ONLY_FIRST_ELEMENT_PROCESSED_RULE_CODE = "jr:550";
     public final static String LIBRARY_FOR_ANOTHER_BOOT_GENERATION_RULE_CODE = "jr:551";
     public final static String UNSUPPORTED_SPRING_BOOT_RULE_CODE = "jr:552";
+
+    public final static String HELM_VALUES_SECRET_RULE_CODE = "jr:553";
+    public final static String DEBUG_AGENT_IN_DEPLOYMENT_RULE_CODE = "jr:554";
+    public final static String JMX_REMOTE_WITHOUT_PROTECTION_RULE_CODE = "jr:555";
+    public final static String JAVA_OPTS_NOT_APPLIED_RULE_CODE = "jr:556";
+    public final static String DOCKER_SHELL_FORM_ENTRYPOINT_RULE_CODE = "jr:557";
+    public final static String TLS_CHECK_DISABLED_IN_CONFIG_RULE_CODE = "jr:558";
+    public final static String KAFKA_SASL_OVER_PLAINTEXT_RULE_CODE = "jr:559";
+    public final static String CONTROLLER_OUTSIDE_PROTECTED_PREFIX_RULE_CODE = "jr:560";
+    public final static String ADMIN_PATH_OPEN_TO_ALL_RULE_CODE = "jr:561";
+    public final static String CARD_DATA_IN_CLEAR_RULE_CODE = "jr:562";
+    public final static String EXECUTOR_TASKS_LOST_ON_SHUTDOWN_RULE_CODE = "jr:563";
+    public final static String INHERITABLE_THREAD_LOCAL_WITH_POOL_RULE_CODE = "jr:564";
+    public final static String PRIVATE_KEY_IN_PROJECT_RULE_CODE = "jr:565";
 }

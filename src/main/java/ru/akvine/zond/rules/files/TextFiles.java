@@ -124,6 +124,11 @@ public class TextFiles {
         return file.type() == TextFileType.KUBERNETES && !TestPaths.isTest(file.path());
     }
 
+    // values.yaml чарта Helm: значения, из которых шаблоны собирают манифесты
+    public boolean isHelmValues(TextFile file) {
+        return file.type() == TextFileType.HELM_VALUES && !TestPaths.isTest(file.path());
+    }
+
     public boolean isCi(TextFile file) {
         return file.type() == TextFileType.GITLAB_CI || file.type() == TextFileType.GITHUB_WORKFLOW;
     }

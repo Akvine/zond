@@ -55,12 +55,28 @@ public class CallChains {
             int depth,
             Predicate<MethodDeclaration> skip,
             Function<Node, Optional<String>> operation) {
+        return find(graph, method, depth, skip, operation, node -> false);
+    }
+
+    /**
+     * То же, но с кодом, который в счет не идет: операция и вызов в нем пропускаются
+     *
+     * @param outside распознает узел, который выполняется не вместе с методом, - например тело задачи, которую
+     *                метод только ставит в расписание
+     */
+    public Optional<Found> find(
+            CallGraph graph,
+            MethodDeclaration method,
+            int depth,
+            Predicate<MethodDeclaration> skip,
+            Function<Node, Optional<String>> operation,
+            Predicate<Node> outside) {
         int reached = -1;
         // Сначала ищем на малой глубине и только потом глубже: так находится кратчайший путь к операции,
         // и сообщение не зависит от того, насколько велик предел
         for (int limit = 1; limit <= depth; limit++) {
             Set<MethodDeclaration> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-            Optional<Found> found = find(graph, method, limit, skip, operation, visited);
+            Optional<Found> found = find(graph, method, limit, skip, operation, outside, visited);
             if (found.isPresent()) {
                 return found;
             }
@@ -79,6 +95,7 @@ public class CallChains {
             int depth,
             Predicate<MethodDeclaration> skip,
             Function<Node, Optional<String>> operation,
+            Predicate<Node> outside,
             Set<MethodDeclaration> visited) {
         // Рекурсия и обход одного метода разными путями
         if (depth <= 0 || method.getBody().isEmpty() || !visited.add(method) || skip.test(method)) {
@@ -86,6 +103,9 @@ public class CallChains {
         }
 
         for (Node node : method.getBody().get().findAll(Node.class)) {
+            if (outside.test(node)) {
+                continue;
+            }
             Optional<String> found = operation.apply(node);
             if (found.isPresent()) {
                 return Optional.of(new Found(found.get(), List.of(method.getNameAsString()), true));
@@ -93,7 +113,10 @@ public class CallChains {
         }
 
         for (CallGraph.Call call : graph.callsFrom(method)) {
-            Optional<Found> deeper = find(graph, call.target(), depth - 1, skip, operation, visited);
+            if (outside.test(call.site())) {
+                continue;
+            }
+            Optional<Found> deeper = find(graph, call.target(), depth - 1, skip, operation, outside, visited);
             if (deeper.isPresent()) {
                 List<String> path = new ArrayList<>();
                 path.add(method.getNameAsString());
